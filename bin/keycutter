@@ -1,0 +1,402 @@
+#!/usr/bin/env bash
+set -eu -o pipefail
+
+# keycutter - Create FIDO SSH keys for authentication and commit signing.
+#
+# Prerequisites:
+#
+# - Bash >= 4.0
+# - Git >= 2.34.0
+# - GitHub CLI >= 2.0
+# - OpenSSH >= 8.2p1
+# - Yubikey Manager
+#
+# WSL (Windows Subsystem for Linux) Setup:
+#
+#   WSL does not support USB devices natively, so we need to use Windows OpenSSH to access the YubiKey.
+#   This requires a recent version of OpenSSH for Windows and a helper program to access the YubiKey.
+#
+#   Download and install a recent version of OpenSSH for Windows. This will give you 'ssh-sk-helper.exe'
+#   1. Download and install a recent OpenSSH for Windows:
+#        OpenSSH for Windows: https://github.com/PowerShell/Win32-OpenSSH/releases
+#   2. Tell WSL OpenSSH to ask Windows for help:
+#
+#        echo 'export SSH_SK_HELPER="/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe"' >> ~/.bashrc
+#
+# Recommendations:
+#
+#   1. Use separate Github account per security domain (personal, work, public).
+#      This will give you more freedom to login to GitHub on a device you trust
+#      with that account without crossing security boundaries.
+#
+#   2. Only use GitHub CLI from a device you trust with that GitHub account.
+#      E.g. Don't login to your personal GitHub account from a managed laptop. 
+#
+
+usage() {
+    echo "Usage:"
+    echo "       $(basename $0) [--git-email <value>] [--git-name <value>] [--resident] <ssh_key_tag>"
+    echo
+    echo "Options:"
+    echo
+    echo "  --git-email Optional. Git user.email value to use with this key."
+    echo "  --git-name  Optional. Git user.name value to use with this key."
+    echo "  --resident  Optional. Create resident FIDO SSH key (default is non-resident)"
+    echo
+    echo "  ssh_key_tag     Required. Identifier for key (e.g. laptop@github-alexdoe)"
+    echo
+    echo "SSH Keytag format: device@service-user"
+    echo 
+    echo "  - device  : Device this ssh key resides on ( e.g. 'yubikey1', 'work-laptop', 'zfold5')"
+    echo "  - service : Service this key is used with (e.g. 'github', 'aws', 'digitalocean')"
+    echo "  - user    : Service User this SSH Key authenticates as (e.g. 'alexdoe')"
+}
+
+ssh-keys-fido-resident(){
+  echo >&2 "Resident FIDO SSH Keys:"
+  ssh-keygen -K
+}
+
+ssh-keys-fido-non-resident(){
+  local base_config_dir="${KEYCUTTER_BASE_CONFIG_DIR:-"${HOME}/.keycutter"}"
+  local ssh_key_dir="${KEYCUTTER_SSH_KEY_DIR:-"${base_config_dir}/ssh/keys"}"
+  echo >&2 "Non-resident FIDO SSH Keys:"
+  grep -l "sk-" "$ssh_key_dir"/*.pub
+}
+
+ssh-keys-fido() {
+  ssh-keys-fido-non-resident  
+  ssh-keys-fido-resident  
+}
+
+ssh-key-create() {
+
+    local ssh_key_path="${1:-}"
+    local ssh_key_tag="${2:-}"
+    local identity="${3:-}"
+    local resident_key_option=""
+    if [[ "$resident" == "yes" ]]; then
+        resident_key_option="-O resident"
+    fi
+
+    if [[ -z "$ssh_key_path" || -z "$ssh_key_tag" || -z "$identity" ]]; then
+        usage
+        return 1
+    fi
+    
+    echo "Generating FIDO SSH key: $ssh_key_path"
+    if ! [[ -f "$ssh_key_path" ]]; then
+        echo "Creating directory: $(dirname $ssh_key_path)"
+        mkdir -p "$(dirname $ssh_key_path)"
+    fi
+
+    # XXX Check that yubikey is configured securely
+    # XXX 1. First use of key must require PIN to unlock key
+    # XXX 2. Key must be set to require touch to use
+
+    ssh-keygen -t ecdsa-sk -b 521 -f "$ssh_key_path" -C "${ssh_key_tag}" $resident_key_option
+    echo "SSH key generated at $ssh_key_path"
+
+    echo "Creating symlink: ${ssh_key_path} -> ${identity}"
+    echo "This allows us to leave omit device part of SSH Keytag when referring to keyfile."
+    echo
+    symlink="$(dirname $ssh_key_path)/${identity}"
+    if [[ -L $symlink ]]; then
+        # Get the current target of the symlink
+        current_target=$(readlink "$symlink")
+        if [[ $current_target == $ssh_key_path ]]; then
+            echo "No change required to symlink : $(ls -l "${symlink}" | awk '{print $9, "->", $11}' )"
+            return 0
+        else
+            # Confirm whether user wants to overwrite the symlink
+            echo "Symlink already exists: $(ls -l "${symlink}" | awk '{print $9, "->", $11}' )"
+            read -p "Do you want to overwrite the existing symlink? (Y/n) " choice
+            choice=${choice:-Y}
+            [[ $choice =~ ^[Yy]*$ ]] || return 0
+            ln -sf "$ssh_key_path" "$symlink"
+        fi
+    fi
+}
+
+ssh-config-create() {
+
+    # Create or update SSH configuration file for the identity
+
+    local ssh_identity_path="$1"
+    local ssh_key_path="$2"
+    local identity="$3"
+
+    if [[ -z "$ssh_identity_path" || -z "$ssh_key_path" || -z "$identity" ]]; then
+        usage # XXX This should be an error message
+        return 1
+    fi
+
+    temp_file="$(mktemp)"
+    # If we already have a config file for this identity
+    if [[ -f $ssh_identity_path ]]; then
+        echo "SSH configuration file exists ($ssh_identity_path)"
+        # If the ssh_key_path is not already in the file, add it
+        if ! grep -qxF "$ssh_key_path" "$ssh_identity_path"; then
+            echo "Adding IdentityFile $ssh_key_path to $ssh_identity_path"
+            echo "IdentityFile $ssh_key_path" >> "$ssh_identity_path"
+        else
+            echo "IdentityFile $ssh_key_path already in $ssh_identity_path"
+        fi
+    else
+        if ! [[ -d "$(dirname $ssh_identity_path)" ]]; then
+            # Create missing dirs in path
+            mkdir -p "$(dirname $ssh_identity_path)"
+        fi
+        echo "Creating SSH configuration file $ssh_identity_path"
+        cat > "$temp_file" <<-EOF
+Host $identity
+  User git
+  HostName github.com
+  IdentitiesOnly yes
+  IdentityFile $ssh_key_path
+EOF
+        mv "$temp_file" "$ssh_identity_path"
+    fi
+
+    # Ensure SSH configuration file for identity is included in ~/.ssh/config
+    local include_str="Include $(dirname "$ssh_identity_path")}/*"
+    # If keycutter SSH identity configs are not already Included in the SSH config
+    grep -qxF "$include_str" "${HOME}/.ssh/config" || {
+        # Backup the original file
+        cp "${HOME}/.ssh/config" "${HOME}/.ssh/config.replaced_by_keycutter.$(date +%s)"
+        temp_file="$(mktemp)"               # Create a temp file
+        echo "$include_str" > "$temp_file"  # Prepend the Include line to temp file
+        cat "${HOME}/.ssh/config" >> "$temp_file" # Append original file to temp file
+        mv "$temp_file" "${HOME}/.ssh/config"     # Move temp file to original location
+    }
+}
+
+git-config-create() {
+
+    local ssh_key_path="${1:-}"
+    local identity="${2:-}"
+    local git_email="${3:-}"
+    local git_name="${4:-}"
+
+    if [[ -z "$ssh_key_path" || -z "$identity" ]]; then
+        # XXX This should be an error message
+        usage
+        return 1
+    fi
+
+    local git_config_confd_dir="${git_config_dir}/conf.d"
+    local git_config_path="${git_config_confd_dir}/${identity}"
+    local git_config_keycutter_path="${git_config_dir}/gitconfig-keycutter"
+
+    if ! git --no-pager config --global --get-regexp "^include\.path$" | grep -q "${git_config_keycutter_path}"; then
+        echo "Add include.path to global git config: ${git_config_keycutter_path}"
+        git config --global --add include.path "${git_config_keycutter_path}"
+    fi
+
+    # XXX Setup allowed_signers file for verifying ssh keys
+    # XXX Decide on what email to use - do we require one to be provided? ask for it interactively?
+    # XXX Ask if user already has one, and if not, ask if we should create one for them
+    echo "Adding key to allowed_signers file (${git_config_dir}/allowed_signers) for verifying ssh keys"
+    local allowed_signer_email="${git_email:-$(git config --get user.email)}"
+    [[ -n $allowed_signer_email ]]; then
+      read -p "Please enter email to be used for signing commits: " allowed_signer_email
+    fi
+    echo "${allowed_signer_email} namespaces=\"git\" $(cat "${ssh_key_path}.pub")" >> "${git_config_dir}/allowed_signers"
+    [[ -n "$git_email" ]] && git config --file "$git_config_path" user.email "$git_email"
+    [[ -n "$git_name" ]]  && git config --file "$git_config_path" user.name "$git_name"
+
+    echo "Create conditional git include in $git_config_keycutter_path"
+    git config \
+      --file "${git_config_keycutter_path}" \
+      --replace "includeIf.hasconfig:remote.*.url:git@${identity}:*/**".path \
+      "$git_config_path"
+
+    if ! [[ -d "${git_config_confd_dir}" ]]; then
+        echo "Creating directory: ${git_config_confd_dir}"
+        mkdir -p "${git_config_confd_dir}"
+    fi
+
+    git config --file "$git_config_path" commit.gpgsign true
+    git config --file "$git_config_path" gpg.format ssh
+    git config --file "$git_config_path" user.signingkey "$ssh_key_path"
+    git config --file "$git_config_path" gpg.ssh.allowedSignersFile "${git_config_dir}/allowed_signers"
+}
+
+github-ssh-key-add() {
+
+    # XXX Replace if same SSH Keytag exists on GitHub
+
+    local ssh_key_path="$1"
+    local ssh_key_tag="$2"
+
+    if [[ -z "$ssh_key_tag" || -z "$ssh_key_path" ]]; then 
+        echo "Error: ssh_key_tag and ssh_key_path are required."
+        return 1
+    fi
+    
+    read -p "Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) " choice
+    choice=${choice:-Y}
+    [[ $choice =~ ^[Yy]*$ ]] || return 1
+
+    if github-auth; then
+        echo "Adding SSH authentication key (${ssh_key_path}.pub) to GitHub"
+        gh ssh-key add --type authentication --title "${ssh_key_tag}" "${ssh_key_path}.pub"
+        echo "Adding SSH signing key (${ssh_key_path}.pub) to GitHub"
+        gh ssh-key add --type signing --title "${ssh_key_tag}" "${ssh_key_path}.pub"
+        echo
+        # echo "Logging out of GitHub"
+        # gh auth logout # XXX Only if we logged in or requested additional scopes
+        echo "GitHub Organisations that enable or enforce SAML SSO will require additional setup."
+    else
+        echo "Not uploading to key to GitHub (not authenticated)"
+    fi
+}
+
+github-auth() {
+    # Ensure user is logged in to GitHub with required scopes
+
+    # Show GitHub login status
+    gh auth status 2>&1 | grep 'Logged in to github.com as' >&2
+    # Give user a chance to login or re-login as a different user
+    gh auth login \
+      --web \
+      --git-protocol https \
+      --scopes admin:public_key,admin:ssh_signing_key
+
+    local gh_auth_token_scopes
+    # If user is authenticated to GitHub
+    if gh_auth_token_scopes=$(gh auth status | grep scopes); then 
+      if [[ $gh_auth_token_scopes =~ 'admin:public_key' ]] && [[ $gh_auth_token_scopes =~ 'admin:ssh_signing_key' ]] ; then
+        echo >&2 "GitHub CLI: Required scopes are available."
+      else
+        echo >&2 "GitHub CLI: Necessary scopes are not available. Requesting additional scopes..."
+        gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key
+      fi
+    fi
+}
+
+github-ssh-keys() {
+  github-auth
+  gh ssh-key list
+}
+
+github-ssh-keys-authentication() {
+  github-ssh-keys | grep authentication
+}
+
+github-ssh-keys-signing() {
+  github-ssh-keys | grep signing
+}
+
+keycutter() {
+    if [[ $# -lt 1 ]]; then
+        usage
+        exit 1
+    fi
+
+    local ssh_key_tag=""
+    local git_email=""
+    local git_name=""
+    local resident="no"
+
+    while (( "$#" )); do
+        case "$1" in
+            --resident)
+                resident="yes"
+                shift
+                ;;
+            --email)
+                git_email="$2"
+                shift 2
+                ;;
+            --name)
+                git_name="$2"
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                if [[ -z $ssh_key_tag ]]; then
+                    ssh_key_tag="$1"
+                else
+                    echo "Error: Invalid option $1"
+                    usage
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$ssh_key_tag" ]]; then
+        usage
+        exit 1
+    fi
+
+    local device="${ssh_key_tag%@*}"           # The part of ssh_key_tag before the '@'
+    local identity="${ssh_key_tag#*@}"         # The part of ssh_key_tag after the '@'
+
+    # Configure config file locations
+    local base_config_dir="${KEYCUTTER_BASE_CONFIG_DIR:-"${HOME}/.keycutter"}"
+    local git_config_dir="${KEYCUTTER_GIT_CONFIG_DIR:-"${base_config_dir}/git"}"
+    local git_identity_dir="${KEYCUTTER_GIT_CONFIG_DIR:-"${base_config_dir}/git"}/identities"
+    local ssh_identity_dir="${KEYCUTTER_SSH_CONFIG_DIR:-"${base_config_dir}/ssh/config.d"}"
+    local ssh_key_dir="${KEYCUTTER_SSH_KEY_DIR:-"${base_config_dir}/ssh/keys"}"
+
+    local ssh_key_path="${ssh_key_dir}/${ssh_key_tag}"      # Path SSH key will be written to
+    local git_identity_path="$git_identity_dir/${identity}" # Git config for SSH Key
+    local ssh_identity_path="$ssh_identity_dir/${identity}" # SSH config for SSH Key
+
+    echo "Creating FIDO SSH Key for $ssh_key_tag"
+    ssh-key-create "$ssh_key_path" "$ssh_key_tag" "$identity"
+
+    echo -n "Starting SSH Agent... "
+    eval "$(ssh-agent -s)"
+
+    echo -n "Adding key to SSH Agent... "
+    ssh-add "$ssh_key_path"
+
+    # Configure git to use the SSH Key for commit signing for relevant repos
+    # This is achieved by conditionally including config files from:
+    #
+    #   $git_identity_dir
+    #
+    # When the remote url include's the SSH Keytags "Identity Part"
+    echo "Configuring git to use the SSH Key for commit/tag signing for relevant repos"
+    git-config-create "$ssh_key_path" "$identity" "$git_email" "$git_name"
+
+    shopt -s nocasematch  # Enable case-insensitive pattern matching
+    # If the SSH Keytag's Identity Part starts with 'github-' or 'gh-'
+    if [[ $ssh_key_tag =~ github|gh ]]; then
+      echo -e "\nSetting up GitHub specific configuration..."
+      # Create SSH config so you can ssh to GitHub using SSH Keytag's identity part
+      # e.g. `ssh github-alexdoe`
+      ssh-config-create "$ssh_identity_path" "$ssh_key_path" "$identity"
+      # Upload public key to GitHub for auth and commit signing
+      echo "Adding SSH key to GitHub for auth and commit/tag signing: $ssh_key_path"
+      github-ssh-key-add "$ssh_key_path" "$ssh_key_tag"
+    else 
+        echo "Skipping GitHub specific setup - SSH Keytag identity part doesn't start with 'github-' or 'gh-'."
+    fi
+    shopt -u nocasematch  # Disable case-insensitive pattern matching
+
+    echo "Setup complete for key: $ssh_key_tag"
+}
+
+list() {
+    ssh-keys-fido
+    github-ssh-keys
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    if [[ $1 == "list" ]]; then
+        list
+    else
+        [[ $1 == "create" ]] && shift
+        create "$@"
+    fi
+fi
+
+
