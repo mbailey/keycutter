@@ -39,13 +39,13 @@ usage() {
     echo "Usage:"
     echo "       $(basename "$0") <ssh-keytag> [--git-email <value>] [--git-name <value>] [--resident]"
     echo
-    echo "Options:"
+    echo "Arguments:"
+    echo
+    echo "  ssh-keytag Required. Identifier for key (e.g. laptop@github-alexdoe)"
     echo
     echo "  --git-email Optional. Git user.email value to use with this key."
     echo "  --git-name  Optional. Git user.name value to use with this key."
     echo "  --resident  Optional. Create resident FIDO SSH key (default is non-resident)"
-    echo
-    echo "  ssh_key_tag     Required. Identifier for key (e.g. laptop@github-alexdoe)"
     echo
     echo "SSH Keytag format: device@service-user"
     echo 
