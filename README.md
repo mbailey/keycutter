@@ -183,10 +183,16 @@ Setup complete for key: laptop@github-alexdoe
 
 ### keycutter list
 
-**Currently lists**:
+```shell
+keycutter list
+```
+
+**Currently lists:**
 
 - FIDO SSH Keys (resident and non-resident)
 - Keys uploaded to GitHub (authentication and signing)
+
+**Example:**
 
 ```shell
 $ keycutter list

@@ -200,7 +200,7 @@ git-config-create() {
     # XXX Ask if user already has one, and if not, ask if we should create one for them
     echo "Adding key to allowed_signers file (${git_config_dir}/allowed_signers) for verifying ssh keys"
     local allowed_signer_email="${git_email:-$(git config --get user.email)}"
-    [[ -n $allowed_signer_email ]]; then
+    if [[ -n $allowed_signer_email ]]; then
       read -p "Please enter email to be used for signing commits: " allowed_signer_email
     fi
     echo "${allowed_signer_email} namespaces=\"git\" $(cat "${ssh_key_path}.pub")" >> "${git_config_dir}/allowed_signers"
