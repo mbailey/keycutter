@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -eu -o pipefail
 
+# Preview release for review - 18 March 2024
+
 # keycutter - Create FIDO SSH keys for authentication and commit signing.
 #
 # Prerequisites:

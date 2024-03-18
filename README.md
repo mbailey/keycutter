@@ -2,7 +2,9 @@
 alias: SSH Keycutter
 ---
 
-# Keycutter - FIDO SSH Keys made easy
+# [Preview] Keycutter - FIDO SSH Keys made easy
+
+*18 Mar 2024 - Preview release for review only*
 
 Ever wondered how to contribute to an open-source project on GitHub using a
 work-managed (i.e. untrusted) laptop, without compromising the security of your
@@ -189,7 +191,7 @@ Setup complete for key: laptop@github-alexdoe
 ```shell
 $ keycutter list
 Non-resident FIDO SSH Keys:
-/home/m/.keycutter/ssh/keys/laptop@github-alexdoe.pub
+/home/alex/.keycutter/ssh/keys/laptop@github-alexdoe.pub
 Resident FIDO SSH Keys:
 Enter PIN for authenticator: 
 You may need to touch your authenticator to authorize key download.
