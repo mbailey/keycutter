@@ -293,7 +293,7 @@ github-ssh-keys-signing() {
   github-ssh-keys | grep signing
 }
 
-keycutter() {
+create() {
     if [[ $# -lt 1 ]]; then
         usage
         exit 1
@@ -370,7 +370,7 @@ keycutter() {
     #
     # When the remote url include's the SSH Keytags "Identity Part"
     echo "Configure git to use the SSH Key for commit/tag signing for relevant repos"
-    git-config-create "$ssh_key_path" "$identity" "$git_email" "$git_name"
+    git-config-create "$git_config_dir" "$ssh_key_path" "$identity" "$git_email" "$git_name"
 
     shopt -s nocasematch  # Enable case-insensitive pattern matching
     # If the SSH Keytag's Identity Part starts with 'github-' or 'gh-'
