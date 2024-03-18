@@ -396,10 +396,10 @@ list() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    if [[ $1 == "list" ]]; then
+    if [[ "${1:-}" == "list" ]]; then
         list
     else
-        [[ $1 == "create" ]] && shift
+        [[ "${1:-}" == "create" ]] && shift
         create "$@"
     fi
 fi
