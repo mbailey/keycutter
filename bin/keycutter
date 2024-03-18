@@ -37,7 +37,7 @@ set -eu -o pipefail
 
 usage() {
     echo "Usage:"
-    echo "       $(basename "$0") [--git-email <value>] [--git-name <value>] [--resident] <ssh_key_tag>"
+    echo "       $(basename "$0") <ssh-keytag> [--git-email <value>] [--git-name <value>] [--resident]"
     echo
     echo "Options:"
     echo
