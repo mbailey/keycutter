@@ -163,6 +163,7 @@ EOF
     # Ensure SSH configuration file for identity is included in ~/.ssh/config
     local include_str="Include $(dirname "$ssh_identity_path")}/*"
     # If keycutter SSH identity configs are not already Included in the SSH config
+    touch ~/.ssh/config
     grep -qxF "$include_str" "${HOME}/.ssh/config" || {
         # Backup the original file
         cp "${HOME}/.ssh/config" "${HOME}/.ssh/config.replaced_by_keycutter.$(date +%s)"
@@ -174,12 +175,11 @@ EOF
 }
 
 git-config-create() {
-
     local git_config_dir="${1:-}"
     local ssh_key_path="${2:-}"
     local identity="${3:-}"
-    local git_email="${4:-}"
-    local git_name="${5:-}"
+    local git_user_email="${4:-}"
+    local git_user_name="${5:-}"
 
     if [[ -z "$git_config_dir" || -z "$ssh_key_path" || -z "$identity" ]]; then
         # XXX This should be an error message
@@ -187,9 +187,44 @@ git-config-create() {
         return 1
     fi
 
+    if [[ -z $git_user_email ]]; then
+        local git_user_email_inferred
+        if git_user_email_inferred="$(git config --get user.email)"; then
+            echo "Do you want to use '$git_user_email_inferred' as git_user_email"
+            read -p "Do you want to use '$git_user_email_inferred' as git_user_email? (Y/n) " choice
+            choice=${choice:-Y}
+            if [[ $choice =~ ^[Yy]*$ ]]; then
+                git_user_email="$git_user_email_inferred"
+            fi
+        fi
+        if [[ -z $git_user_email ]]; then
+          read -p "What email address do you want to associate with this key for Git?" git_user_email
+        fi
+    fi
+
+    if [[ -z $git_user_name ]]; then
+        local git_user_name_inferred
+        if git_user_name_inferred="$(git config --get user.name)"; then
+            echo "Do you want to use '$git_user_name_inferred' as git_user_name"
+            read -p "Do you want to use '$git_user_name' as git_user_name? (Y/n) " choice
+            choice=${choice:-Y}
+            if [[ $choice =~ ^[Yy]*$ ]]; then
+                git_user_name="$git_user_name_inferred"
+            fi
+        fi
+        if [[ -z $git_user_name ]]; then
+          read -p "What user name do you want to associate with this key for Git?" git_user_name
+        fi
+    fi
+      
     local git_config_allowed_signers_path="${git_config_dir}/allowed_signers"
     local git_config_identity_path="${git_config_dir}/conf.d/${identity}"
     local git_config_keycutter_path="${git_config_dir}/gitconfig-keycutter"
+
+    if ! [[ -d $git_config_dir ]]; then
+        echo "Creating directory: ${git_config_dir}"
+        mkdir -p "${git_config_dir}"
+    fi
 
     if ! git --no-pager config --global --get-regexp "^include\.path$" | grep -q "${git_config_keycutter_path}"; then
         echo "Add include.path to global git config: ${git_config_keycutter_path}"
@@ -200,13 +235,7 @@ git-config-create() {
     # XXX Decide on what email to use - do we require one to be provided? ask for it interactively?
     # XXX Ask if user already has one, and if not, ask if we should create one for them
     echo "Add key to allowed_signers file ($git_config_allowed_signers_path) for verifying ssh keys"
-    local allowed_signer_email="${git_email:-$(git config --get user.email)}"
-    if [[ -n $allowed_signer_email ]]; then
-      read -p "Please enter email to be used for signing commits: " allowed_signer_email
-    fi
-    echo "${allowed_signer_email} namespaces=\"git\" $(cat "${ssh_key_path}.pub")" >> "$git_config_allowed_signers_path"
-    [[ -n "$git_email" ]] && git config --file "$git_config_identity_path" user.email "$git_email"
-    [[ -n "$git_name" ]]  && git config --file "$git_config_identity_path" user.name "$git_name"
+    echo "${git_user_email} namespaces=\"git\" $(cat "${ssh_key_path}.pub")" >> "$git_config_allowed_signers_path"
 
     echo "Create conditional git include in $git_config_keycutter_path"
     git config \
@@ -214,13 +243,16 @@ git-config-create() {
       --replace "includeIf.hasconfig:remote.*.url:git@${identity}:*/**".path \
       "$git_config_identity_path"
 
-    local git_config_identity_dir="$( dirname "$git_config_identity_path")"
-    if ! [[ -d "$(dirname "$git_config_identity_dir")" ]]; then
+    local git_config_identity_dir="$(dirname "$git_config_identity_path")"
+    if ! [[ -d "$git_config_identity_dir" ]]; then
         echo "Creating directory: ${git_config_identity_dir}"
         mkdir -p "${git_config_identity_dir}"
     fi
 
     echo "Create git config for $identity in $git_config_identity_path"
+    touch "$git_config_identity_path"
+    git config --file "$git_config_identity_path" user.email "$git_user_email"
+    git config --file "$git_config_identity_path" user.name "$git_user_name"
     git config --file "$git_config_identity_path" commit.gpgsign true
     git config --file "$git_config_identity_path" gpg.format ssh
     git config --file "$git_config_identity_path" user.signingkey "$ssh_key_path"
@@ -300,8 +332,8 @@ create() {
     fi
 
     local ssh_key_tag=""
-    local git_email=""
-    local git_name=""
+    local git_user_email=""
+    local git_user_name=""
     local resident="no"
 
     while (( "$#" )); do
@@ -311,11 +343,11 @@ create() {
                 shift
                 ;;
             --email)
-                git_email="$2"
+                git_user_email="$2"
                 shift 2
                 ;;
             --name)
-                git_name="$2"
+                git_user_name="$2"
                 shift 2
                 ;;
             -h|--help)
@@ -346,7 +378,7 @@ create() {
     # Configure config file locations
     local base_config_dir="${KEYCUTTER_BASE_CONFIG_DIR:-"${HOME}/.keycutter"}"
     local git_config_dir="${KEYCUTTER_GIT_CONFIG_DIR:-"${base_config_dir}/git"}"
-    local git_identity_dir="${KEYCUTTER_GIT_CONFIG_DIR:-"${base_config_dir}/git"}/identities"
+    # local git_identity_dir="${KEYCUTTER_GIT_CONFIG_DIR:-"${base_config_dir}/git"}/identities"
     local ssh_identity_dir="${KEYCUTTER_SSH_CONFIG_DIR:-"${base_config_dir}/ssh/config.d"}"
     local ssh_key_dir="${KEYCUTTER_SSH_KEY_DIR:-"${base_config_dir}/ssh/keys"}"
 
@@ -370,7 +402,7 @@ create() {
     #
     # When the remote url include's the SSH Keytags "Identity Part"
     echo "Configure git to use the SSH Key for commit/tag signing for relevant repos"
-    git-config-create "$git_config_dir" "$ssh_key_path" "$identity" "$git_email" "$git_name"
+    git-config-create "$git_config_dir" "$ssh_key_path" "$identity" "$git_user_email" "$git_user_name"
 
     shopt -s nocasematch  # Enable case-insensitive pattern matching
     # If the SSH Keytag's Identity Part starts with 'github-' or 'gh-'
