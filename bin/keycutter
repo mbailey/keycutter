@@ -161,7 +161,7 @@ EOF
     fi
 
     # Ensure SSH configuration file for identity is included in ~/.ssh/config
-    local include_str="Include $(dirname "$ssh_identity_path")}/*"
+    local include_str="Include $(dirname "$ssh_identity_path")/*"
     # If keycutter SSH identity configs are not already Included in the SSH config
     touch ~/.ssh/config
     grep -qxF "$include_str" "${HOME}/.ssh/config" || {
