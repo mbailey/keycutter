@@ -201,7 +201,6 @@ git-config-create() {
     if [[ -z $git_user_email ]]; then
         local git_user_email_inferred
         if git_user_email_inferred="$(git config --get user.email)"; then
-            echo "Do you want to use '$git_user_email_inferred' as git_user_email"
             read -p "Do you want to use '$git_user_email_inferred' as git_user_email? (Y/n) " choice
             choice=${choice:-Y}
             if [[ $choice =~ ^[Yy]*$ ]]; then
@@ -216,8 +215,7 @@ git-config-create() {
     if [[ -z $git_user_name ]]; then
         local git_user_name_inferred
         if git_user_name_inferred="$(git config --get user.name)"; then
-            echo "Do you want to use '$git_user_name_inferred' as git_user_name"
-            read -p "Do you want to use '$git_user_name' as git_user_name? (Y/n) " choice
+            read -p "Do you want to use '$git_user_name_inferred' as git_user_name? (Y/n) " choice
             choice=${choice:-Y}
             if [[ $choice =~ ^[Yy]*$ ]]; then
                 git_user_name="$git_user_name_inferred"
