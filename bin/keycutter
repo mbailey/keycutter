@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -eu -o pipefail
 
-# Preview release for review - 18 March 2024
+# [preview] keycutter - Create FIDO SSH keys for authentication and commit signing.
 
-# keycutter - Create FIDO SSH keys for authentication and commit signing.
-#
+# Source the following files:
+_SLF_DIR="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
+source "${_SLF_DIR}/lib/functions"
+
 # Prerequisites:
 #
 # - Bash >= 4.0
@@ -35,6 +37,8 @@ set -eu -o pipefail
 #      E.g. Don't login to your personal GitHub account from a managed laptop. 
 #
 
+
+
 usage() {
     echo "Usage:"
     echo "       $(basename "$0") <ssh-keytag> [--git-email <value>] [--git-name <value>] [--resident]"
@@ -54,6 +58,8 @@ usage() {
     echo "  - user    : Service User this SSH Key authenticates as (e.g. 'alexdoe')"
 }
 
+## List SSH Keys
+
 ssh-keys-fido-resident(){
   echo >&2 "Resident FIDO SSH Keys:"
   ssh-keygen -K
@@ -70,6 +76,8 @@ ssh-keys-fido() {
   ssh-keys-fido-non-resident  
   ssh-keys-fido-resident  
 }
+
+## SSH Functions
 
 ssh-key-create() {
 
@@ -89,7 +97,7 @@ ssh-key-create() {
     echo "Generating FIDO SSH key: $ssh_key_path"
     if ! [[ -f "$ssh_key_path" ]]; then
         echo "Creating directory: $(dirname "$ssh_key_path")"
-        mkdir -p "$(dirname "$ssh_key_path")"
+        dir-ensure "$(dirname "$ssh_key_path")" 0700
     fi
 
     # XXX Check that yubikey is configured securely
@@ -147,7 +155,7 @@ ssh-config-create() {
     else
         if ! [[ -d $(dirname "$ssh_identity_path") ]]; then
             # Create missing dirs in path
-            mkdir -p "$(dirname "$ssh_identity_path")"
+            dir-ensure "$(dirname "$ssh_identity_path")" 0700
         fi
         echo "Create SSH configuration file $ssh_identity_path"
         cat > "$temp_file" <<-EOF
@@ -173,6 +181,9 @@ EOF
         mv "$temp_file" "${HOME}/.ssh/config"     # Move temp file to original location
     }
 }
+
+
+## Git Functions
 
 git-config-create() {
     local git_config_dir="${1:-}"
@@ -223,7 +234,7 @@ git-config-create() {
 
     if ! [[ -d $git_config_dir ]]; then
         echo "Creating directory: ${git_config_dir}"
-        mkdir -p "${git_config_dir}"
+        dir-ensure "${git_config_dir}" 0700
     fi
 
     if ! git --no-pager config --global --get-regexp "^include\.path$" | grep -q "${git_config_keycutter_path}"; then
@@ -246,7 +257,7 @@ git-config-create() {
     local git_config_identity_dir="$(dirname "$git_config_identity_path")"
     if ! [[ -d "$git_config_identity_dir" ]]; then
         echo "Creating directory: ${git_config_identity_dir}"
-        mkdir -p "${git_config_identity_dir}"
+        dir-ensure "${git_config_identity_dir}" 0700
     fi
 
     echo "Create git config for $identity in $git_config_identity_path"
@@ -258,6 +269,8 @@ git-config-create() {
     git config --file "$git_config_identity_path" user.signingkey "$ssh_key_path"
     git config --file "$git_config_identity_path" gpg.ssh.allowedSignersFile "${git_config_dir}/allowed_signers"
 }
+
+## GitHub Functions
 
 github-ssh-key-add() {
 
@@ -325,6 +338,8 @@ github-ssh-keys-signing() {
   github-ssh-keys | grep signing
 }
 
+## Keycutter Functions
+
 create() {
     if [[ $# -lt 1 ]]; then
         usage
@@ -385,6 +400,9 @@ create() {
     local ssh_key_path="${ssh_key_dir}/${ssh_key_tag}"      # Path SSH key will be written to
     # local git_identity_path="$git_identity_dir/${identity}" # Git config for SSH Key
     local ssh_identity_path="$ssh_identity_dir/${identity}" # SSH config for SSH Key
+
+    # Ensure base config directory exists and has correct permissions
+    dir-ensure "$base_config_dir" 0700
 
     echo "Create FIDO SSH Key for $ssh_key_tag"
     ssh-key-create "$ssh_key_path" "$ssh_key_tag" "$identity"

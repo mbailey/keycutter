@@ -1,0 +1,10 @@
+[user]
+	email = alexdoe@example.com
+	name = Alex Doe
+	signingkey = /home/m/.keycutter/ssh/keys/yk01@github-alexdoe-work
+[commit]
+	gpgsign = true
+[gpg]
+	format = ssh
+[gpg "ssh"]
+	allowedSignersFile = /home/m/.keycutter/git/allowed_signers

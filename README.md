@@ -78,13 +78,31 @@ SSH Keytags are labels that include two parts:
     git commit -S -m "I signed this commit with my new SSH Key"
     ```
 
+6. **Review Keycutter Configuration Directory:** or [view example files here](docs/keycutter-config-dir/example/).
+
+    ```shell
+    $ tree ~/.keycutter
+    /home/alexdoe/.keycutter
+    ├── git
+    │   ├── allowed_signers
+    │   ├── conf.d
+    │   │   └── github-alexdoe-work
+    │   └── gitconfig-keycutter
+    └── ssh
+        ├── config.d
+        │   └── github-alexdoe-work
+        └── keys
+            ├── yk01@github-alexdoe-work
+            └── yk01@github-alexdoe-work.pub
+    ```
+
 ## Installation
 
 ### Prerequisites
   
   - **Bash >= 4.0**
   - **Git >= 2.34.0**
-  - **GitHub CLI >= 2.0**
+  - **GitHub CLI >= 2.0** # BROKEN: ubuntu 2.4.0+dfsg1-2
   - **OpenSSH >= 8.2p1**
   - **Yubikey Manager**
 

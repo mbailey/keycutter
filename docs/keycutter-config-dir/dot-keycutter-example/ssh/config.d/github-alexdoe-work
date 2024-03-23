@@ -1,0 +1,5 @@
+Host github-alexdoe-work
+  User git
+  HostName github.com
+  IdentitiesOnly yes
+  IdentityFile /home/m/.keycutter/ssh/keys/yk01@github-alexdoe-work
