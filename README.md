@@ -36,6 +36,7 @@ SSH Keytags are labels that include two parts:
 ## Key Concepts
 
 - [SSH Keytags](docs/ssh-keytags.md)
+- [Keycutter Config Directory](docs/keycutter-config-dir/README.md) ]
 - [Defense layers to protect against key misuse](docs/defense-layers-to-protect-against-key-misuse.md)
 - [Why FIDO SSH Keys are good for Git access on managed devices](docs/why-fido-ssh-keys-are-good-for-git-access-on-managed-devices.md)
 - [Design goals of the project](docs/design-goals.md)
