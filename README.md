@@ -23,10 +23,11 @@ FIDO SSH keys reside in Hardware Security Keys which allow for:
 - **User Presence Verification**: defend against remote attacks and malware
 - **PIN retry lockout**: defend against stolen key
 
+
 Keycutter introduces the concept of **SSH Keytags** to ease identification of
 mutiple SSH Keys on multiple devices.
 
-SSH Keytags are labels that include two parts:
+SSH Keytags are labels in the format : **Device@Service-Identity**
 
 - **Device**: The **hardware security key** or computer where the private key resides.
 - **Service Identity**: the **user account** on the **remote service**
@@ -36,7 +37,7 @@ SSH Keytags are labels that include two parts:
 ## Key Concepts
 
 - [SSH Keytags](docs/ssh-keytags.md)
-- [Keycutter Config Directory](docs/keycutter-config-dir/README.md) ]
+- [Keycutter Config Directory](docs/keycutter-config-dir/README.md) 
 - [Defense layers to protect against key misuse](docs/defense-layers-to-protect-against-key-misuse.md)
 - [Why FIDO SSH Keys are good for Git access on managed devices](docs/why-fido-ssh-keys-are-good-for-git-access-on-managed-devices.md)
 - [Design goals of the project](docs/design-goals.md)
@@ -65,7 +66,7 @@ SSH Keytags are labels that include two parts:
     keycutter create laptop@github-alexdoe
     ```
 
-4. **Clone a GitHub repo using your new key**: 
+4. **Clone any GitHub repo using your new key**: 
 
     ```shell
     git clone git@github-alexdoe:bash-my-aws/keycutter
