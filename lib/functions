@@ -1,4 +1,8 @@
-# Keycutter Functions
+# functions - Functions used by SSH Keycutter
+#
+# - dir-ensure(): Ensure directory exists with correct permissions
+# - log(): Write colorized messages to stdout or stderr
+
 
 # Ensure directory exists with correct permissions
 dir-ensure() {
@@ -29,21 +33,63 @@ dir-ensure() {
     fi
 }
 
-# [TODO] Output Functions for colorised and loglevel based output
-#
-## General
-#
-# Info: General information
-# Warn: Something went wrong but not critical
-# Error: Something went wrong
-# Debug: Extra information for debugging
-# Trace: Detailed information for debugging
-# Prompt: Ask for user input
-#
-## Actions - Highlight any changes made
-#
-# Create: New file or directory created
-# Modify: File or directory modified
-# Delete: File or directory deleted
-# List: List of items
-# Show: Show an item
+# Write colorized messages to stdout or stderr
+log() {
+    local message="$*"
+    local first_word_downcased=$(awk '{print tolower($1)}' <<< "$message")
+
+    if [[ "$first_word_downcased" == "debug" && -z $DEBUG ]]; then
+        return
+    fi
+
+    local destination='stdout'
+    local prefix
+
+    # Color code assignments by color names
+    local blue="\033[0;34m"
+    local yellow="\033[0;33m"
+    local red="\033[0;31m"
+    local cyan="\033[0;36m"
+    local green="\033[0;32m"
+    local magenta="\033[1;35m"
+    local orange="\033[38;5;208m"
+    local reset="\033[0m"
+
+    # Default colour
+    local color="$reset"
+
+    # Define color and prefix based on action type
+    case $first_word_downcased in
+        info)                 color="$blue";    prefix="️🛈 " ; destination='stderr';;
+        warn)                 color="$yellow";  prefix="⚠️ "; destination='stderr';;
+        error)                color="$red";     prefix="🚫 " ;;
+        debug)                color="$cyan";    prefix="🔍 " ;;
+        trace)                color="$green";   prefix="🔎 " ;;
+        prompt)               color="$magenta"; prefix="❓ " ;;
+        add|create|generate)  color="$orange";  prefix="➕ " ;;
+        change|modify|update) color="$orange";  prefix="🔄 " ;;
+        configure)            color="$orange";  prefix="🔄 " ;;
+        delete|remove|rm)     color="$orange";  prefix="➖ " ;;
+        start)                color="$orange";  prefix="▶️  " ;;
+        stop)                 color="$orange";  prefix="⏹️ " ;;
+        restart|reload)       color="$orange";  prefix="🔁 " ;;
+        *)                    color="$reset";   prefix="" ;;
+    esac
+
+    # Check for NO_COLOR or if output is not a terminal
+    if [[ -n ${NO_COLOR:-} ]] || [[ ! -t 1 ]]; then
+        # Check if destination is STDERR
+        if [[ $destination == 'stderr' ]]; then
+            >&2 printf "%s%s\n" "$prefix" "$message"
+        else
+            printf "%s%s\n" "$prefix" "$message"
+        fi
+    else
+        # Check if destination is STDERR
+        if [[ $destination == 'stderr' ]]; then
+            >&2 printf "%b%s%s%b\n" "$color" "$prefix" "$message" "$reset"
+        else
+            printf "%b%s%s%b\n" "$color" "$prefix" "$message" "$reset"
+        fi
+    fi
+}
