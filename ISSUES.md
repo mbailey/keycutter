@@ -6,7 +6,7 @@ Known issues / annoyances you may encounter.
 
 **Cause:** unknown
 
-Annoyance where use is prompted with 'yes/no' when using key to sign/push git commit in VSCode.
+Annoyance where user is prompted with 'yes/no' when using key to sign/push git commit in VSCode.
 
 ![](assets/vscode-prompts-with-key-has-fingerprint.png)
 
