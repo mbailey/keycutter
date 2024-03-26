@@ -189,7 +189,7 @@ Setting up GitHub specific configuration...
 Creating SSH configuration file /home/alex/.keycutter/ssh/config.d/github-alexdoe
 Adding SSH key to GitHub for auth and commit/tag signing: /home/alex/.keycutter/ssh/keys/laptop@github-alexdoe
 Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) y
-  ✓ Logged in to github.com as mbailey (keyring)
+  ✓ Logged in to github.com as someuser (keyring)
 ? You're already logged into github.com. Do you want to re-authenticate? No
 GitHub CLI: Required scopes are available.
 Adding SSH authentication key (/home/alex/.keycutter/ssh/keys/laptop@github-alexdoe.pub) to GitHub
