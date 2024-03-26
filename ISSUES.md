@@ -8,6 +8,8 @@ Known issues / annoyances you may encounter.
 
 Annoyance where use is prompted with 'yes/no' when using key to sign/push git commit in VSCode.
 
+![](assets/vscode-prompts-with-key-has-fingerprint.png)
+
     "Key" has fingerprint ""
     Are you sure yuou want to coninue connecting?
 
