@@ -15,8 +15,8 @@ dir-ensure() {
     fi
 
     if [[ ! -d "$path" ]]; then
+        log "Create directory '$path' with permissions '$permissions'"
         install -d -m "$permissions" "$path"
-        echo "Created directory '$path' with permissions '$permissions'"
     else
         local current_permissions
         current_permissions=$(ls -ld "$path" | awk '{print $1}')
@@ -26,19 +26,38 @@ dir-ensure() {
         new_permissions=$(ls -ld "$path" | awk '{print $1}')
         
         if [[ "$current_permissions" != "$new_permissions" ]]; then
-            echo "Directory permissions modified: $path"
+            log "Modify Directory permissions: $path"
         else
-            echo "No changes made to $path"
+            log "DEBUG : No changes required to $path"
         fi
     fi
+}
+
+## List SSH Keys
+
+ssh-keys-fido-resident(){
+  log "Resident FIDO SSH Keys:"
+  ssh-keygen -K
+}
+
+ssh-keys-fido-non-resident(){
+  local base_config_dir="${KEYCUTTER_BASE_CONFIG_DIR:-"${HOME}/.keycutter"}"
+  local ssh_key_dir="${KEYCUTTER_SSH_KEY_DIR:-"${base_config_dir}/ssh/keys"}"
+  log >&2 "Non-resident FIDO SSH Keys:"
+  grep -l "sk-" "$ssh_key_dir"/*.pub
+}
+
+ssh-keys-fido() {
+  ssh-keys-fido-non-resident  
+  ssh-keys-fido-resident  
 }
 
 # Write colorized messages to stdout or stderr
 log() {
     local message="$*"
-    local first_word_downcased=$(awk '{print tolower($1)}' <<< "$message")
+    local first_word_downcased=$(echo "$message" | awk '{print tolower($1)}' | sed 's/[[:punct:]]*$//')
 
-    if [[ "$first_word_downcased" == "debug" && -z $DEBUG ]]; then
+    if [[ "$first_word_downcased" == "debug" && -z ${DEBUG:-} ]]; then
         return
     fi
 
@@ -61,12 +80,13 @@ log() {
     # Define color and prefix based on action type
     case $first_word_downcased in
         info)                 color="$blue";    prefix="️🛈 " ; destination='stderr';;
-        warn)                 color="$yellow";  prefix="⚠️ "; destination='stderr';;
+        warn|note)                 color="$yellow";  prefix="⚠️ "; destination='stderr';;
         error)                color="$red";     prefix="🚫 " ;;
         debug)                color="$cyan";    prefix="🔍 " ;;
-        trace)                color="$green";   prefix="🔎 " ;;
+        success)              color="$green";   prefix="✅ " ;;
         prompt)               color="$magenta"; prefix="❓ " ;;
         add|create|generate)  color="$orange";  prefix="➕ " ;;
+        append|prepend)       color="$orange";  prefix="➕ " ;;
         change|modify|update) color="$orange";  prefix="🔄 " ;;
         configure)            color="$orange";  prefix="🔄 " ;;
         delete|remove|rm)     color="$orange";  prefix="➖ " ;;
