@@ -176,8 +176,12 @@ EOF
         cat "${HOME}/.ssh/config" >> "$temp_file" # Append original file to temp file
         mv "$temp_file" "${HOME}/.ssh/config"     # Move temp file to original location
     }
+
     # Ensure SSH configuration files for identities are Included from keycutter SSH config
-    echo "Include $ssh_identity_dir/*" >> "$ssh_config_keycutter_path"
+    local include_str="Include $ssh_identity_dir/*"
+    if ! grep -qxF "$include_str" "$ssh_config_keycutter_path"; then
+      echo "$include_str" >> "$ssh_config_keycutter_path"
+    fi
 }
 
 
