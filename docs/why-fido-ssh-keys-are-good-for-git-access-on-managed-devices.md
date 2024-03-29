@@ -28,7 +28,7 @@
 
 ## SSH
 
-- Allows conf.d style inclusion of config files
+- Allows config.d style inclusion of config files
 
 ## What this enables us to do
 

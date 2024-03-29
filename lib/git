@@ -1,0 +1,104 @@
+## Git Functions
+
+git-config-create() {
+    local ssh_key_path="${1:-}"
+    local git_user_email="${2:-}"
+    local git_user_name="${3:-}"
+
+    local identity="$(ssh-keytag-identity "${ssh_key_path}")"
+
+    local keycutter_config_dir="${KEYCUTTER_CONFIG_DIR:-"${HOME}/.keycutter"}"
+    local git_config_dir="${keycutter_config_dir}/git"
+    local git_config_allowed_signers_path="${keycutter_config_dir}/git/allowed_signers"
+    local git_config_identity_path="${keycutter_config_dir}/git/config.d/${identity}}"
+    local git_config_keycutter_path="${keycutter_config_dir}/gitconfig-keycutter"
+
+    log "Create Git config for this key"
+
+    if [[ -z $ssh_key_path || -z $identity ]]; then
+        # XXX This should be an error message
+        usage
+        return 1
+    fi
+
+    if [[ -z $git_user_email ]]; then
+        local git_user_email_inferred
+        if git_user_email_inferred="$(git config --get user.email)"; then
+            read -p "Do you want to use '$git_user_email_inferred' as git_user_email? (Y/n) " choice
+            choice=${choice:-Y}
+            if [[ $choice =~ ^[Yy]*$ ]]; then
+                git_user_email="$git_user_email_inferred"
+            fi
+        fi
+        if [[ -z $git_user_email ]]; then
+          read -p "What email address do you want to associate with this key for Git? " git_user_email
+        fi
+    fi
+
+    if [[ -z $git_user_name ]]; then
+        local git_user_name_inferred
+        if git_user_name_inferred="$(git config --get user.name)"; then
+            read -p "Do you want to use '$git_user_name_inferred' as git_user_name? (Y/n) " choice
+            choice=${choice:-Y}
+            if [[ $choice =~ ^[Yy]*$ ]]; then
+                git_user_name="$git_user_name_inferred"
+            fi
+        fi
+        if [[ -z $git_user_name ]]; then
+          read -p "What user name do you want to associate with this key for Git? " git_user_name
+        fi
+    fi
+      
+    # Ensure things exist
+    dir-ensure "${git_config_dir}" 0700
+    git-include-ensure "${git_config_keycutter_path}"
+
+    # XXX Setup allowed_signers file for verifying ssh keys
+    # XXX Decide on what email to use - do we require one to be provided? ask for it interactively?
+    # XXX Ask if user already has one, and if not, ask if we should create one for them
+    log "Add key to allowed_signers file ($git_config_allowed_signers_path) for verifying ssh keys"
+    log "${git_user_email} namespaces=\"git\" $(cat "${ssh_key_path}.pub")" >> "$git_config_allowed_signers_path"
+
+    log "Create conditional git include in $git_config_keycutter_path"
+    git config \
+      --file "${git_config_keycutter_path}" \
+      --replace "includeIf.hasconfig:remote.*.url:git@${identity}:*/**".path \
+      "$git_config_identity_path"
+
+    local git_config_identity_dir="$(dirname "$git_config_identity_path")"
+    if ! [[ -d "$git_config_identity_dir" ]]; then
+        dir-ensure "${git_config_identity_dir}" 0700
+    fi
+
+    log "Create git config for $identity in $git_config_identity_path"
+    touch "$git_config_identity_path"
+    git config --file "$git_config_identity_path" user.email "$git_user_email"
+    git config --file "$git_config_identity_path" user.name "$git_user_name"
+    git config --file "$git_config_identity_path" commit.gpgsign true
+    git config --file "$git_config_identity_path" gpg.format ssh
+    git config --file "$git_config_identity_path" user.signingkey "$ssh_key_path"
+    git config --file "$git_config_identity_path" gpg.ssh.allowedSignersFile "${git_config_dir}/allowed_signers"
+}
+
+git-include-ensure() {
+    local includee="${1:-}"
+    local includer="${2:-"${GIT_CONFIG:-"${HOME}/.gitconfig"}"}"
+
+    if [[ -z $includee ]]; then
+            log "Error: git-include-ensure: includee is required"
+            return 1
+    fi
+
+    echo dir-ensure "$(dirname "${includee}")" 0700
+    log "Create dir if missing: $(dirname "${includer}")"
+    mkdir -p "$(dirname "${includer}")"
+
+    log "Create includee and includer files if missing: ${includee} ${includer}"
+    touch "${includee}"
+    touch "${includer}"
+
+    if ! git --no-pager config --file "${includer}" --get-regexp "^include\.path$" | grep -q "${includee}"; then
+        log "Add include.path entry to user's git config for '${includee}'"
+        git config --file "${includer}" --add include.path "${includee}"
+    fi
+}

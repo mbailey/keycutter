@@ -1,0 +1,105 @@
+# functions - Functions used by SSH Keycutter
+#
+# - dir-ensure(): Ensure directory exists with correct permissions
+# - log(): Write colorized messages to stdout or stderr
+
+
+# Ensure directory exists with correct permissions
+dir-ensure() {
+    local path="${1:?}"
+    local permissions="${2:-0700}"
+
+    if [[ $# == 0 ]]; then
+        echo "Usage: dir-ensure <path> [<permissions>]"
+        return 1
+    fi
+
+    # Check if the path exists in any form (file, directory, symlink, etc.)
+    if [[ -e "$path" || -L "$path" ]]; then
+        # If the path is not a directory, return an error.
+        if [[ ! -d "$path" ]]; then
+            log "Error: The path '$path' exists but is not a directory."
+            return 1
+        fi
+    fi
+
+    if [[ ! -d "$path" ]]; then
+        log "Create directory '$path' with permissions '$permissions'"
+        install -d -m "$permissions" "$path"
+    else
+        local current_permissions
+        current_permissions=$(ls -ld "$path" | awk '{print $1}')
+        
+        install -d -m "$permissions" "$path"
+        local new_permissions
+        new_permissions=$(ls -ld "$path" | awk '{print $1}')
+        
+        if [[ "$current_permissions" != "$new_permissions" ]]; then
+            log "Modify Directory permissions: $path"
+        else
+            log "DEBUG : No changes required to $path"
+        fi
+    fi
+}
+
+# Write colorized messages to stdout or stderr
+log() {
+    local message="$*"
+    local first_word_downcased=$(echo "$message" | awk '{print tolower($1)}' | sed 's/[[:punct:]]*$//')
+
+    if [[ "$first_word_downcased" == "debug" && -z ${DEBUG:-} ]]; then
+        return
+    fi
+
+    local destination='stdout'
+    local prefix
+
+    # Color code assignments by color names
+    local blue="\033[0;34m"
+    local yellow="\033[0;33m"
+    local red="\033[0;31m"
+    local cyan="\033[0;36m"
+    local green="\033[0;32m"
+    local magenta="\033[1;35m"
+    local orange="\033[38;5;208m"
+    local reset="\033[0m"
+
+    # Default colour
+    local color="$reset"
+
+    # Define color and prefix based on action type
+    case $first_word_downcased in
+        info)                 color="$blue";    prefix="️🛈 " ; destination='stderr';;
+        warn|note)                 color="$yellow";  prefix="⚠️ "; destination='stderr';;
+        error)                color="$red";     prefix="🚫 " ;;
+        debug)                color="$cyan";    prefix="🔍 " ;;
+        success)              color="$green";   prefix="✅ " ;;
+        prompt)               color="$magenta"; prefix="❓ " ;;
+        add|create|generate)  color="$orange";  prefix="➕ " ;;
+        append|prepend)       color="$orange";  prefix="➕ " ;;
+        change|modify|update) color="$orange";  prefix="🔄 " ;;
+        configure)            color="$orange";  prefix="🔄 " ;;
+        delete|remove|rm)     color="$orange";  prefix="➖ " ;;
+        start)                color="$orange";  prefix="▶️  " ;;
+        stop)                 color="$orange";  prefix="⏹️ " ;;
+        restart|reload)       color="$orange";  prefix="🔁 " ;;
+        *)                    color="$reset";   prefix="" ;;
+    esac
+
+    # Check for NO_COLOR or if output is not a terminal
+    if [[ -n ${NO_COLOR:-} ]] || [[ ! -t 1 ]]; then
+        # Check if destination is STDERR
+        if [[ $destination == 'stderr' ]]; then
+            >&2 printf "%s%s\n" "$prefix" "$message"
+        else
+            printf "%s%s\n" "$prefix" "$message"
+        fi
+    else
+        # Check if destination is STDERR
+        if [[ $destination == 'stderr' ]]; then
+            >&2 printf "%b%s%s%b\n" "$color" "$prefix" "$message" "$reset"
+        else
+            printf "%b%s%s%b\n" "$color" "$prefix" "$message" "$reset"
+        fi
+    fi
+}

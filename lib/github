@@ -1,0 +1,68 @@
+## GitHub Functions
+
+github-ssh-key-add() {
+
+    # XXX Replace if same SSH Keytag exists on GitHub
+
+    local ssh_key_path="$1"
+    local ssh_keytag="$2"
+
+    if [[ -z "$ssh_keytag" || -z "$ssh_key_path" ]]; then 
+        log "Error: ssh_keytag and ssh_key_path are required."
+        return 1
+    fi
+    
+    read -p "Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) " choice
+    choice=${choice:-Y}
+    [[ $choice =~ ^[Yy]*$ ]] || return 1
+
+    if github-auth; then
+        log "Add SSH authentication key (${ssh_key_path}.pub) to GitHub"
+        gh ssh-key add --type authentication --title "${ssh_keytag}" "${ssh_key_path}.pub"
+        log "Add SSH signing key (${ssh_key_path}.pub) to GitHub"
+        gh ssh-key add --type signing --title "${ssh_keytag}" "${ssh_key_path}.pub"
+        log
+        # echo "Log out of GitHub"
+        # gh auth logout # XXX Only if we logged in or requested additional scopes
+        log "Note:  GitHub Organisations that enable or enforce SAML SSO will require additional setup."
+    else
+        log "Error: Not uploading to key to GitHub (not authenticated)"
+        return 1
+    fi
+}
+
+github-auth() {
+    # Ensure user is logged in to GitHub with required scopes
+
+    # Show GitHub login status
+    gh auth status 2>&1 | grep 'Logged in to github.com as' >&2
+    # Give user a chance to login or re-login as a different user
+    gh auth login \
+      --web \
+      --git-protocol https \
+      --scopes admin:public_key,admin:ssh_signing_key
+
+    local gh_auth_token_scopes
+    # If user is authenticated to GitHub
+    if gh_auth_token_scopes=$(gh auth status | grep scopes); then 
+      if [[ $gh_auth_token_scopes =~ 'admin:public_key' ]] && [[ $gh_auth_token_scopes =~ 'admin:ssh_signing_key' ]] ; then
+        log >&2 "GitHub CLI: Required scopes are available."
+      else
+        log >&2 "GitHub CLI: Necessary scopes are not available. Requesting additional scopes..."
+        gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key
+      fi
+    fi
+}
+
+github-ssh-keys() {
+  github-auth
+  gh ssh-key list
+}
+
+github-ssh-keys-authentication() {
+  github-ssh-keys | grep authentication
+}
+
+github-ssh-keys-signing() {
+  github-ssh-keys | grep signing
+}

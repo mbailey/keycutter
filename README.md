@@ -10,6 +10,12 @@ Ever wondered how to contribute to an open-source project on GitHub using a
 work-managed (i.e. untrusted) laptop, without compromising the security of your
 personal GitHub account? Keycutter was born trying to solve that problem.
 
+**Benefits**:
+
+- Automatically selects correct SSH key for:
+    - Signing your Git commits
+    - Pushing / Pulling from repos
+
 While hardware security keys have long supported SSH Keys (via GPG), adoption
 has been limited by the complexity of creating and managing them. FIDO SSH
 Keys, introduced in 2020, support multiple keys coexisting on the same device
@@ -22,7 +28,6 @@ FIDO SSH keys reside in Hardware Security Keys which allow for:
 - **No known way to extract the private key from the device**
 - **User Presence Verification**: defend against remote attacks and malware
 - **PIN retry lockout**: defend against stolen key
-
 
 Keycutter introduces the concept of **SSH Keytags** to ease identification of
 mutiple SSH Keys on multiple devices.
@@ -87,7 +92,7 @@ SSH Keytags are labels in the format : **Device@Service-Identity**
     /home/alexdoe/.keycutter
     ├── git
     │   ├── allowed_signers
-    │   ├── conf.d
+    │   ├── config.d
     │   │   └── github-alexdoe-work
     │   └── gitconfig-keycutter
     └── ssh

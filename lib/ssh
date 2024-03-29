@@ -1,0 +1,155 @@
+## SSH Functions
+
+ssh-keytag-create(){
+    # Generate a default SSH Keytag
+    local device="${1:-$(hostname)}"
+    local service="${2:-github}"
+    local user="${3:-$(whoami)}"
+    echo "${device}@${service}-${user}"
+}
+
+ssh-keytag() {
+    # Extract SSH Keytag from path
+    echo "$(basename "${1:-}")" # Strip path if filename is provided
+}
+
+ssh-keytag-device() {
+    # Extract the Device part of the SSH Keytag
+    local ssh_keytag="$(basename "${1:-}")" # Strip path if filename is provided
+    echo "${ssh_keytag%@*}"
+}
+
+ssh-keytag-identity() {
+    # Extract the Identity part of the SSH Keytag
+    local ssh_keytag="$(basename "${1:-}")" # Strip path if filename is provided
+    echo "${ssh_keytag#*@}"
+}
+
+ssh-key-create() {
+    # XXX Check that yubikey is configured securely
+    # XXX 1. First use of key must require PIN to unlock key
+    # XXX 2. Key must be set to require touch to use
+
+    local ssh_key_path="${1:-}"
+    local resident="${2:-}"
+    local ssh_keytag="$(ssh-keytag "${ssh_key_path}")"        # Extract SSH Keytag from path
+    local identity="$(ssh-keytag-identity "${ssh_key_path}")" # Remove 'device@' from SSH Keytag
+
+    if [[ -z $ssh_key_path || -z $ssh_keytag || -z $identity ]]; then
+        usage
+        return 1
+    fi
+    
+    dir-ensure "$(dirname "$ssh_key_path")" 0700
+
+    log "Generate FIDO SSH key: $ssh_key_path"
+    # If resident is set, add -O resident option
+    local resident_key_option=${resident:+-O resident}
+    # Unquoted $resident_key_option is intentional to allow it to be empty
+    ssh-keygen -t ecdsa-sk -f "$ssh_key_path" -C "${ssh_keytag}" $resident_key_option
+}
+
+ssh-config-create() {
+
+    # Create or update SSH configuration file for the identity
+
+    local ssh_key_path="${1:-}"
+    local keycutter_config_dir="${2:-"${KEYCUTTER_CONFIG_DIR:-"${HOME}/.keycutter"}"}"
+
+    local identity="$(ssh-keytag-identity "${ssh_key_path}")"
+
+    if [[ -z "$kc_config_dir" || -z "$ssh_key_path" || -z "$identity" ]]; then
+        usage # XXX This should be an error message
+        return 1
+    fi
+
+    local ssh_identity_dir="${keycutter_config_dir}/ssh/config.d"
+    local ssh_identity_path="${keycutter_config_dir}/ssh/config.d/${identity}"
+    local ssh_config_keycutter_path="${keycutter_config_dir}/ssh/sshconfig-keycutter"
+
+    dir-ensure "$(dirname "${ssh_identity_path}")" 0700
+
+    temp_file="$(mktemp)"
+    # If we already have a config file for this identity
+    if [[ -f $ssh_identity_path ]]; then
+        log "SSH configuration file exists ($ssh_identity_path)"
+        # If the ssh_key_path is not already in the file, add it
+        if ! grep -qxF "$ssh_key_path" "$ssh_identity_path"; then
+            log "Add IdentityFile $ssh_key_path to $ssh_identity_path"
+            echo "IdentityFile $ssh_key_path" >> "$ssh_identity_path"
+        else
+            log "IdentityFile $ssh_key_path already in $ssh_identity_path"
+        fi
+    else
+        log "Create SSH configuration file $ssh_identity_path"
+        cat > "$temp_file" <<-EOF
+Host $identity
+  User git
+  HostName github.com
+  IdentitiesOnly yes
+  IdentityFile $ssh_key_path
+EOF
+        mv "$temp_file" "$ssh_identity_path"
+    fi
+
+    # Ensure SSH configuration files for identities are Included from keycutter SSH config
+    local include_str="Include $ssh_identity_dir/*"
+    if ! grep -qxF "$include_str" "$ssh_config_keycutter_path"; then
+      echo "$include_str" >> "$ssh_config_keycutter_path"
+    fi
+
+    # Ensure Keycutter SSH config is Included from ~/.ssh/config
+    ssh-config-include "${ssh_config_keycutter_path}" 
+}
+
+ssh-config-include() {
+
+    local ssh_user_configfile="${1:-"${KEYCUTTER_SSH_USER_CONFIGFILE:-"${HOME}/.ssh/config"}"}"
+
+    local ssh_custom_configfile="${KEYCUTTER_CONFIG_DIR}/sshconfig-keycutter"
+
+    # Ensure SSH configuration files for identities are Included from ~/.ssh/config
+    #
+    # This is done via an Include directive in the ~/.ssh/config file that Includes
+    # a keycutter specific configuration file that in turn Includes all the identity
+    # specific configuration files.
+    #
+    local include_str="Include $ssh_custom_configfile"
+
+    # Resolve to actual file if symlink (e.g. user manages dotfiles with symlinks)
+    [[ -L "${ssh_user_configfile}" ]] && ssh_user_configfile=$(readlink -f "${ssh_user_configfile}")
+
+    dir-ensure "$(dirname "$ssh_user_configfile")" 0700 # Ensure directory exists
+    touch "$ssh_user_configfile"                        # Ensure file exists
+
+    # Check if the include string is already in the config to avoid duplicates
+    if ! grep -qxF "${include_str}" "${ssh_user_configfile}"; then
+
+        log "Backup SSH configuration file: ${ssh_user_configfile}"
+        # Backup before modification
+        cp "${ssh_user_configfile}" "${ssh_user_configfile}.backed_up_by_keycutter.$(date +%s)"
+
+        log "Prepend keycutter Include to ${ssh_user_configfile}"
+        # Atomic, in-place insertion of Include directive at the start of the file, if not already included
+        sed -i "1s;^;${include_str}\n;" "${ssh_user_configfile}"
+    fi
+
+}
+
+## List SSH Keys
+
+ssh-keys-fido-resident(){
+  log "Resident FIDO SSH Keys:"
+  ssh-keygen -K
+}
+
+ssh-keys-fido-non-resident(){
+  local ssh_key_dir="${KEYCUTTER_SSH_KEY_DIR:-"${KEYCUTTER_CONFIG_DIR}/ssh/keys"}"
+  log >&2 "Non-resident FIDO SSH Keys:"
+  grep -l "sk-" "$ssh_key_dir"/*.pub
+}
+
+ssh-keys-fido() {
+  ssh-keys-fido-non-resident  
+  ssh-keys-fido-resident  
+}

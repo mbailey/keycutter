@@ -15,7 +15,7 @@ $ tree ~/.keycutter
 /home/m/.keycutter
 ├── git
 │   ├── allowed_signers                  # Verify commits signed with SSH Keys
-│   ├── conf.d
+│   ├── config.d
 │   │   └── github-alexdoe-work          # Git config associated with this key
 │   └── gitconfig-keycutter              # Conditionally includes config.d files
 └── ssh                     
