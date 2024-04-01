@@ -6,6 +6,11 @@ set -eu -o pipefail
 _SLF_DIR="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${_SLF_DIR}/lib/functions"
 
+# Set any undefined environment variables to default values
+: "${KEYCUTTER_CONFIG_DIR:="$HOME/.keycutter"}"
+: "${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}"
+: "${GIT_CONFIG:="${HOME}/.gitconfig"}"
+
 # Prerequisites:
 #
 # - Bash >= 4.0
@@ -61,11 +66,6 @@ create() {
         usage
         exit 1
     fi
-
-    # Set any undefined environment variables to default values
-    : "${KEYCUTTER_CONFIG_DIR:="$HOME/.keycutter"}"
-    : "${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}"
-    : "${GIT_CONFIG:="${HOME}/.gitconfig"}"
 
     # Set default values, override with command line options
     local git_user_email=""
