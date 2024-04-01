@@ -6,21 +6,20 @@ alias: SSH Keycutter
 
 *18 Mar 2024 - Preview release for review only*
 
-Ever wondered how to contribute to an open-source project on GitHub using a
-work-managed (i.e. untrusted) laptop, without compromising the security of your
-personal GitHub account? Keycutter was born trying to solve that problem.
+Ever wondered how to contribute to an open-source project on GitHub from an employer managed (i.e. untrusted) laptop, without compromising the security of your personal GitHub account? Keycutter came out of an attempt to solve this problem but evolved into a tool to make managment of FIDO SSH Keys easy.
 
-**Benefits**:
+## Keycutter creates
 
-- Automatically selects correct SSH key for:
-    - Signing your Git commits
-    - Pushing / Pulling from repos
+- FIDO SSH Keys on Hardware Security Keys
+- Git config:
+    - Commit and tag signing
+    - User Name and Email
+- SSH config:
+    - Host alias automates SSH Key selection for authenticate
 
-While hardware security keys have long supported SSH Keys (via GPG), adoption
-has been limited by the complexity of creating and managing them. FIDO SSH
-Keys, introduced in 2020, support multiple keys coexisting on the same device
-and Keycutter can reduce the time and effort required to create and manage them
-from hours to minutes.
+*While initially created for use with Yubikeys and GitHub, Keycutter can support other devices and services.*
+
+## FIDO SSH Keys
 
 FIDO SSH keys reside in Hardware Security Keys which allow for:
 
@@ -29,15 +28,24 @@ FIDO SSH keys reside in Hardware Security Keys which allow for:
 - **User Presence Verification**: defend against remote attacks and malware
 - **PIN retry lockout**: defend against stolen key
 
-Keycutter introduces the concept of **SSH Keytags** to ease identification of
-mutiple SSH Keys on multiple devices.
+## SSH Keytags
 
-SSH Keytags are labels in the format : **Device@Service-Identity**
+**SSH Keytags** are labels to help organise SSH Keys across multiple devices and services.
+
+SSH Keytag format : 
+
+    Device@Service-Identity
 
 - **Device**: The **hardware security key** or computer where the private key resides.
 - **Service Identity**: the **user account** on the **remote service**
 
-*While initially created for use with GitHub and Yubikeys, Keycutter supports other uses.*
+SSH Keytags are used:
+
+- in the SSH Key filename
+- in the public key comment
+- In the key name on services like GitHub
+
+*Read more about [SSH Keytags](docs/ssh-keytags.md)*
 
 ## Key Concepts
 
@@ -285,3 +293,5 @@ I decided to explore how I could defend against the operator of a managed device
 accessing **credentials** or **data** they should not have access to.
 
 SSH Key Cutter is one project to come out of this.
+
+![](../../../../../../../junction-box.png)

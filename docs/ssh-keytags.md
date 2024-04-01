@@ -1,4 +1,9 @@
-# SSH Keytags - device@service-identity
+---
+alias: SSH Keytags
+---
+# SSH Keytags
+
+**Format:** device@service-identity
 
 SSH Keytags are labels that assist with identification, management and auditing of SSH Keys.
 
