@@ -10,7 +10,7 @@ git-config-create() {
     local keycutter_config_dir="${KEYCUTTER_CONFIG_DIR:-"${HOME}/.keycutter"}"
     local git_config_dir="${keycutter_config_dir}/git"
     local git_config_allowed_signers_path="${keycutter_config_dir}/git/allowed_signers"
-    local git_config_identity_path="${keycutter_config_dir}/git/config.d/${identity}}"
+    local git_config_identity_path="${keycutter_config_dir}/git/config.d/${identity}"
     local git_config_keycutter_path="${keycutter_config_dir}/gitconfig-keycutter"
 
     log "Create Git config for this key"
