@@ -3,6 +3,8 @@ alias: SSH Keytags
 ---
 # SSH Keytags
 
+Note: Change to Keytag format is coming
+
 **Format:** device@service-identity
 
 SSH Keytags are labels that assist with identification, management and auditing of SSH Keys.
