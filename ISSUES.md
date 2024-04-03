@@ -2,8 +2,15 @@
 
 Known issues / annoyances you may encounter.
 
+- **Keycutter does not specify userid for resident key:** Work in progress
+- **[Bundled version of OpenSSH with macOS Monterey doesn't support FIDO2 yubikeys (github.com)](https://github.com/Yubico/libfido2/issues/464):** OpenSSH 9.6p1 that ships with macOS doesn't work. homebrew? other library for FIDO2 support?
+- **[VSCode presents key fingerprint prompt for FIDO/U2F keys #165976](https://github.com/microsoft/vscode/pull/165976):** VSCode prompts user when FIDO SSH Key is used to sign / push commits
 
-## Specify userid for resident key
+## Notes
+
+### Keycutter does not specify userid for resident key
+
+Keycutter needs to be updated to specify userid for resident key.
 
 ```
 $ ssh-keygen -t ecdsa-sk -f "foo" -C "yaas" -O resident
@@ -15,7 +22,7 @@ A resident key scoped to 'ssh:' with user id 'null' already exists.
 Overwrite key in token (y/n)? 
 ```
 
-## VSCode prompts user when FIDO SSH Key is used to sign / push commits
+### VSCode prompts user when FIDO SSH Key is used to sign / push commits
 
 **Cause:** unknown
 
@@ -25,6 +32,3 @@ Annoyance where user is prompted with 'yes/no' when using key to sign/push git c
 
     "Key" has fingerprint ""
     Are you sure yuou want to coninue connecting?
-
-**GitHub Issues:**
-- [Avoid key fingerprint prompt for FIDO/U2F keys #165976](https://github.com/microsoft/vscode/pull/165976)
