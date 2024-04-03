@@ -156,7 +156,8 @@ create() {
     shopt -u nocasematch  # Disable case-insensitive pattern matching
 
     log "Success! Setup complete for key: $ssh_keytag"
-    echo -e "$demo_message" # Only for GitHub keys
+
+    [[ -n ${demo_message:-} ]] && echo -e "$demo_message" # Only for GitHub keys
 }
 
 list() {

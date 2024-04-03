@@ -31,7 +31,8 @@ ssh-key-create() {
     # XXX 2. Key must be set to require touch to use
 
     local ssh_key_path="${1:-}"
-    local resident="${2:-}"
+    local ssh_key_type="${2:-${KEYCUTTER_SSH_KEY_TYPE:-ecdsa-sk}}"
+    local resident="${3:-}"
     local ssh_keytag="$(ssh-keytag "${ssh_key_path}")"        # Extract SSH Keytag from path
     local identity="$(ssh-keytag-identity "${ssh_key_path}")" # Remove 'device@' from SSH Keytag
 
@@ -46,7 +47,8 @@ ssh-key-create() {
     # If resident is set, add -O resident option
     local resident_key_option=${resident:+-O resident}
     # Unquoted $resident_key_option is intentional to allow it to be empty
-    ssh-keygen -t ecdsa-sk -f "$ssh_key_path" -C "${ssh_keytag}" $resident_key_option
+    # ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "${ssh_keytag}" $resident_key_option
+    ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" $resident_key_option
 }
 
 ssh-config-create() {
@@ -107,6 +109,7 @@ ssh-config-include() {
     local ssh_user_configfile="${1:-"${KEYCUTTER_SSH_USER_CONFIGFILE:-"${HOME}/.ssh/config"}"}"
 
     local ssh_custom_configfile="${KEYCUTTER_CONFIG_DIR}/sshconfig-keycutter"
+    local backup_extension=".backed_up_by_keycutter.$(date +%s)"
 
     # Ensure SSH configuration files for identities are Included from ~/.ssh/config
     #
@@ -125,13 +128,9 @@ ssh-config-include() {
     # Check if the include string is already in the config to avoid duplicates
     if ! grep -qxF "${include_str}" "${ssh_user_configfile}"; then
 
-        log "Backup SSH configuration file: ${ssh_user_configfile}"
-        # Backup before modification
-        cp "${ssh_user_configfile}" "${ssh_user_configfile}.backed_up_by_keycutter.$(date +%s)"
-
-        log "Prepend keycutter Include to ${ssh_user_configfile}"
+        log "Backup and then prepend keycutter Include to ${ssh_user_configfile}"
         # Atomic, in-place insertion of Include directive at the start of the file, if not already included
-        sed -i "1s;^;${include_str}\n;" "${ssh_user_configfile}"
+        sed -i"$backup_extension" "1s;^;${include_str}\n;" "${ssh_user_configfile}"
     fi
 
 }

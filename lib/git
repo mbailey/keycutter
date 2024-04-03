@@ -1,4 +1,4 @@
-## Git Functions
+# Git Functions
 
 git-config-create() {
     local ssh_key_path="${1:-}"
@@ -53,9 +53,6 @@ git-config-create() {
     dir-ensure "${git_config_dir}" 0700
     git-include-ensure "${git_config_keycutter_path}"
 
-    # XXX Setup allowed_signers file for verifying ssh keys
-    # XXX Decide on what email to use - do we require one to be provided? ask for it interactively?
-    # XXX Ask if user already has one, and if not, ask if we should create one for them
     log "Add key to allowed_signers file ($git_config_allowed_signers_path) for verifying ssh keys"
     log "${git_user_email} namespaces=\"git\" $(cat "${ssh_key_path}.pub")" >> "$git_config_allowed_signers_path"
 
