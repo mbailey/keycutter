@@ -131,6 +131,7 @@ ssh-config-include() {
         log "Backup and then prepend keycutter Include to ${ssh_user_configfile}"
         # Atomic, in-place insertion of Include directive at the start of the file, if not already included
         sed -i"$backup_extension" "1s;^;${include_str}\n;" "${ssh_user_configfile}"
+        log "Backup of original file created with extension: ${backup_extension}"
     fi
 
 }
