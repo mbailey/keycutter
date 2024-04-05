@@ -40,7 +40,7 @@ ssh-key-create() {
         usage
         return 1
     fi
-    
+
     dir-ensure "$(dirname "$ssh_key_path")" 0700
 
     log "Generate FIDO SSH key: $ssh_key_path"
@@ -101,7 +101,7 @@ EOF
     fi
 
     # Ensure Keycutter SSH config is Included from ~/.ssh/config
-    ssh-config-include "${ssh_config_keycutter_path}" 
+    ssh-config-include
 }
 
 ssh-config-include() {
@@ -150,6 +150,6 @@ ssh-keys-fido-non-resident(){
 }
 
 ssh-keys-fido() {
-  ssh-keys-fido-non-resident  
-  ssh-keys-fido-resident  
+  ssh-keys-fido-non-resident
+  ssh-keys-fido-resident
 }
