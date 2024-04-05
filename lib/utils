@@ -3,41 +3,40 @@
 # - dir-ensure(): Ensure directory exists with correct permissions
 # - log(): Write colorized messages to stdout or stderr
 
-
 # Ensure directory exists with correct permissions
 dir-ensure() {
-    local path="${1:?}"
+    local dir_path="${1:?}"
     local permissions="${2:-0700}"
 
     if [[ $# == 0 ]]; then
-        echo "Usage: dir-ensure <path> [<permissions>]"
+        echo "Usage: dir-ensure <dir_path> [<permissions>]"
         return 1
     fi
 
-    # Check if the path exists in any form (file, directory, symlink, etc.)
-    if [[ -e "$path" || -L "$path" ]]; then
+    # Check if the dir_path exists in any form (file, directory, symlink, etc.)
+    if [[ -e "$dir_path" || -L "$dir_path" ]]; then
         # If the path is not a directory, return an error.
-        if [[ ! -d "$path" ]]; then
-            log "Error: The path '$path' exists but is not a directory."
+        if [[ ! -d "$dir_path" ]]; then
+            log "Error: The path '$dir_path' exists but is not a directory."
             return 1
         fi
     fi
 
-    if [[ ! -d "$path" ]]; then
-        log "Create directory '$path' with permissions '$permissions'"
-        install -d -m "$permissions" "$path"
+    if [[ ! -d "$dir_path" ]]; then
+        log "Create directory '$dir_path' with permissions '$permissions'"
+        install -d -m "$permissions" "$dir_path"
     else
         local current_permissions
-        current_permissions=$(ls -ld "$path" | awk '{print $1}')
+        current_permissions=$(ls -ld "$dir_path" | awk '{print $1}')
         
-        install -d -m "$permissions" "$path"
+        install -d -m "$permissions" "$dir_path"
         local new_permissions
-        new_permissions=$(ls -ld "$path" | awk '{print $1}')
+        new_permissions=$(ls -ld "$dir_path" | awk '{print $1}')
         
         if [[ "$current_permissions" != "$new_permissions" ]]; then
-            log "Modify Directory permissions: $path"
+            log "Modify Directory permissions: $dir_path"
         else
-            log "DEBUG : No changes required to $path"
+            log "DEBUG : No changes required to $dir_path"
         fi
     fi
 }
