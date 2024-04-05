@@ -38,7 +38,7 @@ source "${_SLF_DIR}/lib/functions"
 #      with that account without crossing security boundaries.
 #
 #   2. Only use GitHub CLI from a device you trust with that GitHub account.
-#      E.g. Don't login to your personal GitHub account from a managed laptop. 
+#      E.g. Don't login to your personal GitHub account from a managed laptop.
 #
 
 usage() {
@@ -55,7 +55,7 @@ usage() {
     log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk). Default is ecdsa-sk."
     log
     log "SSH Keytag format: device@service-user"
-    log 
+    log
     log "  - device  : Device this ssh key resides on ( e.g. 'yubikey1', 'work-laptop', 'zfold5')"
     log "  - service : Service this key is used with (e.g. 'github', 'aws', 'digitalocean')"
     log "  - user    : Service User this SSH Key authenticates as (e.g. 'alexdoe')"
@@ -116,7 +116,7 @@ create() {
 
     # Ensure base config dir exists wth correct perms
     local kc_config_dir="${KEYCUTTER_CONFIG_DIR:-"${HOME}/.keycutter"}"
-    dir-ensure "$kc_config_dir" 0700 
+    dir-ensure "$kc_config_dir" 0700
 
     # local kc_git_config_dir="${kc_config_dir}/git"
     # local kc_ssh_config_dir="${kc_config_dir}/ssh"
@@ -150,14 +150,16 @@ create() {
       log "Add SSH key to GitHub for auth and commit/tag signing: $ssh_key_path"
       github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
       local demo_message="\nYou can SSH to GitHub by running:\n\n ssh $(ssh-keytag-identity "$ssh_key_path")\n"
-    else 
+    else
         log "Skip GitHub specific setup - SSH Keytag identity part doesn't start with 'github-' or 'gh-'."
     fi
     shopt -u nocasematch  # Disable case-insensitive pattern matching
 
     log "Success! Setup complete for key: $ssh_keytag"
 
-    [[ -n ${demo_message:-} ]] && echo -e "$demo_message" # Only for GitHub keys
+    if [[ -n ${demo_message:-} ]]; then
+        echo -e "$demo_message" # Only for GitHub keys
+    fi
 }
 
 list() {
