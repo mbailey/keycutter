@@ -1,4 +1,4 @@
-## SSH Functions
+# SSH Functions
 
 ssh-keytag-create(){
     # Generate a default SSH Keytag
