@@ -7,9 +7,10 @@ _SLF_DIR="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${_SLF_DIR}/lib/functions"
 
 # Set any undefined environment variables to default values
-: "${KEYCUTTER_CONFIG_DIR:="$HOME/.keycutter"}"
-: "${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}"
-: "${GIT_CONFIG:="${HOME}/.gitconfig"}"
+: ${GIT_CONFIG:="${HOME}/.gitconfig"}
+: ${KEYCUTTER_CONFIG_DIR:="$HOME/.keycutter"}
+: ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
+: ${KEYCUTTER_SSH_USER_CONFIGFILE:-"${HOME}/.ssh/config"}
 
 # Prerequisites:
 #
@@ -54,11 +55,11 @@ usage() {
     log "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
     log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk). Default is ecdsa-sk."
     log
-    log "SSH Keytag format: device@service-user"
+    log "SSH Keytag format: service_user@device"
     log 
-    log "  - device  : Device this ssh key resides on ( e.g. 'yubikey1', 'work-laptop', 'zfold5')"
-    log "  - service : Service this key is used with (e.g. 'github', 'aws', 'digitalocean')"
+    log "  - service : Service this key is used with (e.g. 'github.com', 'aws', 'digitalocean')"
     log "  - user    : Service User this SSH Key authenticates as (e.g. 'alexdoe')"
+    log "  - device  : Device this ssh key resides on ( e.g. 'yubikey1', 'work-laptop', 'zfold5')"
 }
 
 create() {
@@ -114,50 +115,52 @@ create() {
         exit 1
     fi
 
+    local service_identity="$(ssh-keytag-service-identity "$ssh_keytag")"
+    local service="$(ssh-keytag-service "$ssh_keytag")"
+
     # Ensure base config dir exists wth correct perms
-    local kc_config_dir="${KEYCUTTER_CONFIG_DIR:-"${HOME}/.keycutter"}"
-    dir-ensure "$kc_config_dir" 0700 
+    dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700 
 
-    # local kc_git_config_dir="${kc_config_dir}/git"
-    # local kc_ssh_config_dir="${kc_config_dir}/ssh"
-
-    local ssh_key_path="${kc_config_dir}/ssh/keys/${ssh_keytag}"     # Path SSH key will be written to
+    local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/ssh/keys/${ssh_keytag}" # Path SSH key will be written to
 
     # Create FIDO SSH Key for $ssh_keytag
     ssh-key-create "$ssh_key_path" "$ssh_key_type" "$ssh_key_resident"
 
-    log -n "Start SSH Agent... "
-    eval "$(ssh-agent -s)"
+    # Create SSH config for this key
+    #
+    # If SSH Keytag includes a Service:
+    #   - Add/Update a Host entry for the SSH Keytag's "Identity Part"
+    #   - This allows us to ssh to the service using this key.
+    #     e.g. `ssh github-alexdoe`
+    #          `git clone git@github.com_alexdoe:bash-my-aws/bash-my-aws.git``
+    #
+    # If SSH Keytag doesn't include a Service:
+    #   - Add an IdentityFile entry to Keycutter's sshconfig
+    #   - This allows us to use this key for any service that supports FIDO SSH keys.
+    #
+    ssh-config-create "$ssh_key_path"
 
-    log -n "Add key to SSH Agent... "
-    ssh-add "$ssh_key_path"
-
-    # Configure Git for repos where remote url includes SSH Keytag "Identity Part"
-    # - User email and name
-    # - Git commit and tag signing
+    # Configure Git for repos where remote url includes SSH Keytag's "Identity Part"
+    #
+    # - Sets User email and name
+    # - Configures Git commit and tag signing
     git-config-create "$ssh_key_path" "$git_user_email" "$git_user_name"
 
-    # Configure SSH for GitHub related keys
-    # - Simplify association of key with repo: git clone github-alexdoe:bash-my-aws/bash-my-aws.git
+    # If the SSH Keytags 
     # - Upload public key to GitHub for auth and commit signing
-    shopt -s nocasematch  # Enable case-insensitive pattern matching
-    if [[ $ssh_keytag =~ github|gh ]]; then
-      echo -e "\nSetup GitHub specific configuration..."
-      # Create SSH config so you can ssh to GitHub using SSH Keytag's identity part
-      # e.g. `ssh github-alexdoe`
-      ssh-config-create "$ssh_key_path"
-      # Upload public key to GitHub for auth and commit signing
+    if [[ $service =~ github.com ]]; then
       log "Add SSH key to GitHub for auth and commit/tag signing: $ssh_key_path"
       github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
-      local demo_message="\nYou can SSH to GitHub by running:\n\n ssh $(ssh-keytag-identity "$ssh_key_path")\n"
+      local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(ssh-keytag-identity "$ssh_key_path")\n"
     else 
-        log "Skip GitHub specific setup - SSH Keytag identity part doesn't start with 'github-' or 'gh-'."
+        log "Skip GitHub specific setup - SSH Keytag identity part doesn't start with 'github.com'."
     fi
-    shopt -u nocasematch  # Disable case-insensitive pattern matching
 
     log "Success! Setup complete for key: $ssh_keytag"
 
-    [[ -n ${demo_message:-} ]] && echo -e "$demo_message" # Only for GitHub keys
+    if [[ -n ${demo_message:-} ]]; then
+      echo -e "$demo_message" # Only for GitHub keys
+    fi
 }
 
 list() {

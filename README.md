@@ -6,15 +6,23 @@ alias: SSH Keycutter
 
 *18 Mar 2024 - Preview release for review only*
 
-Ever wondered how to contribute to an open-source project on GitHub from an employer managed (i.e. untrusted) laptop, without compromising the security of your personal GitHub account? Keycutter came out of an attempt to solve this problem but evolved into a tool to make managment of FIDO SSH Keys easy.
+Ever wondered how to contribute to an open-source project on GitHub from an employer managed (i.e. untrusted) laptop, without compromising the security of your personal GitHub account? Keycutter came out of an attempt to solve this problem but evolved into a tool improve security by simplifying FIDO SSH Key management.
+
+## Key Concepts
+
+- [SSH Keytags](docs/ssh-keytags.md)
+- [Keycutter Config Directory](docs/keycutter-config-dir/README.md) 
+- [Defense layers to protect against key misuse](docs/defense-layers-to-protect-against-key-misuse.md)
+- [Why FIDO SSH Keys are good for Git access on managed devices](docs/why-fido-ssh-keys-are-good-for-git-access-on-managed-devices.md)
+- [Design goals of the project](docs/design-goals.md)
 
 ## Keycutter creates
 
-- FIDO SSH Keys on Hardware Security Keys
-- Git config:
+- **FIDO SSH Keys on Hardware Security Keys**
+- **Git config:**
     - Commit and tag signing
     - User Name and Email
-- SSH config:
+- **SSH config:**
     - Host alias automates SSH Key selection for authenticate
 
 *While initially created for use with Yubikeys and GitHub, Keycutter can support other devices and services.*
@@ -32,28 +40,20 @@ FIDO SSH keys reside in Hardware Security Keys which allow for:
 
 **SSH Keytags** are labels to help organise SSH Keys across multiple devices and services.
 
-SSH Keytag format : 
+**SSH Keytag format:**  Service_Identity@Device
 
-    Device@Service-Identity
+- **Service:** FQDN of remote service (e.g. gitlab.com)
+- **Identity:** The **user account** on remote service (e.g. alexdoe-work)
+- **Device**: The **hardware security key** or **computer** where the private key resides.
 
-- **Device**: The **hardware security key** or computer where the private key resides.
-- **Service Identity**: the **user account** on the **remote service**
+**SSH Keytags are used:**
 
-SSH Keytags are used:
-
-- in the SSH Key filename
-- in the public key comment
+- In the SSH Key filename
+- In the public key comment
 - In the key name on services like GitHub
 
 *Read more about [SSH Keytags](docs/ssh-keytags.md)*
 
-## Key Concepts
-
-- [SSH Keytags](docs/ssh-keytags.md)
-- [Keycutter Config Directory](docs/keycutter-config-dir/README.md) 
-- [Defense layers to protect against key misuse](docs/defense-layers-to-protect-against-key-misuse.md)
-- [Why FIDO SSH Keys are good for Git access on managed devices](docs/why-fido-ssh-keys-are-good-for-git-access-on-managed-devices.md)
-- [Design goals of the project](docs/design-goals.md)
 
 ## Quickstart
 
@@ -76,13 +76,13 @@ SSH Keytags are used:
 2. **Create a FIDO SSH Key**:
  
     ```shell
-    keycutter create laptop@github-alexdoe
+    keycutter create github.com_alexdoe@personal-laptop
     ```
 
 4. **Clone any GitHub repo using your new key**: 
 
     ```shell
-    git clone git@github-alexdoe:bash-my-aws/keycutter
+    git clone git@github.com_alexdoe:bash-my-aws/keycutter
     ```
 
 5. **Commit a change signed with your new SSH Key**:
@@ -157,13 +157,13 @@ WSL does not support USB devices natively. We can access the Security Device fro
 Provide an SSH Keytag to the create command:
 
 ```shell
-keycutter create <device>@<service-user_account>
+keycutter create <service>_<identity>@<device> # e.g. keycutter create github.com_alexdoe@personal-laptop
 ```
 
-**Example**:
+**Example**: XXX Update
 
 ```shell
-$ keycutter create laptop@github-alexdoe
+$ keycutter create github.com_alexdoe@personal-laptop
 
 Creating FIDO SSH Key for laptop@github-alexdoe
 Generating FIDO SSH key: /home/alex/.keycutter/ssh/keys/laptop@github-alexdoe
@@ -253,14 +253,13 @@ laptop@github-alexdoe  266976    sk-ecdsa-sha2-nistp256...a8To7Y10AAAAEc3NoOg== 
    commands to work immediately:
 
     ```shell
-    ssh git@github-alexdoe
-    git clone git@github-alexdoe:bash-my-aws/keycutter.git
+    ssh git@github.com_alexdoe
+    git clone git@github.com_alexdoe:bash-my-aws/keycutter.git
     ```
 
 3. Create Git helper config: sets signing key, name and email
 
 4. Add public key to GitHub: auth & signing
-
 
 ## Why? - Strengthening Security Boundaries on Managed Devices
 
@@ -293,5 +292,3 @@ I decided to explore how I could defend against the operator of a managed device
 accessing **credentials** or **data** they should not have access to.
 
 SSH Key Cutter is one project to come out of this.
-
-![](../../../../../../../junction-box.png)

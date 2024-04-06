@@ -1,12 +1,62 @@
 # functions - Functions used by SSH Keycutter
 #
+# - append-line-if-missing(): Append line to file if it does not exist
+# - prepend-line-if-missing(): Prepend line to file if it does not exist
+# - add-line-if-missing(): Append or prepend line to file if it does not exist
 # - dir-ensure(): Ensure directory exists with correct permissions
 # - log(): Write colorized messages to stdout or stderr
+
+append-line-if-missing() {
+    add-line-if-missing append "$@"
+}
+
+prepend-line-if-missing() {
+    add-line-if-missing prepend "$@"
+}
+
+add-line-if-missing() {
+    local mode="${1:-append}"
+    local target_file="${2}"
+    local line_to_add="${3}"
+    local backup_extension="${4:-".backup.$(date +%s)"}"
+
+    # Check if target file exists
+    if [[ ! -f $target_file ]]; then
+      log "Error! File not found '$target_file'"
+      ls "$target_file"
+      return 1
+    fi
+
+    # Check if the line is already in the file to avoid duplicates
+    if ! grep -qxF "$line_to_add" "$target_file"; then
+        log "Adding line to $target_file in $mode mode."
+        case "$mode" in
+            append)
+                # Append the line
+                log "Appending line to $target_file"
+                cp "$target_file" "$target_file$backup_extension"
+                echo "$line_to_add" >> "$target_file"
+                ;;
+            prepend)
+                # Prepend the line
+                log "Prepending line to $target_file"
+                sed -i"$backup_extension" "1s;^;$line_to_add\n;" "$target_file"
+                ;;
+            *)
+                echo "Invalid mode specified. Use 'prepend' or 'append'."
+                return 1
+                ;;
+        esac
+        log "Backup of original file created with extension: $backup_extension"
+    else
+        log "Line already present in $target_file"
+    fi
+}
 
 # Ensure directory exists with correct permissions
 dir-ensure() {
     local dir_path="${1:?}"
-    local permissions="${2:-0700}"
+    local permissions="${2:-}"
 
     if [[ $# == 0 ]]; then
         echo "Usage: dir-ensure <dir_path> [<permissions>]"
@@ -23,9 +73,9 @@ dir-ensure() {
     fi
 
     if [[ ! -d "$dir_path" ]]; then
-        log "Create directory '$dir_path' with permissions '$permissions'"
-        install -d -m "$permissions" "$dir_path"
-    else
+        log "Create directory '$dir_path' ${permissions:+"with permissions '$permissions'"}.'"
+        install -d ${permissions:+"-m$permissions"} "$dir_path"
+    elif [[ -n "$permissions" ]]; then
         local current_permissions
         current_permissions=$(ls -ld "$dir_path" | awk '{print $1}')
         
@@ -38,6 +88,20 @@ dir-ensure() {
         else
             log "DEBUG : No changes required to $dir_path"
         fi
+    else
+        log "DEBUG : No changes required to $dir_path"
+    fi
+}
+
+file-ensure() {
+    local file_path="${1:?}"
+    local permissions="${2:-}"
+    dir-ensure "$(dirname "${file_path}")" "$permissions"
+    touch "${file_path}"
+    if [[ -n "$permissions" ]]; then
+        # XXX Check whether permissions actually need changing
+        log "Ensuring file permissions for '$file_path' are '$permissions'."
+        chmod "$permissions" "${file_path}"
     fi
 }
 

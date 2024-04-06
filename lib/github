@@ -32,6 +32,7 @@ github-ssh-key-add() {
 }
 
 github-auth() {
+
     # Ensure user is logged in to GitHub with required scopes
 
     # Show GitHub login status
