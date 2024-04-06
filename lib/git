@@ -1,5 +1,9 @@
 # Git Functions
 
+# Initialise some environment variables
+
+: ${KEYCUTTER_CONFIG_DIR:="${HOME}/.keycutter"}
+
 git-config-create() {
     local ssh_key_path="${1:-}"
     local git_user_email="${2:-}"
@@ -7,11 +11,10 @@ git-config-create() {
 
     local identity="$(ssh-keytag-identity "${ssh_key_path}")"
 
-    local keycutter_config_dir="${KEYCUTTER_CONFIG_DIR:-"${HOME}/.keycutter"}"
-    local git_config_dir="${keycutter_config_dir}/git"
-    local git_config_allowed_signers_path="${keycutter_config_dir}/git/allowed_signers"
-    local git_config_identity_path="${keycutter_config_dir}/git/config.d/${identity}"
-    local git_config_keycutter_path="${keycutter_config_dir}/gitconfig-keycutter"
+    local git_config_dir="${KEYCUTTER_CONFIG_DIR}/git"
+    local git_config_allowed_signers_path="${KEYCUTTER_CONFIG_DIR}/git/allowed_signers"
+    local git_config_identity_path="${KEYCUTTER_CONFIG_DIR}/git/config.d/${identity}"
+    local git_config_keycutter_path="${KEYCUTTER_CONFIG_DIR}/git/gitconfig-keycutter"
 
     log "Create Git config for this key"
 

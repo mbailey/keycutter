@@ -115,7 +115,6 @@ create() {
         exit 1
     fi
 
-    local service_identity="$(ssh-keytag-service-identity "$ssh_keytag")"
     local service="$(ssh-keytag-service "$ssh_keytag")"
 
     # Ensure base config dir exists wth correct perms

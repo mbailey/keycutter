@@ -41,13 +41,19 @@ ssh-keytag-service-identity() {
 ssh-keytag-service() {
     # Extract the Identity part of the SSH Keytag
     local ssh_keytag_service_identity="$(ssh-keytag-service-identity "${1:-}")"
-    echo "${ssh_keytag_service_identity%_*}"
+    local service="${ssh_keytag_service_identity%%_*}" # Removed longest match from end
+    if [[ $service == $ssh_keytag_service_identity ]]; then
+        return
+    else
+        echo "$service"
+    fi
 }
 
 ssh-keytag-identity() {
     # Extract the Identity part of the SSH Keytag
     local ssh_keytag_service_identity="$(ssh-keytag-service-identity "${1:-}")"
-    echo "${ssh_keytag_service_identity#_*}"
+    local identity="${ssh_keytag_service_identity#*_}" # remove shortest match from start
+    echo "$identity"
 }
 
 
