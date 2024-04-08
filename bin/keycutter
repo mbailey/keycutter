@@ -150,7 +150,7 @@ create() {
     if [[ $service =~ github.com ]]; then
       log "Add SSH key to GitHub for auth and commit/tag signing: $ssh_key_path"
       github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
-      local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(ssh-keytag-identity "$ssh_key_path")\n"
+      local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(ssh-keytag-service-identity "$ssh_key_path")\n"
     else 
         log "Skip GitHub specific setup - SSH Keytag identity part doesn't start with 'github.com'."
     fi
