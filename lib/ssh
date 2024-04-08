@@ -134,7 +134,7 @@ ssh-config-create() {
     # Otherwise, add the key to the main Keycutter SSH config
     else
         local target_path="${sshconfig_keycutter_path}"
-        append_to_file_if_missing "${target_path}" "IdentityFile ${ssh_key_path}"
+        prepend-line-if-missing "${target_path}" "IdentityFile ${ssh_key_path}"
     fi
 
 }
