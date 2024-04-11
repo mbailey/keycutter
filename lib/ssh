@@ -11,69 +11,7 @@ source "${_SLF_DIR}/lib/utils"
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
 : ${KEYCUTTER_SSH_USER_CONFIGFILE:="${HOME}/.ssh/config"}
 
-## SSH Keytags - Manipulate SSH Keytags (strings) used by Keycutter
 
-ssh-keytag-create(){
-    # Generate a default SSH Keytag
-    local user="${1:-$(whoami)}"
-    local device="${2:-$(hostname)}"
-    local service="${3:-}"
-    echo "${service:+"${service}_"}${user}@${device}"
-}
-
-ssh-keytag() {
-    # Extract SSH Keytag from path
-    echo "$(basename "${1:-}")" # Strip path if filename is provided
-}
-
-ssh-keytag-device() {
-    # Extract the Device part of the SSH Keytag
-    local ssh_keytag="$(ssh-keytag "${1:-}")"
-    echo "${ssh_keytag#*@}"
-}
-
-ssh-keytag-service-identity() {
-    # Extract the Service_Identity part of the SSH Keytag
-    local ssh_keytag="$(ssh-keytag "${1:-}")"
-    echo "${ssh_keytag%@*}"
-}
-
-ssh-keytag-service() {
-    # Extract the Identity part of the SSH Keytag
-    local ssh_keytag_service_identity="$(ssh-keytag-service-identity "${1:-}")"
-    local service="${ssh_keytag_service_identity%%_*}" # Removed longest match from end
-    if [[ $service == $ssh_keytag_service_identity ]]; then
-        return
-    else
-        echo "$service"
-    fi
-}
-
-ssh-keytag-identity() {
-    # Extract the Identity part of the SSH Keytag
-    local ssh_keytag_service_identity="$(ssh-keytag-service-identity "${1:-}")"
-    local identity="${ssh_keytag_service_identity#*_}" # remove shortest match from start
-    echo "$identity"
-}
-
-
-## List SSH Keys
-
-ssh-keys-fido-resident(){
-  log "Resident FIDO SSH Keys:"
-  ssh-keygen -K
-}
-
-ssh-keys-fido-non-resident(){
-  local ssh_key_dir="${KEYCUTTER_SSH_KEY_DIR:-"${KEYCUTTER_CONFIG_DIR}/ssh/keys"}"
-  log >&2 "Non-resident FIDO SSH Keys:"
-  grep -l "sk-" "$ssh_key_dir"/*.pub
-}
-
-ssh-keys-fido() {
-  ssh-keys-fido-non-resident  
-  ssh-keys-fido-resident  
-}
 
 ## Create SSH Keys and Config
 
@@ -136,7 +74,6 @@ ssh-config-create() {
         local target_path="${sshconfig_keycutter_path}"
         prepend-line-if-missing "${target_path}" "IdentityFile ${ssh_key_path}"
     fi
-
 }
 
 ssh-config-host-file-update() {
@@ -175,5 +112,65 @@ EOF
 
 }
 
+## List SSH Keys
 
+ssh-keys-fido-resident(){
+  log "Resident FIDO SSH Keys:"
+  ssh-keygen -K
+}
 
+ssh-keys-fido-non-resident(){
+  local ssh_key_dir="${KEYCUTTER_SSH_KEY_DIR:-"${KEYCUTTER_CONFIG_DIR}/ssh/keys"}"
+  log >&2 "Non-resident FIDO SSH Keys:"
+  grep -l "sk-" "$ssh_key_dir"/*.pub
+}
+
+ssh-keys-fido() {
+  ssh-keys-fido-non-resident  
+  ssh-keys-fido-resident  
+}
+
+## SSH Keytags - Manipulate SSH Keytags (strings) used by Keycutter
+
+ssh-keytag-create(){
+    # Generate a default SSH Keytag
+    local user="${1:-$(whoami)}"
+    local device="${2:-$(hostname)}"
+    local service="${3:-}"
+    echo "${service:+"${service}_"}${user}@${device}"
+}
+
+ssh-keytag() {
+    # Extract SSH Keytag from path
+    echo "$(basename "${1:-}")" # Strip path if filename is provided
+}
+
+ssh-keytag-device() {
+    # Extract the Device part of the SSH Keytag
+    local ssh_keytag="$(ssh-keytag "${1:-}")"
+    echo "${ssh_keytag#*@}"
+}
+
+ssh-keytag-service-identity() {
+    # Extract the Service_Identity part of the SSH Keytag
+    local ssh_keytag="$(ssh-keytag "${1:-}")"
+    echo "${ssh_keytag%@*}"
+}
+
+ssh-keytag-service() {
+    # Extract the Identity part of the SSH Keytag
+    local ssh_keytag_service_identity="$(ssh-keytag-service-identity "${1:-}")"
+    local service="${ssh_keytag_service_identity%%_*}" # Removed longest match from end
+    if [[ $service == $ssh_keytag_service_identity ]]; then
+        return
+    else
+        echo "$service"
+    fi
+}
+
+ssh-keytag-identity() {
+    # Extract the Identity part of the SSH Keytag
+    local ssh_keytag_service_identity="$(ssh-keytag-service-identity "${1:-}")"
+    local identity="${ssh_keytag_service_identity#*_}" # remove shortest match from start
+    echo "$identity"
+}
