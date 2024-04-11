@@ -48,7 +48,7 @@ usage() {
     log
     log "Arguments:"
     log
-    log "  ssh-keytag Required. Identifier for key (e.g. laptop@github-alexdoe)"
+    log "  ssh-keytag Required. Identifier for key (e.g. github.com_alexdoe@laptop-personal)"
     log
     log "  --email    Optional. Set Git user.email for this key."
     log "  --name     Optional. Set Git user.name for this key."
