@@ -154,9 +154,10 @@ ssh-config-host-file-update() {
     if [[ -f $sshconfig_host_path ]]; then
         log "SSH configuration file exists ($sshconfig_host_path)"
         # If the ssh_key_path is not already in the file, add it
-        if ! grep -qxF "$ssh_key_path" "$sshconfig_host_path"; then
-            log "Add IdentityFile $ssh_key_path to $sshconfig_host_path"
-            echo "  IdentityFile $ssh_key_path" >> "$sshconfig_host_path"
+        local identityfile_entry="  IdentityFile $ssh_key_path"
+        if ! grep -qxF "$identityfile_entry" "$sshconfig_host_path"; then
+            log "Appending '$identityfile_entry' to $sshconfig_host_path"
+            echo "$identityfile_entry" >> "$sshconfig_host_path"
         else
             log "IdentityFile $ssh_key_path already in $sshconfig_host_path"
         fi
