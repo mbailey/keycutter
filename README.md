@@ -15,6 +15,8 @@ Ever wondered how to contribute to an open-source project on GitHub from an empl
 - [Defense layers to protect against key misuse](docs/defense-layers-to-protect-against-key-misuse.md)
 - [Why FIDO SSH Keys are good for Git access on managed devices](docs/why-fido-ssh-keys-are-good-for-git-access-on-managed-devices.md)
 - [Design goals of the project](docs/design-goals.md)
+- Side benefits
+    - Doesn't announce your github keys to other services
 
 ## Keycutter creates
 
