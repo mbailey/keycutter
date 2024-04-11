@@ -9,16 +9,16 @@ git-config-create() {
     local git_user_email="${2:-}"
     local git_user_name="${3:-}"
 
-    local identity="$(ssh-keytag-identity "${ssh_key_path}")"
+    local service_identity="$(ssh-keytag-service-identity "${ssh_key_path}")"
 
     local git_config_dir="${KEYCUTTER_CONFIG_DIR}/git"
     local git_config_allowed_signers_path="${KEYCUTTER_CONFIG_DIR}/git/allowed_signers"
-    local git_config_identity_path="${KEYCUTTER_CONFIG_DIR}/git/config.d/${identity}"
+    local git_config_identity_path="${KEYCUTTER_CONFIG_DIR}/git/config.d/${service_identity}"
     local git_config_keycutter_path="${KEYCUTTER_CONFIG_DIR}/git/gitconfig-keycutter"
 
     log "Create Git config for this key"
 
-    if [[ -z $ssh_key_path || -z $identity ]]; then
+    if [[ -z $ssh_key_path || -z $service_identity ]]; then
         # XXX This should be an error message
         usage
         return 1
@@ -62,7 +62,7 @@ git-config-create() {
     log "Create conditional git include in $git_config_keycutter_path"
     git config \
       --file "${git_config_keycutter_path}" \
-      --replace "includeIf.hasconfig:remote.*.url:git@${identity}:*/**".path \
+      --replace "includeIf.hasconfig:remote.*.url:git@${service_identity}:*/**".path \
       "$git_config_identity_path"
 
     local git_config_identity_dir="$(dirname "$git_config_identity_path")"
@@ -70,7 +70,7 @@ git-config-create() {
         dir-ensure "${git_config_identity_dir}" 0700
     fi
 
-    log "Create git config for $identity in $git_config_identity_path"
+    log "Create git config for $service_identity in $git_config_identity_path"
     touch "$git_config_identity_path"
     git config --file "$git_config_identity_path" user.email "$git_user_email"
     git config --file "$git_config_identity_path" user.name "$git_user_name"
