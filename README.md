@@ -119,7 +119,7 @@ FIDO SSH keys reside in Hardware Security Keys which allow for:
   
   - **Bash >= 4.0**
   - **Git >= 2.34.0**
-  - **GitHub CLI >= 2.0** # BROKEN: ubuntu 2.4.0+dfsg1-2
+  - **GitHub CLI >= 2.0** (Greater than 2.4.0+dfsg1-2 on Ubuntu)
   - **OpenSSH >= 8.2p1**
   - **Yubikey Manager**
 
