@@ -11,8 +11,6 @@ source "${_SLF_DIR}/lib/utils"
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
 : ${KEYCUTTER_SSH_USER_CONFIGFILE:="${HOME}/.ssh/config"}
 
-
-
 ## Create SSH Keys and Config
 
 # XXX Check Security Key requires PIN to unlock
@@ -57,11 +55,11 @@ ssh-config-create() {
     # Ensure SSH config defining Host entries for keys are Included from Keycutter's sshconfig
     dir-ensure "$(dirname "${sshconfig_keycutter_path}")" 0700
     touch "${sshconfig_keycutter_path}"
-    append-line-if-missing "${sshconfig_keycutter_path}" "Include $ssh_host_alias_dir/*"
+    append-line-if-missing "${sshconfig_keycutter_path}" "Include ${ssh_host_alias_dir/#$HOME/'~'}/*"
 
     # Ensure sshconfig-keycutter is Included from user's sshconfig (~/.ssh/config).
     # XXX Remove: ssh-config-include "${ssh_config_keycutter_path}" 
-    prepend-line-if-missing "${KEYCUTTER_SSH_USER_CONFIGFILE}" "Include ${sshconfig_keycutter_path}"
+    prepend-line-if-missing "${KEYCUTTER_SSH_USER_CONFIGFILE}" "Include ${sshconfig_keycutter_path/#$HOME/'~'}"
 
     # Add this key to Keycutter SSH config  
     #
@@ -72,7 +70,7 @@ ssh-config-create() {
     # Otherwise, add the key to the main Keycutter SSH config
     else
         local target_path="${sshconfig_keycutter_path}"
-        prepend-line-if-missing "${target_path}" "IdentityFile ${ssh_key_path}"
+        prepend-line-if-missing "${target_path}" "IdentityFile ${ssh_key_path/#$HOME/'~'}"
     fi
 }
 
@@ -91,12 +89,12 @@ ssh-config-host-file-update() {
     if [[ -f $ssh_host_alias_path ]]; then
         log "SSH configuration file exists ($ssh_host_alias_path)"
         # If the ssh_key_path is not already in the file, add it
-        local identityfile_entry="  IdentityFile $ssh_key_path"
+        local identityfile_entry="  IdentityFile ${ssh_key_path/#$HOME/'~'}"
         if ! grep -qxF "$identityfile_entry" "$ssh_host_alias_path"; then
             log "Appending '$identityfile_entry' to $ssh_host_alias_path"
             echo "$identityfile_entry" >> "$ssh_host_alias_path"
         else
-            log "IdentityFile $ssh_key_path already in $ssh_host_alias_path"
+            log "'$identityfile_entry' already in $ssh_host_alias_path"
         fi
     else
         log "Create SSH configuration file $ssh_host_alias_path"
@@ -105,7 +103,7 @@ Host $service_identity
   User git # Change to the user for the service
   HostName $service
   IdentitiesOnly yes
-  IdentityFile $ssh_key_path
+  IdentityFile ${ssh_key_path/#$HOME/'~'}
 EOF
         mv "$temp_file" "$ssh_host_alias_path"
     fi

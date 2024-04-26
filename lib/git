@@ -63,7 +63,7 @@ git-config-create() {
     git config \
       --file "${git_config_keycutter_path}" \
       --replace "includeIf.hasconfig:remote.*.url:git@${service_identity}:*/**".path \
-      "$git_config_identity_path"
+      "${git_config_identity_path/#$HOME/'~'}"
 
     local git_config_identity_dir="$(dirname "$git_config_identity_path")"
     if ! [[ -d "$git_config_identity_dir" ]]; then
@@ -76,8 +76,8 @@ git-config-create() {
     git config --file "$git_config_identity_path" user.name "$git_user_name"
     git config --file "$git_config_identity_path" commit.gpgsign true
     git config --file "$git_config_identity_path" gpg.format ssh
-    git config --file "$git_config_identity_path" user.signingkey "$ssh_key_path"
-    git config --file "$git_config_identity_path" gpg.ssh.allowedSignersFile "${git_config_dir}/allowed_signers"
+    git config --file "$git_config_identity_path" user.signingkey "${ssh_key_path/${HOME}/'~'}"
+    git config --file "$git_config_identity_path" gpg.ssh.allowedSignersFile "${git_config_dir/#$HOME/'~'}/allowed_signers"
 }
 
 git-include-ensure() {
