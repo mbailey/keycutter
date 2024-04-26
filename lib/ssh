@@ -50,14 +50,14 @@ ssh-config-create() {
     fi
 
     local sshconfig_keycutter_path="${KEYCUTTER_CONFIG_DIR}/ssh/sshconfig-keycutter"
-    local sshconfig_host_dir="${KEYCUTTER_CONFIG_DIR}/ssh/config.d"
+    local ssh_host_alias_dir="${KEYCUTTER_CONFIG_DIR}/ssh/config.d"
 
     dir-ensure "${KEYCUTTER_CONFIG_DIR}" 0700
 
     # Ensure SSH config defining Host entries for keys are Included from Keycutter's sshconfig
     dir-ensure "$(dirname "${sshconfig_keycutter_path}")" 0700
     touch "${sshconfig_keycutter_path}"
-    append-line-if-missing "${sshconfig_keycutter_path}" "Include $sshconfig_host_dir/*"
+    append-line-if-missing "${sshconfig_keycutter_path}" "Include $ssh_host_alias_dir/*"
 
     # Ensure sshconfig-keycutter is Included from user's sshconfig (~/.ssh/config).
     # XXX Remove: ssh-config-include "${ssh_config_keycutter_path}" 
@@ -82,24 +82,24 @@ ssh-config-host-file-update() {
 
     local service_identity="$(ssh-keytag-service-identity "${ssh_key_path}")"
     local service="$(ssh-keytag-service "${ssh_key_path}")"
-    local sshconfig_host_path="${KEYCUTTER_CONFIG_DIR}/ssh/config.d/${service_identity}"
+    local ssh_host_alias_path="${KEYCUTTER_CONFIG_DIR}/ssh/config.d/${service_identity}"
 
-    dir-ensure "$(dirname "${sshconfig_host_path}")" 0700
+    dir-ensure "$(dirname "${ssh_host_alias_path}")" 0700
 
     temp_file="$(mktemp)"
     # If we already have a config file for this identity
-    if [[ -f $sshconfig_host_path ]]; then
-        log "SSH configuration file exists ($sshconfig_host_path)"
+    if [[ -f $ssh_host_alias_path ]]; then
+        log "SSH configuration file exists ($ssh_host_alias_path)"
         # If the ssh_key_path is not already in the file, add it
         local identityfile_entry="  IdentityFile $ssh_key_path"
-        if ! grep -qxF "$identityfile_entry" "$sshconfig_host_path"; then
-            log "Appending '$identityfile_entry' to $sshconfig_host_path"
-            echo "$identityfile_entry" >> "$sshconfig_host_path"
+        if ! grep -qxF "$identityfile_entry" "$ssh_host_alias_path"; then
+            log "Appending '$identityfile_entry' to $ssh_host_alias_path"
+            echo "$identityfile_entry" >> "$ssh_host_alias_path"
         else
-            log "IdentityFile $ssh_key_path already in $sshconfig_host_path"
+            log "IdentityFile $ssh_key_path already in $ssh_host_alias_path"
         fi
     else
-        log "Create SSH configuration file $sshconfig_host_path"
+        log "Create SSH configuration file $ssh_host_alias_path"
         cat > "$temp_file" <<-EOF
 Host $service_identity
   User git # Change to the user for the service
@@ -107,7 +107,7 @@ Host $service_identity
   IdentitiesOnly yes
   IdentityFile $ssh_key_path
 EOF
-        mv "$temp_file" "$sshconfig_host_path"
+        mv "$temp_file" "$ssh_host_alias_path"
     fi
 
 }

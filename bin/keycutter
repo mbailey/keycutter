@@ -128,7 +128,7 @@ create() {
     # Create SSH config for this key
     #
     # If SSH Keytag includes a Service:
-    #   - Add/Update a Host entry for the SSH Keytag's "Identity Part"
+    #   - Add/Update a Host alias for the SSH Keytag's "Identity Part"
     #   - This allows us to ssh to the service using this key.
     #     e.g. `ssh github-alexdoe`
     #          `git clone git@github.com_alexdoe:bash-my-aws/bash-my-aws.git``
