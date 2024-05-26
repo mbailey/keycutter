@@ -103,14 +103,14 @@ FIDO SSH keys reside in Hardware Security Keys which allow for:
     ├── git
     │   ├── allowed_signers
     │   ├── config.d
-    │   │   └── github-alexdoe-work
+    │   │   └── github.com_alexdoe-work
     │   └── gitconfig-keycutter
     └── ssh
-        ├── config.d
-        │   └── github-alexdoe-work
+        ├──hosts 
+        │   └── github.com_alexdoe-work
         └── keys
-            ├── yk01@github-alexdoe-work
-            └── yk01@github-alexdoe-work.pub
+            ├── github.com_alexdoe-work@yk01
+            └── github.com_alexdoe-work@yk01.pub
     ```
 
 ## Installation
@@ -201,7 +201,7 @@ Adding key to SSH Agent... Identity added: /home/alex/.keycutter/ssh/keys/laptop
 Configuring git to use the SSH Key for commit/tag signing for relevant repos
 
 Setting up GitHub specific configuration...
-Creating SSH configuration file /home/alex/.keycutter/ssh/config.d/github-alexdoe
+Creating SSH configuration file /home/alex/.keycutter/ssh/hosts/github-alexdoe
 Adding SSH key to GitHub for auth and commit/tag signing: /home/alex/.keycutter/ssh/keys/laptop@github-alexdoe
 Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) y
   ✓ Logged in to github.com as someuser (keyring)

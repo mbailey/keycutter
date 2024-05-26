@@ -47,19 +47,19 @@ ssh-config-create() {
         return 1
     fi
 
-    local sshconfig_keycutter_path="${KEYCUTTER_CONFIG_DIR}/ssh/sshconfig-keycutter"
-    local ssh_host_alias_dir="${KEYCUTTER_CONFIG_DIR}/ssh/config.d"
+    local keycutter_ssh_config_path="${KEYCUTTER_CONFIG_DIR}/ssh/config"
+    local ssh_hosts_dir="${KEYCUTTER_CONFIG_DIR}/ssh/hosts"
+    local ssh_agents_dir="${KEYCUTTER_CONFIG_DIR}/ssh/agents"
 
     dir-ensure "${KEYCUTTER_CONFIG_DIR}" 0700
 
     # Ensure SSH config defining Host entries for keys are Included from Keycutter's sshconfig
-    dir-ensure "$(dirname "${sshconfig_keycutter_path}")" 0700
-    touch "${sshconfig_keycutter_path}"
-    append-line-if-missing "${sshconfig_keycutter_path}" "Include ${ssh_host_alias_dir/#$HOME/'~'}/*"
+    dir-ensure "$(dirname "${keycutter_ssh_config_path}")" 0700
+    touch "${keycutter_ssh_config_path}"
+    append-line-if-missing "${keycutter_ssh_config_path}" "Include ${ssh_hosts_dir/#$HOME/'~'}/*"
 
-    # Ensure sshconfig-keycutter is Included from user's sshconfig (~/.ssh/config).
-    # XXX Remove: ssh-config-include "${ssh_config_keycutter_path}" 
-    prepend-line-if-missing "${KEYCUTTER_SSH_USER_CONFIGFILE}" "Include ${sshconfig_keycutter_path/#$HOME/'~'}"
+    # Ensure ~/.keycutter/ssh/config is Included by ~/.ssh/config.
+    prepend-line-if-missing "${KEYCUTTER_SSH_USER_CONFIGFILE}" "Include ${keycutter_ssh_config_path/#$HOME/'~'}"
 
     # Add this key to Keycutter SSH config  
     #
@@ -69,9 +69,20 @@ ssh-config-create() {
         ssh-config-host-file-update "${ssh_key_path}"
     # Otherwise, add the key to the main Keycutter SSH config
     else
-        local target_path="${sshconfig_keycutter_path}"
+        local target_path="${keycutter_ssh_config_path}"
         prepend-line-if-missing "${target_path}" "IdentityFile ${ssh_key_path/#$HOME/'~'}"
     fi
+
+    # Optionally add to an ssh-agent configuration
+    dir-ensure "${ssh_agents_dir}" 0700
+    dir-ensure "${ssh_agents_dir}/default/keys" 0700
+    # prompt user to add key to default ssh-agent   
+    read -p "Add key to default keycutter ssh-agent? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        ln -s "${ssh_key_path}" "${ssh_agents_dir}/default/keys"
+    fi
+     
 }
 
 ssh-config-host-file-update() {
@@ -80,7 +91,7 @@ ssh-config-host-file-update() {
 
     local service_identity="$(ssh-keytag-service-identity "${ssh_key_path}")"
     local service="$(ssh-keytag-service "${ssh_key_path}")"
-    local ssh_host_alias_path="${KEYCUTTER_CONFIG_DIR}/ssh/config.d/${service_identity}"
+    local ssh_host_alias_path="${KEYCUTTER_CONFIG_DIR}/ssh/hosts/${service_identity}"
 
     dir-ensure "$(dirname "${ssh_host_alias_path}")" 0700
 

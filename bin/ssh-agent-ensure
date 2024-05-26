@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# ssh-agent-ensure - Ensure the SSH agent is running and environment variables are set
+#
+# Usage: ssh-agent-ensure <agent_directory>
+set -eu -o pipefail
+
+[[ -n ${DEBUG:-} ]] && set -x
+
+agent_dir=$1
+socket_file="$agent_dir/ssh-agent.socket"
+env_file="$agent_dir/agent.env"
+
+export SSH_AUTH_SOCK="$socket_file"
+
+
+# Source the environment file if it exists
+if [[ -f "$env_file" ]]; then
+    source "$env_file"
+fi
+
+start-agent() {
+    # Start a new SSH agent with the specified socket
+    eval $(ssh-agent -a "$socket_file" -s)
+}
+
+# Check if the agent is already running by testing the socket file
+if [[ -S "$socket_file" ]]; then
+    if ! ssh-add -l >/dev/null 2>&1; then
+        # The socket file is present but not usable, so clean it up
+        rm -f "$socket_file"
+        # Start a new SSH agent with the specified socket file
+        start-agent
+    fi
+else
+    start-agent
+fi
+
+# Remove all keys from agent
+ssh-add -D
+
+# Load all keys in the agent directory
+for key in "$agent_dir"/keys/*; do
+    if [[ -f "$key" && "$key" != *.pub ]]; then
+        ssh-add "$key"
+    fi
+done

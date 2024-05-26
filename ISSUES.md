@@ -2,14 +2,15 @@
 
 Known issues / annoyances you may encounter.
 
-- **Keycutter does not specify userid for resident key:** Work in progress
-- **[Bundled version of OpenSSH with macOS Monterey doesn't support FIDO2 yubikeys (github.com)](https://github.com/Yubico/libfido2/issues/464):** OpenSSH 9.6p1 that ships with macOS doesn't work. homebrew? other library for FIDO2 support?
-- **[VSCode presents key fingerprint prompt for FIDO/U2F keys #165976](https://github.com/microsoft/vscode/pull/165976):** VSCode prompts user when FIDO SSH Key is used to sign / push commits
-- **/Users/username**: config copied to a mac needs path changes
+1. **Keycutter does not specify userid for resident key:** Work in progress
+
+2. **[Bundled version of OpenSSH with macOS Monterey doesn't support FIDO2 yubikeys (github.com)](https://github.com/Yubico/libfido2/issues/464):** OpenSSH 9.6p1 that ships with macOS doesn't work. homebrew? other library for FIDO2 support?
+
+3. **[VSCode presents key fingerprint prompt for FIDO/U2F keys #165976](https://github.com/microsoft/vscode/pull/165976):** VSCode prompts user when FIDO SSH Key is used to sign / push commits
 
 ## Notes
 
-### Keycutter does not specify userid for resident key
+### 1. Keycutter does not specify userid for resident key
 
 Keycutter needs to be updated to specify userid for resident key.
 
@@ -23,7 +24,11 @@ A resident key scoped to 'ssh:' with user id 'null' already exists.
 Overwrite key in token (y/n)? 
 ```
 
-### VSCode prompts user when FIDO SSH Key is used to sign / push commits
+### 2. Bundled version of OpenSSH with macOS Monterey doesn't support FIDO2 yubikeys (github.com)
+
+- Confirm this is true.
+
+### 3. VSCode prompts user when FIDO SSH Key is used to sign / push commits
 
 **Cause:** unknown
 

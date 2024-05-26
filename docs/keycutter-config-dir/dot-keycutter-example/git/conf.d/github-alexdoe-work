@@ -1,7 +1,7 @@
 [user]
 	email = alexdoe@example.com
 	name = Alex Doe
-	signingkey = /home/m/.keycutter/ssh/keys/yk01@github-alexdoe-work
+	signingkey = /home/m/.keycutter/ssh/keys/github.com_alexdoe-work@yk01
 [commit]
 	gpgsign = true
 [gpg]

@@ -62,7 +62,7 @@ git-config-create() {
     log "Create conditional git include in $git_config_keycutter_path"
     git config \
       --file "${git_config_keycutter_path}" \
-      --replace "includeIf.hasconfig:remote.*.url:git@${service_identity}:*/**".path \
+      --replace "includeIf.hasconfig:remote.*.url:**/${service_identity}:*/**".path \
       "${git_config_identity_path/#$HOME/'~'}"
 
     local git_config_identity_dir="$(dirname "$git_config_identity_path")"

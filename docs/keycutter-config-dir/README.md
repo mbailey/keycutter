@@ -16,14 +16,14 @@ $ tree ~/.keycutter
 ├── git
 │   ├── allowed_signers                  # Verify commits signed with SSH Keys
 │   ├── config.d
-│   │   └── github-alexdoe-work          # Git config associated with this key
+│   │   └── github.com_alexdoe-work          # Git config associated with this key
 │   └── gitconfig-keycutter              # Conditionally includes config.d files
 └── ssh                     
     ├── config.d
-    │   └── github-alexdoe-work          # SSH configuration for key
+    │   └── github.com_alexdoe-work          # SSH configuration for key
     └── keys                             
-        ├── yk01@github-alexdoe-work     # SSH private key
-        └── yk01@github-alexdoe-work.pub # SSH Publivc Key
+        ├── github.com_alexdoe-work@yk01     # SSH private key
+        └── github.com_alexdoe-work@yk01.pub # SSH Publivc Key
 ```
 
 You can view the files in [example_dot_keycutter/](example_dot_keycutter/).

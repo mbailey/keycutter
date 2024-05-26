@@ -1,2 +1,2 @@
-[includeIf "hasconfig:remote.*.url:git@github-alexdoe-work:*/**"]
-	path = /home/m/.keycutter/git/config.d/github-alexdoe-work
+[includeIf "hasconfig:remote.*.url:**/*github.com_alexdoe-work:*/**"]
+	path = /home/m/.keycutter/git/config.d/github.com_alexdoe-work

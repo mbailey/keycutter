@@ -46,10 +46,10 @@ Alex has three Yubikeys:
 
 | Key Tag                            | Service | User          | Device                          |
 | ---------------------------------- | ------- | ------------- | ------------------------------- |
-| aws_alexdoe@keyring                | AWS     | @alexdoe      | Yubikey on keychain             |
-| aws_alexdoe@personal-laptop        | AWS     | @alexdoe      | Yubikey Nano on Personal Laptop |
-| github.com_alexdoe@keyring         | GitHub  | @alexdoe      | Yubikey on keychain             |
-| github.com_alexdoe@personal-laptop | GitHub  | @alexdoe      | Yubikey Nano on Personal Laptop |
-| github.com_alexdoe@work-laptop     | GitHub  | @alexdoe      | Yubikey Nano on Work Laptop     |
-| github.com_alexdoe@work-laptop     | GitHub  | @alexdoe-work | Yubikey Nano on Work Laptop     |
+| aws_alexdoe@keyring                | AWS     | alexdoe       | Yubikey on keychain             |
+| aws_alexdoe@personal-laptop        | AWS     | alexdoe       | Yubikey Nano on Personal Laptop |
+| github.com_alexdoe@keyring         | GitHub  | alexdoe       | Yubikey on keychain             |
+| github.com_alexdoe@personal-laptop | GitHub  | alexdoe       | Yubikey Nano on Personal Laptop |
+| github.com_alexdoe@work-laptop     | GitHub  | alexdoe       | Yubikey Nano on Work Laptop     |
+| github.com_alexdoe@work-laptop     | GitHub  | alexdoe-work  | Yubikey Nano on Work Laptop     |
 

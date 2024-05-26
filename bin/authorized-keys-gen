@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#
+# authorized-keys-gen - Generate an authorized_keys output based on identity
+#                       files in SSH config.
+# 
+# Usage: authorized-keys-gen [<hostname>]
+# 
+# Example:
+# 
+# $ authorized-keys-gen git sk-ecdsa-sha2-nistp256@openssh.com
+# AAAAIn...Ec3NoOg== janedoem@work sk-ecdsa-sha2-nistp256@openssh.com
+# AAAAIn...Ec3NoOg== janedoe@home
+# 
+# $ authorized-keys-gen ollama sk-ecdsa-sha2-nistp256@openssh.com
+# AAAAIn...Ec3NoOg== janedoem@work
+
+authorized-keys-gen() {
+    local hostname="$1"
+
+    # Extract identity files using `ssh -G`
+    local identity_files
+    identity_files=$(ssh -G "$hostname" | grep '^identityfile ' | awk '{print $2}')
+
+    # Loop through each identity file and output the public key to stdout
+    for id_file in $identity_files; do
+        # Expand ~ to the home directory
+        id_file="${id_file/#\~/$HOME}"
+        pub_file="${id_file}.pub"
+        
+        if [[ -f "$pub_file" ]]; then
+            # Use the existing .pub file
+            cat "$pub_file"
+        else
+            if [[ -f "$id_file" ]]; then
+                # Try extracting the public key without a passphrase
+                if ssh-keygen -y -P '' -f "$id_file" > /dev/null 2>&1; then
+                    ssh-keygen -y -P '' -f "$id_file"
+                else
+                    # Prompt the user for a passphrase if required
+                    echo "The private key $id_file requires a passphrase. Do you want to enter it? (yes/no)"
+                    read -r answer
+                    if [[ "$answer" == "yes" ]]; then
+                        ssh-keygen -y -f "$id_file"
+                    else
+                        echo "Skipping key $id_file due to missing passphrase."
+                    fi
+                fi
+            else
+                echo "Warning: Private key $id_file not found." >&2
+            fi
+        fi
+    done
+}
+
+# Execute function with same name as file unless sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    authorized-keys-gen "$@"
+fi
