@@ -1,0 +1,51 @@
+# ~/.keycutter/ssh/config
+#
+# SSH Config file for keycutter
+#
+# Sourced by the following line in ~/.ssh/config (added by keycutter):
+#
+#   Include ~/.keycutter/ssh/config
+
+# SSH Agent Management: Define multiple agents for different purposes
+#
+# 1. SSH access to git: the only thing you'll need ssh-agent forwarding for.
+# 2. Use SSH ProxyJump instead for bastion hopping
+# 3. Same proxy is used locally and shared with remote hosts.
+# 4. You don't need to use the SSH agent from local host
+# 5. You probably only need git ssh keys on the your ssh-agent(s)
+# 6. Hopping around from box to box can be fun. Feel free to add more keys!
+
+# LC_KEYCUTTER_HOSTNAME: Environment variable containing hostname of "local" machine
+#
+# We use it define the IdentityFile's for SSH to look for.
+# - By default, sshd only allows us to SendEnv a few variables (LANG, LC_*, and TERM)
+#
+# You need to set this in your shell profile or similar.
+#
+#   export LC_KEYCUTTER_HOSTNAME="$(hostname -s)"
+#
+SendEnv LC_KEYCUTTER_HOSTNAME
+
+# Setup default ssh-agent with private keys indicated by symlinks
+Match exec "bash -c '[[ -z $SSH_CONNECTION ]]'" # Not on remote hosts
+    PermitLocalCommand yes
+    LocalCommand /bin/bash -c '~/keycutter/bin/ssh-agent-ensure ~/.keycutter/ssh/agents/default'
+    IdentityAgent ~/.keycutter/ssh/agents/default/ssh-agent.socket
+
+# Catchall to handle all github.com_<username> hosts
+Host github.com_*
+    User git
+    HostName github.com
+
+    PermitLocalCommand no # Don't start an ssh-agent
+    IdentityAgent none    # Don't use an ssh-agent
+    ForwardAgent no       # Don't forward an ssh-agent
+
+    IdentitiesOnly yes
+    IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}.pub
+    IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}
+    IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
+    IdentityFile ~/.keycutter/ssh/keys/%k@keyring
+
+# Define your custom hosts here
+Include ~/.keycutter/ssh/hosts/*

@@ -13,7 +13,6 @@ env_file="$agent_dir/agent.env"
 
 export SSH_AUTH_SOCK="$socket_file"
 
-
 # Source the environment file if it exists
 if [[ -f "$env_file" ]]; then
     source "$env_file"
@@ -40,7 +39,7 @@ fi
 ssh-add -D
 
 # Load all keys in the agent directory
-for key in "$agent_dir"/keys/*; do
+for key in "$agent_dir"/keys/*{${HOSTNAME},keyring}; do
     if [[ -f "$key" && "$key" != *.pub ]]; then
         ssh-add "$key"
     fi

@@ -3,8 +3,8 @@ set -eu -o pipefail
 
 # [preview] keycutter - Create FIDO SSH keys for authentication and commit signing.
 
-_SLF_DIR="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
-source "${_SLF_DIR}/lib/functions"
+KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
+source "${KEYCUTTER_ROOT}/lib/functions"
 
 # Set any undefined environment variables to default values
 : ${GIT_CONFIG:="${HOME}/.gitconfig"}

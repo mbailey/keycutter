@@ -104,7 +104,7 @@ FIDO SSH keys reside in Hardware Security Keys which allow for:
     │   ├── allowed_signers
     │   ├── config.d
     │   │   └── github.com_alexdoe-work
-    │   └── gitconfig-keycutter
+    │   └── config
     └── ssh
         ├──hosts 
         │   └── github.com_alexdoe-work
@@ -294,3 +294,7 @@ I decided to explore how I could defend against the operator of a managed device
 accessing **credentials** or **data** they should not have access to.
 
 SSH Key Cutter is one project to come out of this.
+
+## See also
+
+- [tips-and-tricks](docs/tips-and-tricks.md)

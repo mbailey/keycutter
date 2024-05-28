@@ -10,20 +10,61 @@ It assists users by containing all the configuration files and keys in one place
 
 The Keycutter configuration directory consists of the following components:
 
-```
-$ tree ~/.keycutter
-/home/m/.keycutter
+```shell
+$ tree ~/.keycutter | unworkify 
+/home/janedoe/.keycutter
 ├── git
-│   ├── allowed_signers                  # Verify commits signed with SSH Keys
-│   ├── config.d
-│   │   └── github.com_alexdoe-work          # Git config associated with this key
-│   └── gitconfig-keycutter              # Conditionally includes config.d files
-└── ssh                     
-    ├── config.d
-    │   └── github.com_alexdoe-work          # SSH configuration for key
-    └── keys                             
-        ├── github.com_alexdoe-work@yk01     # SSH private key
-        └── github.com_alexdoe-work@yk01.pub # SSH Publivc Key
-```
+│   ├── allowed_signers
+│   ├── config
+│   └── config.d
+│       ├── git.homelab.local_janedoe
+│       ├── git.homelab.local_test
+│       ├── github.com_janedoe3
+│       ├── github.com_janedoe
+│       └── github.com_janedoe-work
+├── .gitignore
+├── ssh
+│   ├── agents
+│   │   ├── default
+│   │   │   ├── config
+│   │   │   ├── keys
+│   │   │   │   ├── homelab.local_janedoe@keyring -> /home/janedoe/.keycutter/ssh/keys/homelab.local_janedoe@keyring
+│   │   │   │   ├── homelab.local_janedoe@personal -> ../../../keys/homelab.local_janedoe@personal
+│   │   │   │   ├── github.com_deleteme@personal -> /home/janedoe/.keycutter/ssh/keys/github.com_deleteme@personal
+│   │   │   │   ├── github.com_janedoe3@personal -> /home/janedoe/.keycutter/ssh/keys/github.com_janedoe3@personal
+│   │   │   │   ├── github.com_janedoe@keyring -> /home/janedoe/.keycutter/ssh/keys/github.com_janedoe@keyring
+│   │   │   │   ├── github.com_janedoe-work@personal -> ../../../keys/github.com_janedoe-work@personal
+│   │   │   │   └── github.com_janedoe@personal -> ../../../keys/github.com_janedoe@personal
+│   │   │   └── ssh-agent.socket
+│   │   ├── personal
+│   │   │   ├── config
+│   │   │   └── keys
+│   │   │       └── github.com_janedoe@personal -> ../../../keys/github.com_janedoe@personal
+│   │   └── work
+│   │       ├── config
+│   │       └── keys
+│   │           └── github.com_janedoe-work@personal -> ../../../keys/github.com_janedoe-work@personal
+│   ├── config
+│   ├── hosts
+│   │   ├── homelab.local_janedoe
+│   │   ├── git
+│   │   └── studio
+│   ├── keycutter-config-update
+│   └── keys
+│       ├── homelab.local_janedoe@keyring
+│       ├── homelab.local_janedoe@keyring.pub
+│       ├── homelab.local_janedoe@personal
+│       ├── homelab.local_janedoe@personal.pub
+│       ├── github.com_janedoe@keyring
+│       ├── github.com_janedoe@keyring.pub
+│       ├── github.com_janedoe-work@keyring
+│       ├── github.com_janedoe-work@keyring.pub
+│       ├── github.com_janedoe-work@personal
+│       ├── github.com_janedoe-work@personal.pub
+│       ├── github.com_janedoe@personal
+│       └── github.com_janedoe@personal.pub
+└── .vscode
+    └── extensions.json
 
-You can view the files in [example_dot_keycutter/](example_dot_keycutter/).
+14 directories, 39 files
+```
