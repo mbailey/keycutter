@@ -48,4 +48,5 @@ Host github.com_*
     IdentityFile ~/.keycutter/ssh/keys/%k@keyring
 
 # Define your custom hosts here
-Include ~/.keycutter/ssh/hosts/*
+Host *
+    Include ~/.keycutter/ssh/hosts/*

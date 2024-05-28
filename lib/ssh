@@ -66,7 +66,7 @@ ssh-config-create() {
                 log "File is identical: $target_path"
             else
                 log "File is different: $target_path"
-                diff -u "$target_path" "$template_path"
+                diff -u "$target_path" "$template_path" || true
                 read -p "Overwrite? [y/N] " -n 1 -r
                 echo
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -82,7 +82,6 @@ ssh-config-create() {
 
     # Ensure SSH config defining Host entries for keys are Included from Keycutter's sshconfig
     dir-ensure "$(dirname "${keycutter_ssh_config_path}")" 0700
-    touch "${keycutter_ssh_config_path}"
     # append-line-if-missing "${keycutter_ssh_config_path}" "Include ${ssh_hosts_dir/#$HOME/'~'}/*"
     apply-template "${KEYCUTTER_ROOT}/templates/keycutter-ssh-config" "${keycutter_ssh_config_path}"
 
