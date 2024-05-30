@@ -40,7 +40,11 @@ add-line-if-missing() {
             prepend)
                 # Prepend the line
                 log "Prepending line to $target_file"
-                sed -i"$backup_extension" "1s;^;$line_to_add\n;" "$target_file"
+                if [[ ! -s "$target_file" ]]; then
+                    echo "$line_to_add" > "$target_file"
+                else
+                    sed -i "$backup_extension" "1i$line_to_add" "$target_file"
+                fi
                 ;;
             *)
                 echo "Invalid mode specified. Use 'prepend' or 'append'."
