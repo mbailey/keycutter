@@ -33,19 +33,34 @@ Match exec "bash -c '[[ -z $SSH_CONNECTION ]]'" # Not on remote hosts
     IdentityAgent ~/.keycutter/ssh/agents/default/ssh-agent.socket
 
 # Catchall to handle all github.com_<username> hosts
-Host github.com_*
+Host *github.com_*
     User git
     HostName github.com
 
+    # To get around pesky firewalls that block port 22
+    # - Comment out the previous HostName line and uncomment the following lines
+    # HostName ssh.github.com
+    # Port 443
+
     PermitLocalCommand no # Don't start an ssh-agent
-    IdentityAgent none    # Don't use an ssh-agent
     ForwardAgent no       # Don't forward an ssh-agent
 
     IdentitiesOnly yes
+    # Add private keys to the agent on origin host
+    Match exec "bash -c '[[ -z $SSH_CONNECTION ]]'" # Not on remote hosts
+        AddKeysToAgent ask
+        IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}
+        IdentityFile ~/.keycutter/ssh/keys/%k@keyring
+
+    Match exec "bash -c '[[ -z $SSH_CONNECTION ]]'" # Not on remote hosts
+        AddKeysToAgent ask
+        IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}.pub
+        IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
+
     IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}.pub
-    IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}
     IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
-    IdentityFile ~/.keycutter/ssh/keys/%k@keyring
+
+
 
 # Define your custom hosts here
 Host *
