@@ -83,7 +83,7 @@ ssh-config-create() {
     # Ensure SSH config defining Host entries for keys are Included from Keycutter's sshconfig
     dir-ensure "$(dirname "${keycutter_ssh_config_path}")" 0700
     # append-line-if-missing "${keycutter_ssh_config_path}" "Include ${ssh_hosts_dir/#$HOME/'~'}/*"
-    apply-template "${KEYCUTTER_ROOT}/templates/ssh/config" "${keycutter_ssh_config_path}"
+    apply-template "${KEYCUTTER_ROOT}/templates/keycutter/ssh/config" "${keycutter_ssh_config_path}"
 
     # Ensure ~/.keycutter/ssh/config is Included by ~/.ssh/config.
     prepend-line-if-missing "${KEYCUTTER_SSH_USER_CONFIGFILE}" "Include ${keycutter_ssh_config_path/#$HOME/'~'}"
