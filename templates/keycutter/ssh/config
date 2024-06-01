@@ -47,12 +47,12 @@ Host *github.com_*
 
     IdentitiesOnly yes
     # Add private keys to the agent on origin host
-    Match exec "bash -c '[[ -z $SSH_CONNECTION ]]'" # Not on remote hosts
+    Match exec "bash -c '[[ -z $SSH_CONNECTION ]]'" # Origin hosts
         AddKeysToAgent ask
         IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}
         IdentityFile ~/.keycutter/ssh/keys/%k@keyring
 
-    Match exec "bash -c '[[ -z $SSH_CONNECTION ]]'" # Not on remote hosts
+    Match exec "bash -c '[[ -n $SSH_CONNECTION ]]'" # Remote hosts
         AddKeysToAgent ask
         IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}.pub
         IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
