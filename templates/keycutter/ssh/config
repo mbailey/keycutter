@@ -57,11 +57,6 @@ Host *github.com_*
         IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}.pub
         IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
 
-    IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}.pub
-    IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
-
-
-
 # Define your custom hosts here
 Host *
     Include ~/.keycutter/ssh/hosts/*
