@@ -1,4 +1,4 @@
-# functions - Functions used by SSH Keycutter
+# utils - Functions used by SSH Keycutter
 #
 # - append-line-if-missing(): Append line to file if it does not exist
 # - prepend-line-if-missing(): Prepend line to file if it does not exist
@@ -136,8 +136,8 @@ log() {
 
     # Define color and prefix based on action type
     case $first_word_downcased in
-        info)                 color="$blue";    prefix="️🛈 " ; destination='stderr';;
-        warn|note)                 color="$yellow";  prefix="⚠️ "; destination='stderr';;
+        info|tip)             color="$blue";    prefix="️🛈 " ; destination='stderr';;
+        warn|note)            color="$yellow";  prefix="⚠️ "; destination='stderr';;
         error)                color="$red";     prefix="🚫 " ;;
         debug)                color="$cyan";    prefix="🔍 " ;;
         success)              color="$green";   prefix="✅ " ;;
