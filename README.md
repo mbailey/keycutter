@@ -73,6 +73,7 @@ FIDO SSH keys reside in Hardware Security Keys which allow for:
 
     ```shell 
     export PATH="$PATH:${PWD}/keycutter/bin" # You may want to add to ~/.bashrc
+    export LC_KEYCUTTER_HOSTNAME="$(hostname -s)" # Used to identify origin host to remotes
     ```
 
 2. **Create a FIDO SSH Key**:
@@ -106,6 +107,7 @@ FIDO SSH keys reside in Hardware Security Keys which allow for:
     │   │   └── github.com_alexdoe-work
     │   └── config
     └── ssh
+        ├──config 
         ├──hosts 
         │   └── github.com_alexdoe-work
         └── keys
@@ -150,6 +152,7 @@ WSL does not support USB devices natively. We can access the Security Device fro
 
     ```shell 
     export PATH="$PATH:${PWD}/keycutter/bin" # You may want to add to ~/.bashrc
+    export LC_KEYCUTTER_HOSTNAME="$(hostname -s)" # Used to identify origin host to remotes
     ```
 
 ## Usage
