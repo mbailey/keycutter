@@ -151,6 +151,10 @@ EOF
 
 ## List SSH Keys
 
+ssh-agent-keys() {
+    SSH_AUTH_SOCK="${HOME}/.keycutter/ssh/agents/default/ssh-agent.socket" ssh-add -l
+}
+
 ssh-keys-fido-resident(){
   log "Resident FIDO SSH Keys:"
   ssh-keygen -K

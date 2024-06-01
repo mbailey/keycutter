@@ -298,3 +298,6 @@ SSH Key Cutter is one project to come out of this.
 ## See also
 
 - [tips-and-tricks](docs/tips-and-tricks.md)
+
+- FIDO keys that require user-presence confirmation offer a little more defence, but are also similarly phishable.
+- https://www.openssh.com/agent-restrict.html
