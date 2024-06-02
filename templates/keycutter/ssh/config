@@ -6,15 +6,6 @@
 #
 #   Include ~/.keycutter/ssh/config
 
-# SSH Agent Management: Define multiple agents for different purposes
-#
-# 1. SSH access to git: the only thing you'll need ssh-agent forwarding for.
-# 2. Use SSH ProxyJump instead for bastion hopping
-# 3. Same proxy is used locally and shared with remote hosts.
-# 4. You don't need to use the SSH agent from local host
-# 5. You probably only need git ssh keys on the your ssh-agent(s)
-# 6. Hopping around from box to box can be fun. Feel free to add more keys!
-
 # LC_KEYCUTTER_ORIGIN
 #
 # - Environment variable containing hostname of "origin" machine.
@@ -24,49 +15,38 @@
 # You need to set this in your shell profile or similar:
 #
 #   export LC_KEYCUTTER_ORIGIN="$(hostname -s)"
+#   export LC_KEYCUTTER_ORIGIN="$USER"
 
 SendEnv LC_KEYCUTTER_ORIGIN
+SendEnv LC_KEYCUTTER_DEFAULT_KEY
 
-Match exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN -eq %l ]]'" # Connecting from Origin
-    Tag origin
-
-# Match exec "bash -c '[[ -n $SSH_CONNECTION ]]'" # Not on remote hosts
-Match exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN -ne %l ]]'" # Not on remote hosts
-    Tag remote
-
-# Setup default ssh-agent with private keys indicated by symlinks
-Match tagged origin
+# Setup ssh-agent with keys symlinked in ssh/agent/default/keys
+Match exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN == %L ]]'" # Connecting from Origin
     PermitLocalCommand yes
     LocalCommand /bin/bash -c '~/keycutter/bin/ssh-agent-ensure ~/.keycutter/ssh/agents/default'
     IdentityAgent ~/.keycutter/ssh/agents/default/ssh-agent.socket
 
-# Key name = Host, connecting from origin host
-Match tagged hostnamekey tagged origin
-# exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN -eq %l ]]'"
     IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_ORIGIN}
+    IdentityFile ~/.keycutter/ssh/keys/${LC_KEYCUTTER_DEFAULT_KEY}@${LC_KEYCUTTER_ORIGIN}
     IdentityFile ~/.keycutter/ssh/keys/%k@keyring
 
-# Key name = host, connecting from remote host
-Match tagged hostnamekey tagged remote
-# exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN -ne %l ]]'"
+Match exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN != %L ]]'"
     IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_ORIGIN}.pub
+    IdentityFile ~/.keycutter/ssh/keys/${LC_KEYCUTTER_DEFAULT_KEY}@${LC_KEYCUTTER_ORIGIN}.pub
     IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
-
-# Catchall to handle all github.com_<username> hosts
+#
+# github.com_<username>
+#
 Host *github.com_*
-    Tag hostnamekey
     User git
     HostName github.com
+    ForwardAgent no
+    IdentitiesOnly yes
 
     # To get around pesky firewalls that block port 22
     # - Comment out the previous HostName line and uncomment the following lines
     # HostName ssh.github.com
     # Port 443
-
-    PermitLocalCommand no # Don't start an ssh-agent
-    ForwardAgent no       # Don't forward an ssh-agent
-
-    IdentitiesOnly yes
 
 # Define your custom hosts here
 Host *
