@@ -6,36 +6,43 @@
 #
 #   Include ~/.keycutter/ssh/config
 
-# LC_KEYCUTTER_ORIGIN
+# LC_KEYCUTTER_ variables
 #
-# - Environment variable containing hostname of "origin" machine.
-# - Defines whether Identityfile should reference private or public keys (for ssh-agent).
 # - By default, sshd only permits SendEnv with to use LANG, LC_*, and TERM.
+# - LC_KEYCUTTER_ORIGIN: hostname of "origin" machine.
+# - LC_KEYCUTTER_DEFAULT_KEY: Key to try if all else fails
 #
-# You need to set this in your shell profile or similar:
+# You need to set these in your shell profile or similar:
 #
 #   export LC_KEYCUTTER_ORIGIN="$(hostname -s)"
-#   export LC_KEYCUTTER_ORIGIN="$USER"
+#   export LC_KEYCUTTER_DEFAULT_KEY="$USER" # Set to empty if unwanted
 
 SendEnv LC_KEYCUTTER_ORIGIN
 SendEnv LC_KEYCUTTER_DEFAULT_KEY
 
-# Setup ssh-agent with keys symlinked in ssh/agent/default/keys
+# When connecting from an origin host
 Match exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN == %L ]]'" # Connecting from Origin
+
+    # Setup ssh-agent with keys symlinked in ssh/agent/default/keys
     PermitLocalCommand yes
     LocalCommand /bin/bash -c '~/keycutter/bin/ssh-agent-ensure ~/.keycutter/ssh/agents/default'
     IdentityAgent ~/.keycutter/ssh/agents/default/ssh-agent.socket
 
+    # Add some default keys based on hostname and default key (if exists)
     IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_ORIGIN}
-    IdentityFile ~/.keycutter/ssh/keys/${LC_KEYCUTTER_DEFAULT_KEY}@${LC_KEYCUTTER_ORIGIN}
     IdentityFile ~/.keycutter/ssh/keys/%k@keyring
+    IdentityFile ~/.keycutter/ssh/keys/${LC_KEYCUTTER_DEFAULT_KEY}@${LC_KEYCUTTER_ORIGIN}
 
+# When connecting from a remote host
 Match exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN != %L ]]'"
+
+    # Add some default keys based on hostname and default key (if exists)
     IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_ORIGIN}.pub
     IdentityFile ~/.keycutter/ssh/keys/${LC_KEYCUTTER_DEFAULT_KEY}@${LC_KEYCUTTER_ORIGIN}.pub
     IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
+   
 #
-# github.com_<username>
+# Connecting to github.com_<username>
 #
 Host *github.com_*
     User git
