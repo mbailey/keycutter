@@ -15,25 +15,46 @@
 # 5. You probably only need git ssh keys on the your ssh-agent(s)
 # 6. Hopping around from box to box can be fun. Feel free to add more keys!
 
-# LC_KEYCUTTER_HOSTNAME: Environment variable containing hostname of "local" machine
+# LC_KEYCUTTER_ORIGIN
 #
-# We use it define the IdentityFile's for SSH to look for.
-# - By default, sshd only allows us to SendEnv a few variables (LANG, LC_*, and TERM)
+# - Environment variable containing hostname of "origin" machine.
+# - Defines whether Identityfile should reference private or public keys (for ssh-agent).
+# - By default, sshd only permits SendEnv with to use LANG, LC_*, and TERM.
 #
-# You need to set this in your shell profile or similar.
+# You need to set this in your shell profile or similar:
 #
-#   export LC_KEYCUTTER_HOSTNAME="$(hostname -s)"
-#
-SendEnv LC_KEYCUTTER_HOSTNAME
+#   export LC_KEYCUTTER_ORIGIN="$(hostname -s)"
+
+SendEnv LC_KEYCUTTER_ORIGIN
+
+Match exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN -eq %l ]]'" # Connecting from Origin
+    Tag origin
+
+# Match exec "bash -c '[[ -n $SSH_CONNECTION ]]'" # Not on remote hosts
+Match exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN -ne %l ]]'" # Not on remote hosts
+    Tag remote
 
 # Setup default ssh-agent with private keys indicated by symlinks
-Match exec "bash -c '[[ -z $SSH_CONNECTION ]]'" # Not on remote hosts
+Match tagged origin
     PermitLocalCommand yes
     LocalCommand /bin/bash -c '~/keycutter/bin/ssh-agent-ensure ~/.keycutter/ssh/agents/default'
     IdentityAgent ~/.keycutter/ssh/agents/default/ssh-agent.socket
 
+# Key name = Host, connecting from origin host
+Match tagged hostnamekey tagged origin
+# exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN -eq %l ]]'"
+    IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_ORIGIN}
+    IdentityFile ~/.keycutter/ssh/keys/%k@keyring
+
+# Key name = host, connecting from remote host
+Match tagged hostnamekey tagged remote
+# exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN -ne %l ]]'"
+    IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_ORIGIN}.pub
+    IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
+
 # Catchall to handle all github.com_<username> hosts
 Host *github.com_*
+    Tag hostnamekey
     User git
     HostName github.com
 
@@ -46,16 +67,6 @@ Host *github.com_*
     ForwardAgent no       # Don't forward an ssh-agent
 
     IdentitiesOnly yes
-    # Add private keys to the agent on origin host
-    Match exec "bash -c '[[ -z $SSH_CONNECTION ]]'" # Origin hosts
-        AddKeysToAgent ask
-        IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}
-        IdentityFile ~/.keycutter/ssh/keys/%k@keyring
-
-    Match exec "bash -c '[[ -n $SSH_CONNECTION ]]'" # Remote hosts
-        AddKeysToAgent ask
-        IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_HOSTNAME}.pub
-        IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
 
 # Define your custom hosts here
 Host *
