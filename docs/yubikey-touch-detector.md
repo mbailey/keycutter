@@ -15,7 +15,9 @@ Get notified when Yubikey needs a touch.
 sudo dnf install gpgme-devel
 git clone https://github.com/maximbaz/yubikey-touch-detector.git
 cd yubikey-touch-detector
-go build
+# go build
+make
+sudo make install
 sudo cp ~/go/bin/yubikey-touch-detector /usr/bin/
 ```
 
