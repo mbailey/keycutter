@@ -6,55 +6,79 @@
 #
 #   Include ~/.keycutter/ssh/config
 
-# LC_KEYCUTTER_ variables
+# KEYCUTTER_ORIGIN - hostname of ssh origin (leeper of the hardware security key)
 #
-# - By default, sshd only permits SendEnv with to use LANG, LC_*, and TERM.
-# - LC_KEYCUTTER_ORIGIN: hostname of "origin" machine.
-# - LC_KEYCUTTER_DEFAULT_KEY: Key to try if all else fails
+# Used to determine the SSH key to use.
+# You need to set this environment variable in your shell profile or .bashrc
+# if it not set by keycutter.
 #
-# You need to set these in your shell profile or similar:
-#
-#   export LC_KEYCUTTER_ORIGIN="$(hostname -s)"
-#   export LC_KEYCUTTER_DEFAULT_KEY="$USER" # Set to empty if unwanted
+#   [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="$(hostname -s)"
 
-SendEnv LC_KEYCUTTER_ORIGIN
-SendEnv LC_KEYCUTTER_DEFAULT_KEY
+# Optionally enable >2 hops to remote hosts
+#
+# sshd doesn't accept receiving remote Environment Variables by default
+# To enable this, you need to add the following lines to /etc/ssh/sshd_config:
+#
+#     AcceptEnv KEYCUTTER_ORIGIN
+#
+# AcceptEnv is a security risk on sshd and should be used with caution
+#
+Match exec "bash -c '[[ -n $KEYCUTTER_ORIGIN ]]'" OriginalHost *,!github*,!gitlab*,!git.*
+    SendEnv KEYCUTTER_ORIGIN
+
+# To enable the remote hosts to identify which keys request from ssh-agent,
+# when connecting from an origin host to a (non-git) remote,
+# Start a shell on remote with $KEYCUTTER_ORIGIN set to hostname of local host
+Match exec "bash -c '[[ $KEYCUTTER_ORIGIN == %L ]]'" OriginalHost *,!github*,!gitlab*,!git.*
+    LocalCommand echo "Connecting to %h from origin %L"
+    RemoteCommand /bin/bash -c "export KEYCUTTER_ORIGIN=%L && exec $SHELL -l"
+    RequestTTY yes
 
 # When connecting from an origin host
-Match exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN == %L ]]'" # Connecting from Origin
+Match exec "bash -c '[[ $KEYCUTTER_ORIGIN == %L ]]'" # Connecting from Origin
 
     # Setup ssh-agent with keys symlinked in ssh/agent/default/keys
     PermitLocalCommand yes
     LocalCommand /bin/bash -c '~/keycutter/bin/ssh-agent-ensure ~/.keycutter/ssh/agents/default'
     IdentityAgent ~/.keycutter/ssh/agents/default/ssh-agent.socket
 
-    # Add some default keys based on hostname and default key (if exists)
-    IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_ORIGIN}
-    IdentityFile ~/.keycutter/ssh/keys/%k@keyring
-    IdentityFile ~/.keycutter/ssh/keys/${LC_KEYCUTTER_DEFAULT_KEY}@${LC_KEYCUTTER_ORIGIN}
+    # Add keys based on original remote hostname
+    IdentityFile ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN}
+    IdentityFile ~/.keycutter/ssh/keys/%n@keyring
+    AddKeysToAgent yes
 
 # When connecting from a remote host
-Match exec "bash -c '[[ $LC_KEYCUTTER_ORIGIN != %L ]]'"
+Match exec "bash -c '[[ $KEYCUTTER_ORIGIN != %L ]]'"
 
-    # Add some default keys based on hostname and default key (if exists)
-    IdentityFile ~/.keycutter/ssh/keys/%k@${LC_KEYCUTTER_ORIGIN}.pub
-    IdentityFile ~/.keycutter/ssh/keys/${LC_KEYCUTTER_DEFAULT_KEY}@${LC_KEYCUTTER_ORIGIN}.pub
-    IdentityFile ~/.keycutter/ssh/keys/%k@keyring.pub
-   
-#
-# Connecting to github.com_<username>
-#
-Host *github.com_*
+    # Add keys based on original remote hostname
+    IdentityFile ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN}.pub
+    IdentityFile ~/.keycutter/ssh/keys/%n@keyring.pub
+
+Host *github.com_* # Catchall for github.com_<username>
     User git
     HostName github.com
     ForwardAgent no
     IdentitiesOnly yes
+    RequestTTY no
 
     # To get around pesky firewalls that block port 22
     # - Comment out the previous HostName line and uncomment the following lines
     # HostName ssh.github.com
     # Port 443
 
+Host *gitlab.com_* # Catchall for gitlab.com_<username>
+    User git
+    HostName gitlab.com
+    ForwardAgent no
+    IdentitiesOnly yes
+    RequestTTY no
+
+    # To get around pesky firewalls that block port 22
+    # - Comment out the previous HostName line and uncomment the following lines
+    # HostName ssh.gitlab.com
+    # Port 443
+
 # Define your custom hosts here
 Host *
+    ForwardAgent yes
     Include ~/.keycutter/ssh/hosts/*
