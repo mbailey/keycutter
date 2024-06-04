@@ -16,6 +16,8 @@ github-ssh-key-add() {
     choice=${choice:-Y}
     [[ $choice =~ ^[Yy]*$ ]] || return 1
 
+    log "Tip: You can authorise GitHub CLI from a trusted device by visiting https://github.com/login/device"
+
     if github-auth; then
         log "Add SSH authentication key (${ssh_key_path}.pub) to GitHub"
         gh ssh-key add --type authentication --title "${ssh_keytag}" "${ssh_key_path}.pub"
