@@ -125,6 +125,10 @@ FIDO SSH keys reside in Hardware Security Keys which allow for:
   - **OpenSSH >= 8.2p1**
   - **Yubikey Manager**
 
+### Recommended
+
+- [yubikey-touch-detector](docs/yubikey-touch-detector.md)
+
 ### Setup for WSL (Windows Subsystem for Linux)
 
 WSL does not support USB devices natively. We can access the Security Device from Linux by using a helper program called `ssh-sk-helper.exe` that forwards requests to Windows OpenSSH .
