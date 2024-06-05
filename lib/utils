@@ -43,7 +43,7 @@ add-line-if-missing() {
                 if [[ ! -s "$target_file" ]]; then
                     echo "$line_to_add" > "$target_file"
                 else
-                    sed -i "$backup_extension" "1i$line_to_add" "$target_file"
+                    sed -i"$backup_extension" "1i$line_to_add" "$target_file"
                 fi
                 ;;
             *)
