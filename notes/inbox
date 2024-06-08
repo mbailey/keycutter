@@ -1,0 +1,50 @@
+## What it does
+
+1. Creates a FIDO SSH key: with an SSH Keytag identifying the Security Key it
+   resides on and the Service Identity it is used to authenticate as (e.g.
+   yubi1@github-alexdoe)
+
+2. Create SSH helper config: to tell ssh which key to use enabled the following
+   commands to work immediately:
+
+    ```shell
+    ssh git@github.com_alexdoe
+    git clone git@github.com_alexdoe:bash-my-aws/keycutter.git
+    ```
+
+3. Create Git helper config: sets signing key, name and email
+
+4. Add public key to GitHub: auth & signing
+
+## Why? - Strengthening Security Boundaries on Managed Devices
+
+Connecting to your personal github account from a work managed laptop may allow
+an admin, remote attacker or any software running on the laptop to view and
+modify your repositories and sign commits / tags as you. It may also allow any
+of these actors to copy your credentials for continued remote use.
+
+- Mitigations: 
+    - Short lived credentials
+        - They still have access as long as you do
+    - Credentials tied to source address
+        - No good if attacker behind same ip
+            - VPN
+            - work / home / cafe NAT
+            - can inject themself into ISP
+
+My employer recently mandated that staff work on their laptops with MDM (mobile
+device management). This opens up the possibility of other people and processes
+on my laptop without my knowledge, raising privacy and security concerns. In the
+same month, a client also mandated we work on their managed devices.
+
+Until this point in my life, I have always had full control over the computers I
+work on. This meant that at times my personal, work and public identities and
+data were present on the same device. It's always better to maintain clear
+separation between different security domains but like with backups or flossing,
+best practice is not ubiquitous.
+
+I decided to explore how I could defend against the operator of a managed device
+accessing **credentials** or **data** they should not have access to.
+
+SSH Key Cutter is one project to come out of this.
+

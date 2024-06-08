@@ -3,6 +3,9 @@
 # ssh-agent-ensure - Ensure the SSH agent is running and environment variables are set
 #
 # Usage: ssh-agent-ensure <agent_directory>
+
+# TODO: See if we can convert this into a one liner in ~/.keycutter/ssh/config
+
 set -eu -o pipefail
 
 [[ -n ${DEBUG:-} ]] && set -x

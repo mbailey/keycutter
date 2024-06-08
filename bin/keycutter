@@ -7,10 +7,9 @@ KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/functions"
 
 # Set any undefined environment variables to default values
-: ${GIT_CONFIG:="${HOME}/.gitconfig"}
-: ${KEYCUTTER_CONFIG_DIR:="$HOME/.keycutter"}
+: ${GIT_CONFIG:="~/.gitconfig"}
+: ${KEYCUTTER_CONFIG_DIR:="~/.keycutter"}
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
-: ${KEYCUTTER_SSH_USER_CONFIGFILE:-"${HOME}/.ssh/config"}
 
 # Prerequisites:
 #
@@ -123,7 +122,7 @@ create() {
     local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/ssh/keys/${ssh_keytag}" # Path SSH key will be written to
 
     # Create FIDO SSH Key for $ssh_keytag
-    ssh-key-create "$ssh_key_path" "$ssh_key_type" "$ssh_key_resident"
+    keycutter-ssh-key-create "$ssh_key_path" "$ssh_key_type" "$ssh_key_resident"
 
     # Create SSH config for this key
     #
@@ -137,13 +136,13 @@ create() {
     #   - Add an IdentityFile entry to Keycutter's sshconfig
     #   - This allows us to use this key for any service that supports FIDO SSH keys.
     #
-    ssh-config-create "$ssh_key_path"
+    keycutter-ssh-config-create "$ssh_key_path"
 
     # Configure Git for repos where remote url includes SSH Keytag's "Identity Part"
     #
     # - Sets User email and name
     # - Configures Git commit and tag signing
-    git-config-create "$ssh_key_path" "$git_user_email" "$git_user_name"
+    keycutter-git-config-create "$ssh_key_path" "$git_user_email" "$git_user_name"
 
     # If the SSH Keytags 
     # - Upload public key to GitHub for auth and commit signing

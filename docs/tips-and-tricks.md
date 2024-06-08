@@ -15,7 +15,7 @@ Keycutter is composed of simple bash functions which can be run independantly.
 2. Recreate ssh config files:
 
     ```shell
-    $ ssh-config-create ~/.keycutter/ssh/keys/example.com_m\@keyring
+    $ keycuitter-ssh-config-create ~/.keycutter/ssh/keys/example.com_m\@keyring
     File is identical: /home/janedoe/.keycutter/ssh/config
     Line already present in /home/janedoe/.ssh/config
     SSH configuration file exists (/home/janedoe/.keycutter/ssh/hosts/example.com_m)

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+# git-default-key-command - Get default ssh signing key for a repository
+
+echo "~/.keycutter/ssh/keys/$(git remote get-url origin | sed -E 's#(git@|https://)?([^:/]+)[:/]+.*$#\2#')@${KEYCUTTER_ORIGIN:-$(hostname -s)}"

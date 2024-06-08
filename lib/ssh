@@ -9,12 +9,11 @@ source "${KEYCUTTER_ROOT}/lib/utils"
 : ${KEYCUTTER_SSH_CONFIGFILE:="${KEYCUTTER_CONFIG_DIR}/ssh/sshconfig-keycutter"}
 : ${KEYCUTTER_SSH_KEY_DIR:="${KEYCUTTER_CONFIG_DIR}/ssh/keys"}
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
-: ${KEYCUTTER_SSH_USER_CONFIGFILE:="${HOME}/.ssh/config"}
 
 ## Create SSH Keys and Config
 
 # XXX Check Security Key requires PIN to unlock
-ssh-key-create() {
+keycutter-ssh-key-create() {
 
     # Create a new SSH Key
 
@@ -37,7 +36,7 @@ ssh-key-create() {
     chmod 0600 "${ssh_key_path}.pub"
 }
 
-ssh-config-create() {
+keycutter-ssh-config-create() {
 
     # Create or update SSH configuration file for the identity
 
@@ -82,23 +81,25 @@ ssh-config-create() {
 
     # Ensure SSH config defining Host entries for keys are Included from Keycutter's sshconfig
     dir-ensure "$(dirname "${keycutter_ssh_config_path}")" 0700
-    # append-line-if-missing "${keycutter_ssh_config_path}" "Include ${ssh_hosts_dir/#$HOME/'~'}/*"
-    apply-template "${KEYCUTTER_ROOT}/templates/keycutter/ssh/config" "${keycutter_ssh_config_path}"
+    apply-template "${KEYCUTTER_ROOT}/templates/ssh/config" "${keycutter_ssh_config_path}"
 
     # Ensure ~/.keycutter/ssh/config is Included by ~/.ssh/config.
-    prepend-line-if-missing "${KEYCUTTER_SSH_USER_CONFIGFILE}" "Include ${keycutter_ssh_config_path/#$HOME/'~'}"
+    prepend-line-if-missing ~/.ssh/config "Include ${keycutter_ssh_config_path/#$HOME/'~'}"
 
-    # Add this key to Keycutter SSH config  
+    # XXX Rethink this now we have github.com, gitlab.com catchalls
+    # XXX Maybe extend the catchalls to include all hosts with domain.com_username?
     #
-    # If the key is for a service, create a Host entry for the service
-    local service="$(ssh-keytag-service "${ssh_key_path}")"
-    if [[ -n $service ]]; then
-        ssh-config-host-file-update "${ssh_key_path}"
-    # Otherwise, add the key to the main Keycutter SSH config
-    else
-        local target_path="${keycutter_ssh_config_path}"
-        prepend-line-if-missing "${target_path}" "IdentityFile ${ssh_key_path/#$HOME/'~'}.pub"
-    fi
+    # # Add this key to Keycutter SSH config  
+    # #
+    # # If the key is for a service, create a Host entry for the service
+    # local service="$(ssh-keytag-service "${ssh_key_path}")"
+    # if [[ -n $service ]]; then
+    #     ssh-config-host-file-update "${ssh_key_path}"
+    # # Otherwise, add the key to the main Keycutter SSH config
+    # else
+    #     local target_path="${keycutter_ssh_config_path}"
+    #     prepend-line-if-missing "${target_path}" "IdentityFile ${ssh_key_path/#$HOME/'~'}.pub"
+    # fi
 
     # Optionally add to an ssh-agent configuration
     dir-ensure "${ssh_agents_dir}" 0700
@@ -110,44 +111,43 @@ ssh-config-create() {
         log "Creating symlink: ln -sf ${ssh_key_path} ${ssh_agents_dir}/default/keys"
         ln -sf "${ssh_key_path}" "${ssh_agents_dir}/default/keys" # XXX prompt user before overwriting
     fi
-     
 }
 
-ssh-config-host-file-update() {
-
-    local ssh_key_path="${1:-}"
-
-    local service_identity="$(ssh-keytag-service-identity "${ssh_key_path}")"
-    local service="$(ssh-keytag-service "${ssh_key_path}")"
-    local ssh_host_alias_path="${KEYCUTTER_CONFIG_DIR}/ssh/hosts/${service_identity}"
-    local identityfile_entry="  IdentityFile ${ssh_key_path/#$HOME/'~'}.pub"
-
-    dir-ensure "$(dirname "${ssh_host_alias_path}")" 0700
-
-    temp_file="$(mktemp)"
-    # If we already have a config file for this identity
-    if [[ -f $ssh_host_alias_path ]]; then
-        log "SSH configuration file exists ($ssh_host_alias_path)"
-        # If the ssh_key_path is not already in the file, add it
-        if ! grep -qxF "$identityfile_entry" "$ssh_host_alias_path"; then
-            log "Appending to $ssh_host_alias_path: $identityfile_entry"
-            echo "$identityfile_entry" >> "$ssh_host_alias_path"
-        else
-            log "Already in $ssh_host_alias_path: $identityfile_entry"
-        fi
-    else
-        log "Create SSH configuration file $ssh_host_alias_path"
-        cat > "$temp_file" <<-EOF
-Host $service_identity
-  User git # Change to the user for the service
-  HostName $service
-  IdentitiesOnly yes
-$identityfile_entry
-EOF
-        mv "$temp_file" "$ssh_host_alias_path"
-    fi
-
-}
+# ssh-config-host-file-update() {
+# 
+#     local ssh_key_path="${1:-}"
+# 
+#     local service_identity="$(ssh-keytag-service-identity "${ssh_key_path}")"
+#     local service="$(ssh-keytag-service "${ssh_key_path}")"
+#     local ssh_host_alias_path="${KEYCUTTER_CONFIG_DIR}/ssh/hosts/${service_identity}"
+#     local identityfile_entry="  IdentityFile ${ssh_key_path/#$HOME/'~'}.pub"
+# 
+#     dir-ensure "$(dirname "${ssh_host_alias_path}")" 0700
+# 
+#     temp_file="$(mktemp)"
+#     # If we already have a config file for this identity
+#     if [[ -f $ssh_host_alias_path ]]; then
+#         log "SSH configuration file exists ($ssh_host_alias_path)"
+#         # If the ssh_key_path is not already in the file, add it
+#         if ! grep -qxF "$identityfile_entry" "$ssh_host_alias_path"; then
+#             log "Appending to $ssh_host_alias_path: $identityfile_entry"
+#             echo "$identityfile_entry" >> "$ssh_host_alias_path"
+#         else
+#             log "Already in $ssh_host_alias_path: $identityfile_entry"
+#         fi
+#     else
+#         log "Create SSH configuration file $ssh_host_alias_path"
+#         cat > "$temp_file" <<-EOF
+# Host $service_identity
+#   User git # Change to the user for the service
+#   HostName $service
+#   IdentitiesOnly yes
+# $identityfile_entry
+# EOF
+#         mv "$temp_file" "$ssh_host_alias_path"
+#     fi
+# 
+# }
 
 ## List SSH Keys
 
