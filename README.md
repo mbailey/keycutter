@@ -1,45 +1,40 @@
 ---
 alias: SSH Keycutter
 ---
-
 # [Preview] Keycutter - FIDO SSH Keys made easy
 
-- 8 Jun 2024: Preparing for alpha release (big changes being made)
+-  8 Jun 2024: Preparing for alpha release (big changes being made)
 - 18 Mar 2024: Preview release for review only
 
-Ever wondered how to contribute to an open-source project on GitHub from an
-employer managed (i.e. untrusted) laptop, without compromising the security of
-your personal GitHub account?
+Ever wondered how to contribute to an open-source project on GitHub from an employer managed (i.e. untrusted) laptop, without compromising the security of your personal GitHub account?
 
-Keycutter came out of an attempt to solve this problem but evolved into a tool
-improve security by simplifying FIDO SSH Key management.
+Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying FIDO SSH Key management.
+
+Keycutter is a config cookie cutter that creates FIDO SSH Keys on Hardware Security Keys, Git config, and SSH config in one place.
+
+## What Keycutter gives you
+
+**Security:**
+    - **Unstealable* FIDO SSH keys:** No way to extract them from the device.
+    - **Physical presence verification:** touch to approve each use.
+    - **PIN retry lockout:** defend against stolen hardware security token.
+
+**Convenience:**
+    - Git commit and tag signing with your SSH keys.
+    - Automatic SSH key selection by given service/identity based on host aliases.
+    - AWS SSH-over-SSM.
+    - SSH and Git config in one place
+
+**Privacy:**
+    - **Security Boundary Separation:** Different keys for different service/identities.
+    - **Selective SSH key forwarding:** Map keys to services and devices.
 
 *While initially created for use with Yubikeys and GitHub, Keycutter supports other devices and services.*
-
-**Keycutter is a config cookie cutter that creates:**
-
-- **FIDO SSH Keys on Hardware Security Keys:**
-
-    - **Secure and convenient authentication:** No way to extract the private key from the device.
-    - **Support for multiple keys on the same device:** enforce separation between security domains.
-    - **User presence verification:** defend against network attacks and malware.
-    - **PIN retry lockout:** defend against stolen key
-
-- **Git config:**
-
-    - Commit and tag signing with SSH keys
-    - Sets User name and email on a per-key basis.
-
-- **SSH config:**
-
-    - Automatic key selection for a given service and identity based on custom hostname.
-    - Selective key forwarding to remote hosts.
 
 **All config is stored in a single directory (`~/.keycutter`) which:**
 
 - Can be kept in version control.
 - Can be used on multiple devices / hosts.
- 
 
 ## SSH Keytags
 
@@ -62,9 +57,7 @@ FIDO SSH Keys across multiple devices and services.
 
 *Read more about [SSH Keytags](docs/ssh-keytags.md)*
 
-
-
-## Installation
+## Getting Started
 
 - **Prerequisites:**
   
@@ -78,7 +71,7 @@ FIDO SSH Keys across multiple devices and services.
 
     - **[yubikey-touch-detector](docs/yubikey-touch-detector.md)**: Displays a notification when touch required.
 
-1. **Install Keycutter**:
+### 1. Install Keycutter
 
     Clone the Git repo:
 
@@ -98,7 +91,6 @@ FIDO SSH Keys across multiple devices and services.
         export SSH_SK_HELPER="/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe"
     fi
     ```
-
     As a config cookie cutter, keycutter is not required to be in the path
     but it is useful for generating new configs.
     Optionally add the bin directory to your path:
@@ -107,10 +99,7 @@ FIDO SSH Keys across multiple devices and services.
     export PATH="$PATH:${PWD}/keycutter/bin"
     ```
 
-
-## Usage
-
-### Create a FIDO SSH Key
+### 2. Create a FIDO SSH Key
 
 Provide an SSH Keytag (<service>_<identity>@<device>) to the create command:
 
@@ -126,21 +115,15 @@ keycutter create github.com_alexdoe@personal
     keycutter create github.com_alexdoe@personal-laptop
     ```
 
-2. **Clone any GitHub repo using your new key**: 
+### 3. Review your keycutter configuration directory
 
-    ```shell
-    git clone git@github.com_alexdoe:bash-my-aws/keycutter
-    ```
+The directory contains all the Git / SSH config files for your FIDO SSH keys.
 
-3. **Commit a change signed with your new SSH Key**:
+```shell
+tree ~/.keycutter
+```
 
-    ```shell
-    cd keycutter
-    date >> README.md 
-    git commit -S -m "I signed this commit with my new SSH Key"
-    ```
-
-4. **Review Keycutter Configuration Directory:** or [view example files here](docs/keycutter-config-dir/example/).
+**Example output:**
 
     ```shell
     $ tree ~/.keycutter
@@ -152,113 +135,26 @@ keycutter create github.com_alexdoe@personal
     │   └── config
     └── ssh
         ├──config 
-        ├──config 
-        ├──hosts 
-        │   └── github.com_alexdoe-work
         └── keys
             ├── github.com_alexdoe-work@yk01
             └── github.com_alexdoe-work@yk01.pub
     ```
 
+### Usage
 
-
-
-
-
-
-## Usage
-
-### Create FIDO SSH Key
-
-Provide an SSH Keytag to the create command:
+### 1. Clone a GitHub repo using your new key
 
 ```shell
-keycutter create <service>_<identity>@<device> # e.g. keycutter create github.com_alexdoe@personal-laptop
+git clone git@github.com_alexdoe:bash-my-aws/keycutter
 ```
 
-**Example**: XXX Update
+### 2. Commit a change signed with your new SSH Key
 
 ```shell
-$ keycutter create github.com_alexdoe@personal-laptop
-
-Creating FIDO SSH Key for laptop@github-alexdoe
-Generating FIDO SSH key: /home/alex/.keycutter/ssh/keys/laptop@github-alexdoe
-Creating directory: /home/alex/.keycutter/ssh/keys
-Generating public/private ecdsa-sk key pair.
-You may need to touch your authenticator to authorize key generation.
-Enter PIN for authenticator: 
-You may need to touch your authenticator (again) to authorize key generation.
-Enter passphrase (empty for no passphrase): 
-Enter same passphrase again: 
-Your identification has been saved in /home/alex/.keycutter/ssh/keys/laptop@github-alexdoe
-Your public key has been saved in /home/alex/.keycutter/ssh/keys/laptop@github-alexdoe.pub
-The key fingerprint is:
-SHA256:W9CBCBS3jqDcQ4hBBX4MqUQMfzxfjsPlARZ6qpnMNm4 laptop@github-alexdoe
-The key's randomart image is:
-+-[ECDSA-SK 256]--+
-|B=+o+o=o ..      |
-|o*+. +.o.. .     |
-|+oo+= o = .      |
-|o.+o O * o       |
-|.. oo * S .      |
-| o +.  . o       |
-|  O     .        |
-| oE.             |
-| ..              |
-+----[SHA256]-----+
-SSH key generated at /home/alex/.keycutter/ssh/keys/laptop@github-alexdoe
-Creating symlink: /home/alex/.keycutter/ssh/keys/laptop@github-alexdoe -> github-alexdoe
-This allows us to leave omit device part of SSH Keytag when referring to keyfile.
-
-Starting SSH Agent... Agent pid 74274
-Adding key to SSH Agent... Identity added: /home/alex/.keycutter/ssh/keys/laptop@github-alexdoe (laptop@github-alexdoe)
-Configuring git to use the SSH Key for commit/tag signing for relevant repos
-
-Setting up GitHub specific configuration...
-Creating SSH configuration file /home/alex/.keycutter/ssh/hosts/github-alexdoe
-Adding SSH key to GitHub for auth and commit/tag signing: /home/alex/.keycutter/ssh/keys/laptop@github-alexdoe
-Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) y
-  ✓ Logged in to github.com as someuser (keyring)
-? You're already logged into github.com. Do you want to re-authenticate? No
-GitHub CLI: Required scopes are available.
-Adding SSH authentication key (/home/alex/.keycutter/ssh/keys/laptop@github-alexdoe.pub) to GitHub
-✓ Public key added to your account
-Adding SSH signing key (/home/alex/.keycutter/ssh/keys/laptop@github-alexdoe.pub) to GitHub
-✓ Public key added to your account
-
-GitHub Organisations that enable or enforce SAML SSO will require additional setup.
-Setup complete for key: laptop@github-alexdoe
+cd keycutter
+date >> README.md 
+git commit -m "I signed this commit with my new SSH Key"
 ```
-
-### keycutter list
-
-```shell
-keycutter list
-```
-
-**Currently lists:**
-
-- FIDO SSH Keys (resident and non-resident)
-- Keys uploaded to GitHub (authentication and signing)
-
-**Example:**
-
-```shell
-$ keycutter list
-Non-resident FIDO SSH Keys:
-/home/alex/.keycutter/ssh/keys/laptop@github-alexdoe.pub
-Resident FIDO SSH Keys:
-Enter PIN for authenticator: 
-You may need to touch your authenticator to authorize key download.
-No keys to download
-  ✓ Logged in to github.com as alexdoe (keyring)
-? You're already logged into github.com. Do you want to re-authenticate? No
-GitHub CLI: Required scopes are available.
-TITLE                  ID        KEY                                             TYPE            ADDED
-laptop@github-alexdoe  96665164  sk-ecdsa-sha2-nistp256...a8To7Y10AAAAEc3NoOg==  authentication  8m
-laptop@github-alexdoe  266976    sk-ecdsa-sha2-nistp256...a8To7Y10AAAAEc3NoOg==  signing         8m
-```
-
 
 ## See also
 

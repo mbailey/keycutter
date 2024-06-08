@@ -1,4 +1,4 @@
-# SSH Functions for Keycutter
+# keycutter/lib/ssh - Functions to create SSH keys and config
 
 KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/utils"
@@ -6,23 +6,18 @@ source "${KEYCUTTER_ROOT}/lib/utils"
 # Initialise some environment variables
 
 : ${KEYCUTTER_CONFIG_DIR:="${HOME}/.keycutter"}
-: ${KEYCUTTER_SSH_CONFIGFILE:="${KEYCUTTER_CONFIG_DIR}/ssh/sshconfig-keycutter"}
 : ${KEYCUTTER_SSH_KEY_DIR:="${KEYCUTTER_CONFIG_DIR}/ssh/keys"}
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
 
-## Create SSH Keys and Config
-
-# XXX Check Security Key requires PIN to unlock
 keycutter-ssh-key-create() {
 
-    # Create a new SSH Key
-
-    # Use of generated FIDO SSH Key requires user presence verification 
+    # Generate a new FIDO SSH key
 
     local ssh_key_path="${1:-}"
     local ssh_key_type="${2:-${KEYCUTTER_SSH_KEY_TYPE}}"
     local resident="${3:-}"
-    local ssh_keytag="$(ssh-keytag "${ssh_key_path}")"        # Extract SSH Keytag from path
+
+    local ssh_keytag="$(basename "${ssh_key_path}")"        # Extract SSH Keytag from path
 
     if [[ -z $ssh_key_path || -z $ssh_keytag ]]; then
         usage
@@ -40,167 +35,43 @@ keycutter-ssh-config-create() {
 
     # Create or update SSH configuration file for the identity
 
-    local ssh_key_path="${1:-}"
-    
-    if [[ -z $ssh_key_path ]]; then
-        usage # XXX This should be an error message
-        return 1
-    fi
+    local ssh_key_path="${1:?}"
 
     local keycutter_ssh_config_path="${KEYCUTTER_CONFIG_DIR}/ssh/config"
-    local ssh_hosts_dir="${KEYCUTTER_CONFIG_DIR}/ssh/hosts"
     local ssh_agents_dir="${KEYCUTTER_CONFIG_DIR}/ssh/agents"
+    local keycutter_scripts_dir="${KEYCUTTER_CONFIG_DIR}/scripts"
 
+    # Ensure keycutter config dir exists
     dir-ensure "${KEYCUTTER_CONFIG_DIR}" 0700
 
-    apply-template() {
-        # Install file from template if it does not exist
-        # if the file exists:
-        # if it is identical, print a message to that effect
-        # if it is different, show the diff and ask user if they want to overwrite
-        local template_path="${1:-}"
-        local target_path="${2:-}"
-        if [[ -f $target_path ]]; then
-            if diff -q "$target_path" "$template_path" >/dev/null; then
-                log "File is identical: $target_path"
-            else
-                log "File is different: $target_path"
-                diff -u "$target_path" "$template_path" || true
-                read -p "Overwrite? [y/N] " -n 1 -r
-                echo
-                if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    log "Overwriting $target_path"
-                    cp "$template_path" "$target_path"
-                fi
-            fi
-        else
-            log "Installing $target_path"
-            cp "$template_path" "$target_path"
-        fi
-    }
-
-    # Ensure SSH config defining Host entries for keys are Included from Keycutter's sshconfig
+    # Copy in main keycutter ssh config
     dir-ensure "$(dirname "${keycutter_ssh_config_path}")" 0700
     apply-template "${KEYCUTTER_ROOT}/templates/ssh/config" "${keycutter_ssh_config_path}"
 
-    # Ensure ~/.keycutter/ssh/config is Included by ~/.ssh/config.
+    # Ensure ~/.keycutter/ssh/config is Include'd by ~/.ssh/config.
     prepend-line-if-missing ~/.ssh/config "Include ${keycutter_ssh_config_path/#$HOME/'~'}"
 
-    # XXX Rethink this now we have github.com, gitlab.com catchalls
-    # XXX Maybe extend the catchalls to include all hosts with domain.com_username?
-    #
-    # # Add this key to Keycutter SSH config  
-    # #
-    # # If the key is for a service, create a Host entry for the service
-    # local service="$(ssh-keytag-service "${ssh_key_path}")"
-    # if [[ -n $service ]]; then
-    #     ssh-config-host-file-update "${ssh_key_path}"
-    # # Otherwise, add the key to the main Keycutter SSH config
-    # else
-    #     local target_path="${keycutter_ssh_config_path}"
-    #     prepend-line-if-missing "${target_path}" "IdentityFile ${ssh_key_path/#$HOME/'~'}.pub"
-    # fi
+    # Copy in ssh-agent-ensure script
+    dir-ensure "${keycutter_scripts_dir}" 0700
+    apply-template \
+        "${KEYCUTTER_ROOT}/templates/scripts/ssh-agent-ensure" \
+        "${keycutter_scripts_dir}/ssh-agent-ensure" 
 
-    # Optionally add to an ssh-agent configuration
-    dir-ensure "${ssh_agents_dir}" 0700
-    dir-ensure "${ssh_agents_dir}/default/keys" 0700
-    # prompt user to add key to default ssh-agent   
+    # Offer to add key to config for default ssh-agent
     read -p "Add key to default keycutter ssh-agent? [y/N] " -n 1 -r
-    echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
+        dir-ensure "${ssh_agents_dir}" 0700
+        dir-ensure "${ssh_agents_dir}/default/keys" 0700
         log "Creating symlink: ln -sf ${ssh_key_path} ${ssh_agents_dir}/default/keys"
-        ln -sf "${ssh_key_path}" "${ssh_agents_dir}/default/keys" # XXX prompt user before overwriting
+        ln -sf "${ssh_key_path}" "${ssh_agents_dir}/default/keys" # XXX Prompt before overwrite
     fi
 }
 
-# ssh-config-host-file-update() {
-# 
-#     local ssh_key_path="${1:-}"
-# 
-#     local service_identity="$(ssh-keytag-service-identity "${ssh_key_path}")"
-#     local service="$(ssh-keytag-service "${ssh_key_path}")"
-#     local ssh_host_alias_path="${KEYCUTTER_CONFIG_DIR}/ssh/hosts/${service_identity}"
-#     local identityfile_entry="  IdentityFile ${ssh_key_path/#$HOME/'~'}.pub"
-# 
-#     dir-ensure "$(dirname "${ssh_host_alias_path}")" 0700
-# 
-#     temp_file="$(mktemp)"
-#     # If we already have a config file for this identity
-#     if [[ -f $ssh_host_alias_path ]]; then
-#         log "SSH configuration file exists ($ssh_host_alias_path)"
-#         # If the ssh_key_path is not already in the file, add it
-#         if ! grep -qxF "$identityfile_entry" "$ssh_host_alias_path"; then
-#             log "Appending to $ssh_host_alias_path: $identityfile_entry"
-#             echo "$identityfile_entry" >> "$ssh_host_alias_path"
-#         else
-#             log "Already in $ssh_host_alias_path: $identityfile_entry"
-#         fi
-#     else
-#         log "Create SSH configuration file $ssh_host_alias_path"
-#         cat > "$temp_file" <<-EOF
-# Host $service_identity
-#   User git # Change to the user for the service
-#   HostName $service
-#   IdentitiesOnly yes
-# $identityfile_entry
-# EOF
-#         mv "$temp_file" "$ssh_host_alias_path"
-#     fi
-# 
-# }
+# sixty-ten 
 
-## List SSH Keys
-
-ssh-agent-keys() {
-    SSH_AUTH_SOCK="${HOME}/.keycutter/ssh/agents/default/ssh-agent.socket" ssh-add -l
-}
-
-ssh-keys-fido-resident(){
-  log "Resident FIDO SSH Keys:"
-  ssh-keygen -K
-}
-
-ssh-keys-fido-non-resident(){
-  local ssh_key_dir="${KEYCUTTER_SSH_KEY_DIR:-"${KEYCUTTER_CONFIG_DIR}/ssh/keys"}"
-  log >&2 "Non-resident FIDO SSH Keys:"
-  grep -l "sk-" "$ssh_key_dir"/*.pub
-}
-
-ssh-keys-fido() {
-  ssh-keys-fido-non-resident  
-  ssh-keys-fido-resident  
-}
-
-## SSH Keytags - Manipulate SSH Keytags (strings) used by Keycutter
-
-ssh-keytag-create(){
-    # Generate a default SSH Keytag
-    local user="${1:-$(whoami)}"
-    local device="${2:-$(hostname)}"
-    local service="${3:-}"
-    echo "${service:+"${service}_"}${user}@${device}"
-}
-
-ssh-keytag() {
-    # Extract SSH Keytag from path
-    echo "$(basename "${1:-}")" # Strip path if filename is provided
-}
-
-ssh-keytag-device() {
-    # Extract the Device part of the SSH Keytag
-    local ssh_keytag="$(ssh-keytag "${1:-}")"
-    echo "${ssh_keytag#*@}"
-}
-
-ssh-keytag-service-identity() {
-    # Extract the Service_Identity part of the SSH Keytag
-    local ssh_keytag="$(ssh-keytag "${1:-}")"
-    echo "${ssh_keytag%@*}"
-}
-
-ssh-keytag-service() {
+_ssh-keytag-service() {
     # Extract the Identity part of the SSH Keytag
-    local ssh_keytag_service_identity="$(ssh-keytag-service-identity "${1:-}")"
+    local ssh_keytag_service_identity="$(_ssh-keytag-service-identity "${1:-}")"
     local service="${ssh_keytag_service_identity%%_*}" # Removed longest match from end
     if [[ $service == $ssh_keytag_service_identity ]]; then
         return
@@ -209,9 +80,9 @@ ssh-keytag-service() {
     fi
 }
 
-ssh-keytag-identity() {
+_ssh-keytag-identity() {
     # Extract the Identity part of the SSH Keytag
-    local ssh_keytag_service_identity="$(ssh-keytag-service-identity "${1:-}")"
+    local ssh_keytag_service_identity="$(__ssh-keytag-service-identity "${1:-}")"
     local identity="${ssh_keytag_service_identity#*_}" # remove shortest match from start
     echo "$identity"
 }

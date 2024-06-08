@@ -1,0 +1,53 @@
+# ssh functions (culled from lib/ssh)
+
+## List SSH Keys
+
+_ssh-agent-keys() {
+    SSH_AUTH_SOCK="${HOME}/.keycutter/ssh/agents/default/ssh-agent.socket" ssh-add -l
+}
+
+_ssh-keys-fido-resident(){
+  log "Resident FIDO SSH Keys:"
+  ssh-keygen -K
+}
+
+_ssh-keys-fido-non-resident(){
+  local ssh_key_dir="${KEYCUTTER_SSH_KEY_DIR:-"${KEYCUTTER_CONFIG_DIR}/ssh/keys"}"
+  log >&2 "Non-resident FIDO SSH Keys:"
+  grep -l "sk-" "$ssh_key_dir"/*.pub
+}
+
+_ssh-keys-fido() {
+  ssh-keys-fido-non-resident  
+  ssh-keys-fido-resident  
+}
+
+## SSH Keytags - Manipulate SSH Keytags (strings) used by Keycutter
+
+
+_ssh-keytag() {
+    # Extract SSH Keytag from path
+    echo "$(basename "${1:-}")" # Strip path if filename is provided
+}
+
+_ssh-keytag-create(){
+    # Generate a default SSH Keytag
+    local user="${1:-$(whoami)}"
+    local device="${2:-$(hostname)}"
+    local service="${3:-}"
+    echo "${service:+"${service}_"}${user}@${device}"
+}
+
+_ssh-keytag-device() {
+    # Extract the Device part of the SSH Keytag
+    local ssh_keytag="$_ssh-keytag "${1:-}")"
+    echo "${ssh_keytag#*@}"
+}
+
+_ssh-keytag-service-identity() {
+    # Extract the Service_Identity part of the SSH Keytag
+    local ssh_keytag="$_ssh-keytag "${1:-}")"
+    echo "${ssh_keytag%@*}"
+}
+
+

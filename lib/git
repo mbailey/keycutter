@@ -9,7 +9,7 @@ keycutter-git-config-create() {
     local git_user_email="${2:-}"
     local git_user_name="${3:-}"
 
-    local service_identity="$(ssh-keytag-service-identity "${ssh_key_path}")"
+    local service_identity="$(_ssh-keytag-service-identity "${ssh_key_path}")"
 
     local git_config_dir="${KEYCUTTER_CONFIG_DIR}/git"
     local git_config_allowed_signers_path="${KEYCUTTER_CONFIG_DIR}/git/allowed_signers"
@@ -58,7 +58,7 @@ keycutter-git-config-create() {
     log "Add key to allowed_signers file ($git_config_allowed_signers_path) for verifying ssh keys"
     echo "${git_user_email} namespaces=\"git\" $(cat "${ssh_key_path}.pub")" >> "$git_config_allowed_signers_path"
 
-    # Ensure SSH config defining Host entries for keys are Included from Keycutter's sshconfig
+    # Copy in the default key command script
     dir-ensure "${keycutter_scripts_dir}" 0700
     apply-template \
         "${KEYCUTTER_ROOT}/templates/scripts/git-default-key-command" \
@@ -92,7 +92,6 @@ keycutter-git-config-create() {
       --file "${keycutter_git_config_path}" \
       --replace "includeIf.hasconfig:remote.*.url:**/*${service_identity}:*/**".path \
       "${git_config_identity_path}"
-
 }
 
 git-include-ensure() {
