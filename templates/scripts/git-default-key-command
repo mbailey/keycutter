@@ -2,4 +2,14 @@
 
 # git-default-key-command - Get default ssh signing key for a repository
 
-echo "~/.keycutter/ssh/keys/$(git remote get-url origin | sed -E 's#(git@|https://)?([^:/]+)[:/]+.*$#\2#')@${KEYCUTTER_ORIGIN:-$(hostname -s)}"
+: ${KEYCUTTER_CONFIG_DIR:="~/.keycutter"}
+
+# Users wanting a non-standard KEYCUTTER_CONFIG_DIR will need to:
+#
+# - Set it in their environment; or
+# - Update this script to a different default
+# - Update the keycutter script replace the env var when installing the script
+
+echo "${KEYCUTTER_CONFIG_DIR}/ssh/keys/$(
+        git remote get-url origin | sed -E 's#(git@|https://)?([^:/]+)[:/]+.*$#\2#'
+    )@${KEYCUTTER_ORIGIN:-$(hostname -s)}"

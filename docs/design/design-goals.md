@@ -3,13 +3,12 @@
 *26 Mar 2024: Not completed yet*
 
 - Doesn't change behaviour for git / ssh for non-keycutter keys
-- Insanely great
 - Re-runnable
 - Security & Transparency
-    - Single readable Bash script that uses standard tools (added a second file)
-    - Prompts for confirmation before each command that changes state
-    - Dry run mode
+	- Affordably auditable
+    - Bash script that uses standard tools
 - Well documented
+- Insanely great
 
 ## Project Transparency
 

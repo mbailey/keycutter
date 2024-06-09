@@ -23,7 +23,7 @@ keycutter-ssh-key-create() {
         usage
         return 1
     fi
-    
+
     dir-ensure "$(dirname "$ssh_key_path")" 0700
 
     log "Generate FIDO SSH key: $ssh_key_path"
@@ -48,7 +48,7 @@ keycutter-ssh-config-create() {
     dir-ensure "$(dirname "${keycutter_ssh_config_path}")" 0700
     apply-template "${KEYCUTTER_ROOT}/templates/ssh/config" "${keycutter_ssh_config_path}"
 
-    # Ensure ~/.keycutter/ssh/config is Include'd by ~/.ssh/config.
+    # Ensure $KEYCUTTER_CONFIG_DIR/ssh/config is Include'd by ~/.ssh/config.
     prepend-line-if-missing ~/.ssh/config "Include ${keycutter_ssh_config_path/#$HOME/'~'}"
 
     # Copy in ssh-agent-ensure script

@@ -1,6 +1,6 @@
-# ~/.keycutter/ssh/config - Managed by keycutter
+# ~/.keycutter/ssh/config - Sourced from ~/.ssh/config
 #
-# Sourced from ~/.ssh/config (Include ~/.keycutter/ssh/config)
+# Keycutter makes managing FIDO SSH keys easier.
 
 # Required shell Environment Variables
 #
@@ -34,7 +34,7 @@ Match exec "bash -c '[[ $KEYCUTTER_ORIGIN == $KEYCUTTER_HOSTNAME ]]'" OriginalHo
 
     # Setup ssh-agent with keys symlinked in ssh/agent/default/keys
     PermitLocalCommand yes
-    LocalCommand /bin/bash -c '~/keycutter/bin/ssh-agent-ensure ~/.keycutter/ssh/agents/default'
+    LocalCommand /bin/bash -c '~/.keycutter/scripts/ssh-agent-ensure ~/.keycutter/ssh/agents/default'
     IdentityAgent ~/.keycutter/ssh/agents/default/ssh-agent.socket
 
 # Add keys based on OriginalHost

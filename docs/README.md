@@ -5,14 +5,14 @@ Currently this is stuff I moved from the main README.
 
 - [Keycutter Project README](../README.md): The main README for the project.
 
-- [SSH Keytags](docs/ssh-keytags.md)
+- [SSH Keytags](design/ssh-keytags.md)
 - [Keycutter Config Directory](docs/keycutter-config-dir/README.md) 
-- [Defense layers to protect against key misuse](docs/defense-layers-to-protect-against-key-misuse.md)
-- [Why FIDO SSH Keys are good for Git access on managed devices](docs/why-fido-ssh-keys-are-good-for-git-access-on-managed-devices.md)
-- [Design goals of the project](docs/design-goals.md)
-- Side benefits
-    - Doesn't announce your github keys to other services
+- [Defense layers to protect against key misuse](design/defense-layers-to-protect-against-key-misuse.md)
+- [Why FIDO SSH Keys are good for Git access on managed devices](design/why-fido-ssh-keys-are-good-for-git-access-on-managed-devices.md)
+- [Design goals of the project](design/design-goals.md)
+
 
 ## External Links
 
 - [FIDO keys that require user-presence confirmation offer a little more defence, but are also similarly phishable.](https://www.openssh.com/agent-restrict.html)
+- [How Hype Will Turn Your Security Key Into Junk 02 Feb 2023 (fy.blackhats.net.au)](https://fy.blackhats.net.au/blog/2023-02-02-how-hype-will-turn-your-security-key-into-junk/)

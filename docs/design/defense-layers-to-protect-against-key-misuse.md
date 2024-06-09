@@ -1,4 +1,4 @@
-# Defense layers to protect against key misuse
+# Defence layers to protect against key misuse
 
 You need to consider the following layers of defense when using FIDO SSH Keys.
 

@@ -68,7 +68,7 @@ keycutter-git-config-create() {
         git config \
         --file "${keycutter_git_config_path}" \
         --replace "gpg.ssh.defaultKeyCommand" \
-        '~/.keycutter/scripts/git-default-key-command'
+        "${KEYCUTTER_CONFIG_DIR}/scripts/git-default-key-command"
     else
         log "Error: ${keycutter_scripts_dir}/git-default-key-command script not found"
     fi 

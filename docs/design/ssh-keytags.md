@@ -36,20 +36,20 @@ Keycutter recommends (but does not required or enforce) the following convention
 
 ## Example: Alex and the three Hardware Security Keys
 
-Alex has three Yubikeys:
+Alex has three YubiKeys:
 
-- A Yubikey on her keyring
-- A Yubikey Nano in her work laptop (for convenience)
-- A Yubikey Nano in her personal laptop (for convenience)
+- A YubiKey on her keyring
+- A YubiKey Nano in her work laptop (for convenience)
+- A YubiKey Nano in her personal laptop (for convenience)
 
 **These are the SSH Keytags for the keys she has created:**
 
-| Key Tag                            | Service | User          | Device                          |
-| ---------------------------------- | ------- | ------------- | ------------------------------- |
-| aws_alexdoe@keyring                | AWS     | alexdoe       | Yubikey on keychain             |
-| aws_alexdoe@personal-laptop        | AWS     | alexdoe       | Yubikey Nano on Personal Laptop |
-| github.com_alexdoe@keyring         | GitHub  | alexdoe       | Yubikey on keychain             |
-| github.com_alexdoe@personal-laptop | GitHub  | alexdoe       | Yubikey Nano on Personal Laptop |
-| github.com_alexdoe@work-laptop     | GitHub  | alexdoe       | Yubikey Nano on Work Laptop     |
-| github.com_alexdoe@work-laptop     | GitHub  | alexdoe-work  | Yubikey Nano on Work Laptop     |
+| Key Tag                            | Service | User         | Device                          |
+| ---------------------------------- | ------- | ------------ | ------------------------------- |
+| aws_alexdoe@keyring                | AWS     | alexdoe      | YubiKey on keychain             |
+| aws_alexdoe@personal-laptop        | AWS     | alexdoe      | YubiKey Nano on Personal Laptop |
+| github.com_alexdoe@keyring         | GitHub  | alexdoe      | YubiKey on keychain             |
+| github.com_alexdoe@personal-laptop | GitHub  | alexdoe      | YubiKey Nano on Personal Laptop |
+| github.com_alexdoe@work-laptop     | GitHub  | alexdoe      | YubiKey Nano on Work Laptop     |
+| github.com_alexdoe@work-laptop     | GitHub  | alexdoe-work | YubiKey Nano on Work Laptop     |
 

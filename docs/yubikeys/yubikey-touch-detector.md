@@ -1,11 +1,13 @@
-# Yubikey Touch Detector
+---
+alias: YubiKey Touch Detector
+---
+# YubiKey Touch Detector
 
-Get notified when Yubikey needs a touch.
-
-![](assets/yubikey-touch-detector.png)
+Get notified when YubiKey needs a touch.
 
 - [yubikey-touch-detector (github.com/maximbaz)](https://github.com/maximbaz/yubikey-touch-detector)
 
+![](../assets/yubikey-is-waiting-for-a-touch.png)
 
 ## Install
 

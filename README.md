@@ -10,26 +10,29 @@ Ever wondered how to contribute to an open-source project on GitHub from an empl
 
 Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying FIDO SSH Key management.
 
-Keycutter is a config cookie cutter that creates FIDO SSH Keys on Hardware Security Keys, Git config, and SSH config in one place.
+Keycutter is a config cookie cutter that creates FIDO SSH Keys on Hardware Security Keys, along with Git and SSH config so they're ready to use immediately.
+
+*While initially created for use with YubiKeys and GitHub, Keycutter supports other devices and services.*
 
 ## What Keycutter gives you
 
 **Security:**
-    - **Unstealable* FIDO SSH keys:** No way to extract them from the device.
-    - **Physical presence verification:** touch to approve each use.
-    - **PIN retry lockout:** defend against stolen hardware security token.
+
+- **Unstealable* FIDO SSH keys:** No way to extract them from the device.
+- **Physical presence verification:** touch to approve each use.
+- **PIN retry lockout:** defend against stolen hardware security token.
 
 **Convenience:**
-    - Git commit and tag signing with your SSH keys.
-    - Automatic SSH key selection by given service/identity based on host aliases.
-    - AWS SSH-over-SSM.
-    - SSH and Git config in one place
+
+- **Git commit and tag signing with your SSH keys**
+- **Automatic SSH key selection by given service/identity based on host aliases**
+- **SSH and Git config in one place**
+- **AWS SSH-over-SSM**
 
 **Privacy:**
-    - **Security Boundary Separation:** Different keys for different service/identities.
-    - **Selective SSH key forwarding:** Map keys to services and devices.
 
-*While initially created for use with Yubikeys and GitHub, Keycutter supports other devices and services.*
+- **Security Boundary Separation:** Different keys for different personal, work, etc.
+- **Selective key forwarding with ssh-agent:** Map keys to services and devices.
 
 **All config is stored in a single directory (`~/.keycutter`) which:**
 
@@ -49,13 +52,13 @@ FIDO SSH Keys across multiple devices and services.
 - In the public key comment
 - In the key name on services like GitHub
 
-**SSH Keytag format:**  <service>_<identity>@<device>
+**SSH Keytag format:**  `<service>_<identity>@<device>`
 
 - **Service:** FQDN of remote service (e.g. gitlab.com)
 - **Identity:** The **user account** on remote service (e.g. alexdoe-work)
 - **Device**: The **hardware security key** or **computer** where the private key resides.
 
-*Read more about [SSH Keytags](docs/ssh-keytags.md)*
+*Read more about [SSH Keytags](docs/design/ssh-keytags.md)*
 
 ## Getting Started
 
@@ -65,11 +68,11 @@ FIDO SSH Keys across multiple devices and services.
   - **Git >= 2.34.0**
   - **GitHub CLI >= 2.0** (Greater than 2.4.0+dfsg1-2 on Ubuntu)
   - **OpenSSH >= 8.2p1** (WSL users need `ssh-sk-helper`([OpenSSH for Windows >= 8.9p1-1](https://github.com/PowerShell/Win32-OpenSSH/releases)))
-  - **Yubikey Manager**
+  - **YubiKey Manager (`ykman`)**
 
 - **Recommended:**
 
-    - **[yubikey-touch-detector](docs/yubikey-touch-detector.md)**: Displays a notification when touch required.
+    - **[yubikey-touch-detector](yubikey-touch-detector.md)**: Displays a notification when touch required.
 
 ### 1. Install Keycutter
 

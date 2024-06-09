@@ -6,7 +6,7 @@
 - **Can't be extracted or copied from the physical device.**
 - **Support Resident Keys / Discoverable Credentials**: stored directly on FIDO device, these are convenient for Security Keys used across multiple devices but adds to the risk if the Security Key falls into the wrong hands.
 
-## Yubikeys
+## YubiKeys
 
 - Can store multiple FIDO SSH Keys (compared to only one GPG based SSH key)
 - Can lock out users permanently after N incorrect PIN attempts
