@@ -69,6 +69,12 @@ keycutter-ssh-config-create() {
 
 # sixty-ten 
 
+_ssh-keytag-service-identity() {
+    # Extract the Service_Identity part of the SSH Keytag
+    local ssh_keytag="$(_ssh-keytag "${1:-}")"
+    echo "${ssh_keytag%@*}"
+}
+
 _ssh-keytag-service() {
     # Extract the Identity part of the SSH Keytag
     local ssh_keytag_service_identity="$(_ssh-keytag-service-identity "${1:-}")"
@@ -82,7 +88,7 @@ _ssh-keytag-service() {
 
 _ssh-keytag-identity() {
     # Extract the Identity part of the SSH Keytag
-    local ssh_keytag_service_identity="$(__ssh-keytag-service-identity "${1:-}")"
+    local ssh_keytag_service_identity="$(_ssh-keytag-service-identity "${1:-}")"
     local identity="${ssh_keytag_service_identity#*_}" # remove shortest match from start
     echo "$identity"
 }
