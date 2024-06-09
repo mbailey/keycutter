@@ -1,16 +1,16 @@
 # Keycutter Documentation
 
-Currently this is stuff I moved from the main README.
-
-
 - [Keycutter Project README](../README.md): The main README for the project.
 
-- [SSH Keytags](design/ssh-keytags.md)
-- [Keycutter Config Directory](docs/keycutter-config-dir/README.md) 
+- [SSH Keytags](design/ssh-keytags.md): `gitlab.com_janedoe@worklaptop`
+- [Keycutter Config Directory](docs/keycutter-config-dir/README.md) : `~./.keycutter/`
+- [Yubikeys](yubikeys/README.md): Set a FIDO PIN
+
+**Background on the project:**
+
 - [Defense layers to protect against key misuse](design/defense-layers-to-protect-against-key-misuse.md)
 - [Why FIDO SSH Keys are good for Git access on managed devices](design/why-fido-ssh-keys-are-good-for-git-access-on-managed-devices.md)
 - [Design goals of the project](design/design-goals.md)
-
 
 ## External Links
 

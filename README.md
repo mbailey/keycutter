@@ -72,51 +72,50 @@ FIDO SSH Keys across multiple devices and services.
 
 - **Recommended:**
 
-    - **[yubikey-touch-detector](yubikey-touch-detector.md)**: Displays a notification when touch required.
+	- [YubiKey Touch Detector](docs/yubikeys/yubikey-touch-detector.md)
 
 ### 1. Install Keycutter
 
-    Clone the Git repo:
+**Clone the Git repo:**
 
-    ```shell
-    git clone https://github.com/bash-my-aws/keycutter
-    ```
+```shell
+git clone https://github.com/bash-my-aws/keycutter
+```
 
-    Add the following to your shell profile (e.g. bashrc or zshrc):
+**Add the following to your shell profile (e.g. bashrc or zshrc):**
 
-    ```shell
-    # keycutter/ssh/config uses these to determine which SSH key to use
-    export KEYCUTTER_HOSTNAME="$(hostname -s)" # or a preferred alias for this device
-    [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="${KEYCUTTER_HOSTNAME}"
+```shell
+# keycutter/ssh/config uses these to determine which SSH key to use
+export KEYCUTTER_HOSTNAME="$(hostname -s)" # or a preferred alias for this device
+[[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="${KEYCUTTER_HOSTNAME}"
 
-    # WSL (Windows Subsystem for Linux) users need to set the path to ssh-sk-helper.exe
-    if [[ -f "/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe" ]]; then
-        export SSH_SK_HELPER="/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe"
-    fi
-    ```
-    As a config cookie cutter, keycutter is not required to be in the path
-    but it is useful for generating new configs.
-    Optionally add the bin directory to your path:
-    ```shell
-    # Used for generating config with keycutter
-    export PATH="$PATH:${PWD}/keycutter/bin"
-    ```
+# WSL (Windows Subsystem for Linux) users need to set the path to ssh-sk-helper.exe
+if [[ -f "/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe" ]]; then
+	export SSH_SK_HELPER="/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe"
+fi
+```
+
+**Optionally add the bin directory to your path:**
+
+*As a config cookie cutter, keycutter is not required to be in the path but it is useful for generating new configs.*
+
+```shell
+# Used for generating config with keycutter
+export PATH="$PATH:${PWD}/keycutter/bin"
+```
 
 ### 2. Create a FIDO SSH Key
 
-Provide an SSH Keytag (<service>_<identity>@<device>) to the create command:
+**Provide an SSH Keytag (`<service>_<identity>@<device>`) to the create command:**
 
 ```shell
 keycutter create github.com_alexdoe@personal
 ```
 
-    For a particular service and identity on a device, separate domain name and
-    user name with an underscore and append the device name after the `@`
-    symbol.
-    
-    ```shell
-    keycutter create github.com_alexdoe@personal-laptop
-    ```
+For a particular service and identity on a device:
+
+- Separate the domain name and user name with an underscore.
+- Append the device name after the `@` symbol.
 
 ### 3. Review your keycutter configuration directory
 
@@ -143,7 +142,7 @@ tree ~/.keycutter
             └── github.com_alexdoe-work@yk01.pub
     ```
 
-### Usage
+## Usage
 
 ### 1. Clone a GitHub repo using your new key
 
@@ -158,6 +157,11 @@ cd keycutter
 date >> README.md 
 git commit -m "I signed this commit with my new SSH Key"
 ```
+
+### 3. Explore your new config
+
+You're ready for FIDO SSH access to anything you were using file based SSH keys for.
+
 
 ## See also
 

@@ -1,3 +1,6 @@
+---
+alias: YubiKeys
+---
 # YubiKeys
 
 Notes to help manage your YubiKeys.
