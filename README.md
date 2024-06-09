@@ -117,7 +117,7 @@ For a particular service and identity on a device:
 - Separate the domain name and user name with an underscore.
 - Append the device name after the `@` symbol.
 
-### 3. Review your keycutter configuration directory
+### 3. Review your keycutter config
 
 The directory contains all the Git / SSH config files for your FIDO SSH keys.
 
