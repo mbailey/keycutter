@@ -69,6 +69,28 @@ keycutter-ssh-config-create() {
 
 # sixty-ten 
 
+## SSH Keytags - Manipulate SSH Keytags (strings) used by Keycutter
+
+_ssh-keytag-create(){
+    # Generate a default SSH Keytag
+    local user="${1:-$(whoami)}"
+    local device="${2:-$(hostname)}"
+    local service="${3:-}"
+    echo "${service:+"${service}_"}${user}@${device}"
+}
+
+_ssh-keytag() {
+    # Extract SSH Keytag from path
+    echo "$(basename "${1:-}")" # Strip path if filename is provided
+}
+
+_ssh-keytag-device() {
+    # Extract the Device part of the SSH Keytag
+    local ssh_keytag="$(ssh-keytag "${1:-}")"
+    echo "${ssh_keytag#*@}"
+}
+
+
 _ssh-keytag-service-identity() {
     # Extract the Service_Identity part of the SSH Keytag
     local ssh_keytag="$(_ssh-keytag "${1:-}")"
