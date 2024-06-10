@@ -7,8 +7,8 @@ KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/functions"
 
 # Set any undefined environment variables to default values
-: ${GIT_CONFIG:="~/.gitconfig"}
-: ${KEYCUTTER_CONFIG_DIR:="~/.keycutter"}
+: ${GIT_CONFIG:="${HOME}/.gitconfig"}
+: ${KEYCUTTER_CONFIG_DIR:="${HOME}/.keycutter"}
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
 
 # Prerequisites:
@@ -47,7 +47,7 @@ usage() {
     log
     log "Arguments:"
     log
-    log "  ssh-keytag Required. Identifier for key (e.g. github.com_alexdoe@laptop-personal)"
+    log "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
     log
     log "  --email    Optional. Set Git user.email for this key."
     log "  --name     Optional. Set Git user.name for this key."
@@ -57,7 +57,7 @@ usage() {
     log "SSH Keytag format: service_user@device"
     log 
     log "  - service : Service this key is used with (e.g. 'github.com', 'aws', 'digitalocean')"
-    log "  - user    : Service User this SSH Key authenticates as (e.g. 'alexdoe')"
+    log "  - user    : Service User this SSH Key authenticates as (e.g. 'alex')"
     log "  - device  : Device this ssh key resides on ( e.g. 'yubikey1', 'work-laptop', 'zfold5')"
 }
 
@@ -129,8 +129,8 @@ create() {
     # If SSH Keytag includes a Service:
     #   - Add/Update a Host alias for the SSH Keytag's "Identity Part"
     #   - This allows us to ssh to the service using this key.
-    #     e.g. `ssh github-alexdoe`
-    #          `git clone git@github.com_alexdoe:bash-my-aws/bash-my-aws.git``
+    #     e.g. `ssh github-alex`
+    #          `git clone git@github.com_alex:bash-my-aws/bash-my-aws.git``
     #
     # If SSH Keytag doesn't include a Service:
     #   - Add an IdentityFile entry to Keycutter's sshconfig
