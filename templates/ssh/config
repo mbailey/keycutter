@@ -12,17 +12,7 @@
 #    # keycutter needs these to determine which SSH key to use
 #    export KEYCUTTER_HOSTNAME="$(hostname -s)" # or a funky preferred alias
 #    [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="${KEYCUTTER_HOSTNAME}"
-#
-# Optionally enable >2 hops to remote hosts
-#
-# sshd doesn't accept receiving remote Environment Variables by default
-# AcceptEnv is a security risk on sshd and should be used with caution
-# To enable this, add the following lines to /etc/ssh/sshd_config on remot hosts:
-#
-#     AcceptEnv KEYCUTTER_ORIGIN
-#
-Match exec "bash -c '[[ -n $KEYCUTTER_ORIGIN ]]'" OriginalHost *,!github*,!gitlab*,!git.*
-    SendEnv KEYCUTTER_ORIGIN
+ 
 
 # To enable the remote hosts to identify which keys request from ssh-agent,
 # when connecting from an origin host to a (non-git) remote,
@@ -67,3 +57,16 @@ Host *github.com*
 Host *
     ForwardAgent yes
     Include ~/.keycutter/ssh/hosts/*
+
+# Optional: Enable >2 hops to remote hosts
+#
+# AcceptEnv is a security risk, usually disabled by default in sshd config.
+#
+# To enable , add the following lines to /etc/ssh/sshd_config on remot hosts:
+#
+#     AcceptEnv KEYCUTTER_ORIGIN
+#
+Match exec "bash -c '[[ -n $KEYCUTTER_ORIGIN ]]'" OriginalHost *,!github*,!gitlab*,!git.*
+    SendEnv KEYCUTTER_ORIGIN
+
+# vim:ft=sshconfig

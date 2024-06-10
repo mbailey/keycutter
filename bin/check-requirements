@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# check_requirements - Checks for minimum version requirements for various tools
+# check-requirements - Checks for minimum version requirements for various tools
 #
-# Usage: check_requirements
+# Usage: checkr-requirements
 
 check_version() {
     local current_version="$1"

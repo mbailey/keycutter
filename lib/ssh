@@ -27,7 +27,7 @@ keycutter-ssh-key-create() {
     dir-ensure "$(dirname "$ssh_key_path")" 0700
 
     log "Generate FIDO SSH key: $ssh_key_path"
-    ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${resident:+-O resident}
+    ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag"  ${resident:+-O resident} # -N "" # Uncomment for no passphrase prompt
     chmod 0600 "${ssh_key_path}.pub"
 }
 
@@ -35,7 +35,8 @@ keycutter-ssh-config-create() {
 
     # Create or update SSH configuration file for the identity
 
-    local ssh_key_path="${1:?}"
+    local ssh_key_path="${1}"
+    [[ -z $ssh_key_path ]] && log "Error! No value provided" && return 1
 
     local keycutter_ssh_config_path="${KEYCUTTER_CONFIG_DIR}/ssh/config"
     local ssh_agents_dir="${KEYCUTTER_CONFIG_DIR}/ssh/agents"
@@ -71,10 +72,40 @@ keycutter-ssh-config-create() {
 
 ## SSH Keytags - Manipulate SSH Keytags (strings) used by Keycutter
 
+ssh-keytag-validate() {
+    local keytag="$1"
+
+    # Regular expression to match the SSH keytag format
+    local regex="^([a-zA-Z0-9._-]+_)?([a-zA-Z0-9._-]+)(@[a-zA-Z0-9._-]+)?$"
+
+    if [[ $keytag =~ $regex ]]; then
+        local fqdn="${BASH_REMATCH[1]}"
+        local user="${BASH_REMATCH[2]}"
+        local device="${BASH_REMATCH[3]}"
+
+        # If device is missing and $KEYCUTTER_HOSTNAME is set, use it
+        if [[ -z $device && -n $KEYCUTTER_HOSTNAME ]]; then
+            device="$KEYCUTTER_HOSTNAME"
+        fi
+
+        # Construct the new keytag
+        if [[ -n $device ]]; then
+            local new_keytag="${fqdn}${user}@${device}"
+            echo "$new_keytag"
+        else
+            echo "Error: Device name is missing and KEYCUTTER_HOSTNAME is not set." >&2
+            return 1
+        fi
+    else
+        echo "Error: Invalid SSH keytag format." >&2
+        return 1
+    fi
+}
+
 _ssh-keytag-create(){
     # Generate a default SSH Keytag
     local user="${1:-$(whoami)}"
-    local device="${2:-$(hostname)}"
+    local device="${2:-"${KEYCUTTER_HOSTNAME:-"$(hostname -s)"}"}"
     local service="${3:-}"
     echo "${service:+"${service}_"}${user}@${device}"
 }
@@ -89,7 +120,6 @@ _ssh-keytag-device() {
     local ssh_keytag="$(ssh-keytag "${1:-}")"
     echo "${ssh_keytag#*@}"
 }
-
 
 _ssh-keytag-service-identity() {
     # Extract the Service_Identity part of the SSH Keytag

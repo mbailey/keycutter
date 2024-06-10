@@ -77,7 +77,7 @@ dir-ensure() {
     fi
 
     if [[ ! -d "$dir_path" ]]; then
-        log "Create directory '$dir_path' ${permissions:+"with permissions '$permissions'"}.'"
+        log "Create directory '$dir_path' ${permissions:+"with permissions '$permissions'"}."
         install -d ${permissions:+"-m$permissions"} "$dir_path"
     elif [[ -n "$permissions" ]]; then
         local current_permissions
@@ -118,10 +118,10 @@ apply-template() {
     local target_path="${2:-}"
     if [[ -f $target_path ]]; then
         if diff -q "$target_path" "$template_path" >/dev/null; then
-            log "File is identical: $target_path"
+            log "File is identical: $target_path $template_path"
         else
             log "File is different: $target_path"
-            diff -u "$target_path" "$template_path" || true
+            command diff "$target_path" "$template_path" || true
             read -p "Overwrite? [y/N] " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
