@@ -18,7 +18,7 @@ Keycutter is a config cookie cutter that creates FIDO SSH keys on hardware secur
 
 **Security:**
 
-- **Unstealable* FIDO SSH keys:** No way to extract them from the device.
+- **Unstealable\* FIDO SSH keys:** No way to extract them from the device.
 - **Physical presence verification:** touch to approve each use.
 - **PIN retry lockout:** defend against stolen hardware security token.
 
