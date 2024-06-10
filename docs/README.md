@@ -3,7 +3,7 @@
 - [Keycutter Project README](../README.md): The main README for the project.
 
 - [SSH Keytags](design/ssh-keytags.md): `gitlab.com_janedoe@worklaptop`
-- [Keycutter Config Directory](docs/keycutter-config-dir/README.md) : `~./.keycutter/`
+- [Keycutter Config Directory](keycutter-config/README.md) : `~./.keycutter/`
 - [Yubikeys](yubikeys/README.md): Set a FIDO PIN
 
 **Background on the project:**
