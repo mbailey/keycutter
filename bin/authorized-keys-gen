@@ -8,11 +8,11 @@
 # Example:
 # 
 # $ authorized-keys-gen git sk-ecdsa-sha2-nistp256@openssh.com
-# AAAAIn...Ec3NoOg== janedoem@work sk-ecdsa-sha2-nistp256@openssh.com
-# AAAAIn...Ec3NoOg== janedoe@home
+# AAAAIn...Ec3NoOg== alexm@work sk-ecdsa-sha2-nistp256@openssh.com
+# AAAAIn...Ec3NoOg== alex@home
 # 
 # $ authorized-keys-gen ollama sk-ecdsa-sha2-nistp256@openssh.com
-# AAAAIn...Ec3NoOg== janedoem@work
+# AAAAIn...Ec3NoOg== alexm@work
 
 authorized-keys-gen() {
     local hostname="$1"

@@ -16,10 +16,10 @@ Keycutter is composed of simple bash functions which can be run independantly.
 
     ```shell
     $ keycuitter-ssh-config-create ~/.keycutter/ssh/keys/example.com_m\@keyring
-    File is identical: /home/janedoe/.keycutter/ssh/config
-    Line already present in /home/janedoe/.ssh/config
-    SSH configuration file exists (/home/janedoe/.keycutter/ssh/hosts/example.com_m)
-    Already in /home/janedoe/.keycutter/ssh/hosts/example.com_m:   IdentityFile ~/.keycutter/ssh/keys/example.com_m@keyring.pub
+    File is identical: /home/alex/.keycutter/ssh/config
+    Line already present in /home/alex/.ssh/config
+    SSH configuration file exists (/home/alex/.keycutter/ssh/hosts/example.com_m)
+    Already in /home/alex/.keycutter/ssh/hosts/example.com_m:   IdentityFile ~/.keycutter/ssh/keys/example.com_m@keyring.pub
     Add key to default keycutter ssh-agent? [y/N] y
-    Creating symlink: ln -sf /home/janedoe/.keycutter/ssh/keys/example.com_m@keyring /home/janedoe/.keycutter/ssh/agents/default/keys
+    Creating symlink: ln -sf /home/alex/.keycutter/ssh/keys/example.com_m@keyring /home/alex/.keycutter/ssh/agents/default/keys
     ```

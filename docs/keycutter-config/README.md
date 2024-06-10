@@ -11,14 +11,14 @@ Keeping everything under one directory makes it easier to review and maintain. I
 The Keycutter configuration directory consists of the following components:
 
 ```
-/home/janedoe/.keycutter
+/home/alex/.keycutter
 ├── git
 │   ├── allowed_signers
 │   ├── config
 │   └── config.d
-│       ├── git.homelab.local_janedoe
-│       ├── github.com_janedoe
-│       ├── github.com_janedoe-work
+│       ├── git.homelab.local_alex
+│       ├── github.com_alex
+│       ├── github.com_alex-work
 ├── scripts
 │   ├── git-default-key-command
 │   ├── ssh-agent-ensure
@@ -27,35 +27,35 @@ The Keycutter configuration directory consists of the following components:
     ├── agents
     │   ├── default
     │   │   ├── keys
-    │   │   │   ├── homelab.local_janedoe@keyring -> /home/janedoe/.keycutter/ssh/keys/homelab.local_janedoe@keyring
-    │   │   │   ├── homelab.local_janedoe@personal -> ../../../keys/homelab.local_janedoe@personal
-    │   │   │   ├── github.com_janedoe@keyring -> /home/janedoe/.keycutter/ssh/keys/github.com_janedoe@keyring
-    │   │   │   ├── github.com_janedoe-work@personal -> ../../../keys/github.com_janedoe-work@personal
-    │   │   │   ├── github.com_janedoe@personal -> ../../../keys/github.com_janedoe@personal
+    │   │   │   ├── homelab.local_alex@keyring -> /home/alex/.keycutter/ssh/keys/homelab.local_alex@keyring
+    │   │   │   ├── homelab.local_alex@personal -> ../../../keys/homelab.local_alex@personal
+    │   │   │   ├── github.com_alex@keyring -> /home/alex/.keycutter/ssh/keys/github.com_alex@keyring
+    │   │   │   ├── github.com_alex-work@personal -> ../../../keys/github.com_alex-work@personal
+    │   │   │   ├── github.com_alex@personal -> ../../../keys/github.com_alex@personal
     │   │   └── ssh-agent.socket
     │   ├── personal
     │   │   ├── config
     │   │   └── keys
-    │   │       └── github.com_janedoe@personal -> ../../../keys/github.com_janedoe@personal
+    │   │       └── github.com_alex@personal -> ../../../keys/github.com_alex@personal
     │   └── work
     │       ├── config
     │       └── keys
-    │           └── github.com_janedoe-work@personal -> ../../../keys/github.com_janedoe-work@personal
+    │           └── github.com_alex-work@personal -> ../../../keys/github.com_alex-work@personal
     ├── config
     ├── hosts
     │   ├── git
     │   └── kitchen
     └── keys
-        ├── homelab.local_janedoe@keyring
-        ├── homelab.local_janedoe@keyring.pub
-        ├── homelab.local_janedoe@personal
-        ├── homelab.local_janedoe@personal.pub
-        ├── github.com_janedoe@keyring
-        ├── github.com_janedoe@keyring.pub
-        ├── github.com_janedoe-work@keyring
-        ├── github.com_janedoe-work@keyring.pub
-        ├── github.com_janedoe-work@personal
-        ├── github.com_janedoe-work@personal.pub
-        ├── github.com_janedoe@personal
-        ├── github.com_janedoe@personal.pub
+        ├── homelab.local_alex@keyring
+        ├── homelab.local_alex@keyring.pub
+        ├── homelab.local_alex@personal
+        ├── homelab.local_alex@personal.pub
+        ├── github.com_alex@keyring
+        ├── github.com_alex@keyring.pub
+        ├── github.com_alex-work@keyring
+        ├── github.com_alex-work@keyring.pub
+        ├── github.com_alex-work@personal
+        ├── github.com_alex-work@personal.pub
+        ├── github.com_alex@personal
+        ├── github.com_alex@personal.pub
 ```
