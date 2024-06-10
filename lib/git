@@ -87,7 +87,7 @@ keycutter-git-config-create() {
     git config --file "$git_config_identity_path" user.signingkey "${ssh_key_path/$HOME/'~'}"
     git config --file "$git_config_identity_path" gpg.ssh.allowedSignersFile "${git_config_dir/$HOME/'~'}/allowed_signers"
 
-    log "Create conditional git include in $keycutter_git_config_path"
+    log "Create conditional Git include in $keycutter_git_config_path"
     git config \
       --file "${keycutter_git_config_path}" \
       --replace "includeIf.hasconfig:remote.*.url:**/*${service_identity}:*/**".path \

@@ -29,6 +29,15 @@ keycutter-ssh-key-create() {
     log "Generate FIDO SSH key: $ssh_key_path"
     ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag"  ${resident:+-O resident} # -N "" # Uncomment for no passphrase prompt
     chmod 0600 "${ssh_key_path}.pub"
+
+    if [[ $ssh_keytag =~ github.com* ]]; then
+        read -p "Symlink key to enable ssh.github.com:443? [Y/n] " -n 1 -r
+        echo
+        if ! [[ $REPLY =~ ^[Nn]$ ]]; then
+            log "Create symlink: ln -sf $ssh_key_path ${ssh_key_path/github.com/ssh.github.com}"
+            ln -sf "$ssh_key_path" "${ssh_key_path/github.com/ssh.github.com}"
+        fi
+    fi
 }
 
 keycutter-ssh-config-create() {
@@ -60,10 +69,11 @@ keycutter-ssh-config-create() {
 
     # Offer to add key to config for default ssh-agent
     read -p "Add key to default keycutter ssh-agent? [y/N] " -n 1 -r
+    echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         dir-ensure "${ssh_agents_dir}" 0700
         dir-ensure "${ssh_agents_dir}/default/keys" 0700
-        log "Creating symlink: ln -sf ${ssh_key_path} ${ssh_agents_dir}/default/keys"
+        log "Create symlink: ln -sf ${ssh_key_path} ${ssh_agents_dir}/default/keys"
         ln -sf "${ssh_key_path}" "${ssh_agents_dir}/default/keys" # XXX Prompt before overwrite
     fi
 }

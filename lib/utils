@@ -33,13 +33,13 @@ add-line-if-missing() {
         case "$mode" in
             append)
                 # Append the line
-                log "Appending line to $target_file"
+                log "Append line to $target_file"
                 cp "$target_file" "$target_file$backup_extension"
                 echo "$line_to_add" >> "$target_file"
                 ;;
             prepend)
                 # Prepend the line
-                log "Prepending line to $target_file"
+                log "Prepend line to $target_file"
                 if [[ ! -s "$target_file" ]]; then
                     echo "$line_to_add" > "$target_file"
                 else
@@ -47,13 +47,13 @@ add-line-if-missing() {
                 fi
                 ;;
             *)
-                echo "Invalid mode specified. Use 'prepend' or 'append'."
+                echo "Error: Invalid mode specified. Use 'prepend' or 'append'."
                 return 1
                 ;;
         esac
         log "Backup of original file created with extension: $backup_extension"
     else
-        log "Line already present in $target_file"
+        log "Debug: Line already present in $target_file"
     fi
 }
 
@@ -104,7 +104,7 @@ file-ensure() {
     touch "${file_path}"
     if [[ -n "$permissions" ]]; then
         # XXX Check whether permissions actually need changing
-        log "Ensuring file permissions for '$file_path' are '$permissions'."
+        log "Ensure file permissions for '$file_path' are '$permissions'."
         chmod "$permissions" "${file_path}"
     fi
 }
@@ -118,10 +118,10 @@ apply-template() {
     local target_path="${2:-}"
     if [[ -f $target_path ]]; then
         if diff -q "$target_path" "$template_path" >/dev/null; then
-            log "File is identical: $target_path $template_path"
+            log "Debug: File is identical: $target_path $template_path"
         else
             log "File is different: $target_path"
-            command diff "$target_path" "$template_path" || true
+            command diff -u "$target_path" "$template_path" || true
             read -p "Overwrite? [y/N] " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -130,7 +130,7 @@ apply-template() {
             fi
         fi
     else
-        log "Installing $target_path"
+        log "Create: $target_path"
         cp "$template_path" "$target_path"
     fi
 }
