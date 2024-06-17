@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#
+# ssh-agents-ensure - Ensure the SSH agent is running and environment variables are set
+#
+# Usage: ssh-agents-ensure <agent_directory>
+
+# TODO: See if we can convert this into a one liner in ~/.keycutter/ssh/config
+
+set -eu -o pipefail
+
+ssh-agent-start() {
+    # Start a new SSH agent with the specified socket
+    echo >&2 "Starting ssh-agent (socket: $SSH_AUTH_SOCK)"
+    # eval $(ssh-agent -a "$SSH_AUTH_SOCK" -s)
+    ssh-agent -a "$SSH_AUTH_SOCK" -s >/dev/null
+}
+
+ssh-agent-ensure() {
+
+    agent_dir="${1:?}"
+
+    local SSH_AUTH_SOCK="$agent_dir/ssh-agent.socket"
+
+    # env_file="$agent_dir/agent.env"
+    # # Source the environment file if it exists
+    # if [[ -f "$env_file" ]]; then
+    #     source "$env_file"
+    # fi
+
+    # Check if the agent is already running by testing the socket file
+    if [[ -S $SSH_AUTH_SOCK ]]; then
+        if ! ssh-add -l >/dev/null 2>&1; then
+            # The socket file is present but not usable, so clean it up
+            rm -f "$SSH_AUTH_SOCK"
+            # Start a new SSH agent with the specified socket file
+            ssh-agent-start
+        fi
+    else
+        ssh-agent-start
+    fi
+
+    # Remove all keys from agent
+    ssh-add -D
+
+    # Load all keys in the agent directory
+    for key in "$agent_dir"/keys/*{${KEYCUTTER_HOSTNAME},keyring}; do
+        if [[ -f "$key" && "$key" != *.pub ]]; then
+            ssh-add "$key"
+        fi
+    done
+}
+
+main() {
+    [[ -n ${DEBUG:-} ]] && set -x
+
+    agents_dir="${1:-$HOME/.keycutter/ssh/agents}"
+
+    local agent_dir
+    for agent_dir in "$agents_dir"/*; do
+        echo >&2 "Ensuring SSH agent in $agent_dir"
+        ssh-agent-ensure "$agent_dir"
+    done
+}
+
+# Run main() function if script is executed (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  [[ -n ${DEBUG:-} ]] && set -x
+  main "$@"
+fi
