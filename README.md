@@ -157,8 +157,6 @@ tree ~/.keycutter
 
 ## Using the keys
 
-
-
 ### 1. Clone a GitHub repo using your new key
 
 ```shell
@@ -177,8 +175,11 @@ git commit -m "I signed this commit with my new SSH Key"
 
 You're ready for FIDO SSH access to anything you were using file based SSH keys for.
 
-
 ## See also
 
-- [Keycutter Documentation](docs/README.md)
-- [Tips and tricks](docs/tips-and-tricks.md): Undocumented features and cool tricks.
+- **[Keycutter Documentation](docs/README.md)**
+- **[Tips and tricks](docs/tips-and-tricks.md):** Undocumented features and cool tricks.
+
+- **Prior art (and inspiration):**
+    - **[ssh-over-ssm (github.com)](https://github.com/elpy1/ssh-over-ssm):** Original source of `keycutter/scripts/ssh-ssm`.
+    - **[ssh-ident (github.com)](https://github.com/ccontavalli/ssh-ident):** Different agents and different keys for different projects, with ssh. 
