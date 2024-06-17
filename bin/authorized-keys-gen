@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 #
+# XXX - Broken! Need to evaluate $KEYCUTTER_ORIGIN
+#
+# $ ./authorized-keys-gen cloud9
+# Warning: Public key /home/m/.keycutter/ssh/keys/aws-ssm_alex@${KEYCUTTER_ORIGIN}.pub not found.
+# Warning: Private key /home/m/.keycutter/ssh/keys/aws-ssm_alex@${KEYCUTTER_ORIGIN} not found.
+# Warning: Public key /home/m/.ssh/ssm-ssh-tmp.pub not found.
+# Warning: Private key /home/m/.ssh/ssm-ssh-tmp not found.
+#
 # authorized-keys-gen - Generate an authorized_keys output based on identity
 #                       files in SSH config.
 # 
@@ -31,6 +39,7 @@ authorized-keys-gen() {
             # Use the existing .pub file
             cat "$pub_file"
         else
+            echo >&2 "Warning: Public key $pub_file not found." 
             if [[ -f "$id_file" ]]; then
                 # Try extracting the public key without a passphrase
                 if ssh-keygen -y -P '' -f "$id_file" > /dev/null 2>&1; then
