@@ -1,31 +1,27 @@
 #!/usr/bin/env bash
-set -o nounset -o pipefail -o errexit
 
 # ssh-ssm (modified) - SSH over AWS SSM
 #
 # Original: https://github.com/elpy1/ssh-over-ssm/blob/master/ssh-ssm.sh
 
+set -o nounset -o pipefail -o errexit
+
+instance="${1:-}"
+ssh_user="${2:-}"
+
+[[ $# -lt 2 ]] && die "usage: ${0##*/} <instance-id> <ssh user> [<keyfile>]"
+[[ ! $instance =~ ^i-([0-9a-f]{8,})$ ]] && die "error: invalid instance-id"
+
 SSH_DIR=$HOME/.ssh
+SSH_TMP_KEY=${SSH_DIR}/ssm-ssh-tmp
 
 die () { echo "[${0##*/}] $*" >&2; exit 1; }
+make_ssh_keys () { ssh-keygen -t rsa -N '' -f ${SSH_TMP_KEY} -C ssh-over-ssm; }
+clean_ssh_keys () { rm -f ${SSH_TMP_KEY}{,.pub}; }
 
-[[ $# -ne 2 ]] && die "usage: ${0##*/} <instance-id> <ssh user>"
-[[ ! $1 =~ ^i-([0-9a-f]{8,})$ ]] && die "error: invalid instance-id"
-
-if [[ $(basename -- $(ps -o comm= -p $PPID)) != "ssh" ]]; then
-  exec ssh -o IdentityFile="${SSH_TMP_KEY}" -o ProxyCommand="$0 $1 $2" "$2@$1"
-elif pr="$(grep -sl --exclude='*-env' "$1" ${SSH_DIR}/ssmtool-*)"; then
-  export AWS_PROFILE=${AWS_PROFILE:-${pr##*ssmtool-}}
-fi
-
-# get ssh key from agent or generate a temp key
-if ssh-add -l >/dev/null 2>&1; then
-  SSH_PUB_KEY="$(ssh-add -L |head -1)"
-else
-  [[ -f ${SSH_TMP_KEY}.pub ]] || make_ssh_keys
-  trap clean_ssh_keys EXIT
-  SSH_PUB_KEY="$(< ${SSH_TMP_KEY}.pub)"
-fi
+[[ -f ${SSH_TMP_KEY}.pub ]] || make_ssh_keys
+trap clean_ssh_keys EXIT
+SSH_PUB_KEY="$(< ${SSH_TMP_KEY}.pub)"
 
 # command to put our public key on the remote server (user must already exist)
 ssm_cmd=$(cat <<EOF
@@ -36,6 +32,18 @@ ssm_cmd=$(cat <<EOF
   (sleep 15 && sed -i '\|${SSH_PUB_KEY}|d' \${x}/.ssh/authorized_keys &) >/dev/null 2>&1"
 EOF
 )
+
+# Start instance if stopped
+instance_state=$(
+  aws ec2 describe-instances \
+    --instance-ids "$instance" \
+    --query 'Reservations[*].Instances[*].State.Name' \
+    --output text
+) || die "error: instance not found"
+if [[ $instance_state == "stopped" ]]; then
+  aws ec2 start-instances --instance-ids "$instance"
+  aws ec2 wait instance-running --instance-ids "$instance"
+fi
 
 # execute the command using aws ssm send-command
 command_id=$(aws ssm send-command \
