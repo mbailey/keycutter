@@ -71,6 +71,7 @@ FIDO SSH Keys across multiple devices and services.
 - **Bash >= 4.0**
 - **Git >= 2.34.0**
 - **OpenSSH >= 8.2p1** (WSL users need `ssh-sk-helper`([OpenSSH for Windows >= 8.9p1-1](https://github.com/PowerShell/Win32-OpenSSH/releases)))
+- **nc**
 
 **Recommended:**
 
