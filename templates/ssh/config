@@ -29,13 +29,13 @@ IdentitiesOnly yes # Don't offer public keys to just anyone.
 ForwardAgent yes
 
 # ORIGIN: Ensure ssh-agents are running, keys are added. Copy out keycutter ssh config.
-Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_HOSTNAME:-} ]]'"
+Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_HOSTNAME:-} ]]'" OriginalHost *,!github*,!gitlab*,!git.*
 
     PermitLocalCommand yes
     LocalCommand ~/.keycutter/scripts/ssh-agents-ensure # && scp -P %p ~/.keycutter/ssh/config %n:.keycutter/ssh/config
     # Git is probably the only thing you need ssh-agent forwarding for
     # Override this for hosts that need other keys
-    IdentityAgent ~/.keycutter/ssh/agents/github/ssh-agent.socket
+    IdentityAgent ~/.keycutter/ssh/agents/default/ssh-agent.socket
 
 ## ORIGIN/REMOTE: Send KEYCUTTER_ORIGIN to remote host
 Match OriginalHost *,!github*,!gitlab*,!git.*
