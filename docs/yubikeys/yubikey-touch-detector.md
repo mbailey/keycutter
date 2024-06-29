@@ -14,7 +14,7 @@ Get notified when YubiKey needs a touch.
 **Install deps and build Go binary:**
 
 ```shell
-sudo dnf install gpgme-devel
+sudo dnf -y install gpgme-devel
 git clone https://github.com/maximbaz/yubikey-touch-detector.git
 cd yubikey-touch-detector
 # go build
@@ -39,15 +39,15 @@ From the readme:
 > The package also installs a systemd service and socket. If you want the app to launch on startup, just enable the service like so:
 
 ```shell
-$ systemctl --user daemon-reload
-$ systemctl --user enable --now yubikey-touch-detector.service
+systemctl --user daemon-reload
+systemctl --user enable --now yubikey-touch-detector.service
 ```
 
 > If you want the service to be started only when there is a listener on Unix socket, enable the socket instead like so:
 
 ```shell
-$ systemctl --user daemon-reload
-$ systemctl --user enable --now yubikey-touch-detector.socket
+systemctl --user daemon-reload
+systemctl --user enable --now yubikey-touch-detector.socket
 ```
 
 *Note: I needed to add this to my ~/.bashrc for some unknown reason:*
