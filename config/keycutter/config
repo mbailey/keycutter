@@ -112,7 +112,7 @@ Match Host i-*,m-*
 
 # Define your custom hosts here
 Host *
-    Include ~/.ssh/hosts/*
+    Include ~/.ssh/keycutter/hosts/*
 
 # SSH over SSM (AWS Systems Manager) - Second Pass
 # Set values on Hosts whose HostName value was set by an Include'd file.
