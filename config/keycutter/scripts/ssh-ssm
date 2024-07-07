@@ -11,7 +11,7 @@ ssh_user="${2:-}"
 
 [[ $# -lt 2 ]] && die "usage: ${0##*/} <instance-id> <ssh user> [<keyfile>]"
 [[ ! $instance =~ ^i-([0-9a-f]{8,})$ ]] && die "error: invalid instance-id"
-
+# poo
 SSH_DIR=$HOME/.ssh
 SSH_TMP_KEY=${SSH_DIR}/ssm-ssh-tmp
 

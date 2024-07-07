@@ -1,6 +1,6 @@
 # Keycutter Configuration Directory
 
-The Keycutter configuration directory, located at `~/.keycutter` by default, is the central repository for all configuration files and keys managed by the Keycutter tool.
+The Keycutter configuration directory, located at `~/.ssh/keycutter` by default, is the central repository for all configuration files and keys managed by the Keycutter tool.
 
 This directory contains Git and SSH config, facilitating a modular and organised approach to managing access and identity across different services and platforms.
 
@@ -11,7 +11,7 @@ Keeping everything under one directory makes it easier to review and maintain. I
 The Keycutter configuration directory consists of the following components:
 
 ```
-/home/alex/.keycutter
+/home/alex/.ssh/keycutter
 ├── git
 │   ├── allowed_signers
 │   ├── config
@@ -27,9 +27,9 @@ The Keycutter configuration directory consists of the following components:
     ├── agents
     │   ├── default
     │   │   ├── keys
-    │   │   │   ├── homelab.local_alex@keyring -> /home/alex/.keycutter/ssh/keys/homelab.local_alex@keyring
+    │   │   │   ├── homelab.local_alex@keyring -> /home/alex/.ssh/keycutter/keys/homelab.local_alex@keyring
     │   │   │   ├── homelab.local_alex@personal -> ../../../keys/homelab.local_alex@personal
-    │   │   │   ├── github.com_alex@keyring -> /home/alex/.keycutter/ssh/keys/github.com_alex@keyring
+    │   │   │   ├── github.com_alex@keyring -> /home/alex/.ssh/keycutter/keys/github.com_alex@keyring
     │   │   │   ├── github.com_alex-work@personal -> ../../../keys/github.com_alex-work@personal
     │   │   │   ├── github.com_alex@personal -> ../../../keys/github.com_alex@personal
     │   │   └── ssh-agent.socket

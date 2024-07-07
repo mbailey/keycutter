@@ -95,6 +95,98 @@ check_requirements() {
     fi
 }
 
+# Function to show diff and ask for confirmation
+show_diff_and_confirm() {
+    local source_file="$1"
+    local dest_file="$2"
+    
+    if [[ -f "$dest_file" ]]; then
+        if diff -q "$source_file" "$dest_file" >/dev/null; then
+            # Files are identical, silently continue
+            return 0
+        else
+            print_color "$YELLOW" "The file $dest_file already exists and is different. Here's the diff:"
+            diff -u "$dest_file" "$source_file" || true
+            read -p "Do you want to overwrite this file? [Y/n] " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Nn]$ ]]; then
+                return 1
+            fi
+        fi
+    else
+        print_color "$GREEN" "Creating new file: $dest_file"
+    fi
+    return 0
+}
+
+# Function to copy files and directories recursively
+copy_with_confirmation() {
+    local source="$1"
+    local dest="$2"
+
+    if [ -d "$source" ]; then
+        # It's a directory
+        if [ ! -d "$dest" ]; then
+            print_color "$GREEN" "Creating new directory: $dest"
+            mkdir -p "$dest"
+        fi
+        for item in "$source"/*; do
+            local item_name=$(basename "$item")
+            copy_with_confirmation "$item" "$dest/$item_name"
+        done
+    else
+        # It's a file
+        if [ -f "$dest" ]; then
+            if show_diff_and_confirm "$source" "$dest"; then
+                cp "$source" "$dest"
+            fi
+        else
+            print_color "$GREEN" "Creating new file: $dest"
+            cp "$source" "$dest"
+        fi
+    fi
+}
+
+# Function to copy files and directories recursively
+copy_with_confirmation() {
+    local source="$1"
+    local dest="$2"
+
+    if [ ! -e "$source" ]; then
+        print_color "$YELLOW" "Warning: Source path does not exist: $source"
+        return 0
+    fi
+
+    if [ -d "$source" ]; then
+        # It's a directory
+        if [ ! -d "$dest" ]; then
+            print_color "$GREEN" "Creating new directory: $dest"
+            mkdir -p "$dest"
+        fi
+        
+        # Check if the directory is empty
+        if [ -z "$(ls -A "$source")" ]; then
+            print_color "$YELLOW" "Note: Directory is empty: $source"
+            return 0
+        fi
+
+        for item in "$source"/*; do
+            local item_name=$(basename "$item")
+            copy_with_confirmation "$item" "$dest/$item_name"
+        done
+    else
+        # It's a file
+        if [ -f "$dest" ]; then
+            if show_diff_and_confirm "$source" "$dest"; then
+                cp "$source" "$dest"
+            fi
+        else
+            print_color "$GREEN" "Creating new file: $dest"
+            cp "$source" "$dest"
+        fi
+    fi
+}
+
 # Set up variables
 REPO_URL="https://github.com/bash-my-aws/keycutter.git"
 DEFAULT_INSTALL_DIR="$HOME/.local/share/keycutter"
@@ -111,19 +203,30 @@ do_install() {
 
     # Copy configuration files
     print_color "$GREEN" "Copying configuration files..."
-    cp -r "$install_dir/config/keycutter"/* "$CONFIG_DIR/"
+    copy_with_confirmation "$install_dir/config/keycutter" "$CONFIG_DIR"
 
     # Set up sshd configuration (requires sudo)
     if [ -d "$SSHD_CONFIG_DIR" ]; then
-        print_color "$YELLOW" "Setting up sshd configuration (requires sudo)..."
-        sudo cp "$install_dir/config/etc/ssh/sshd_config.d/50-keycutter.conf" "$SSHD_CONFIG_DIR/"
-        print_color "$YELLOW" "Please restart sshd service to apply changes."
+        print_color "$YELLOW" "SSHD Configuration:"
+        echo "Keycutter can update your sshd_config to accept environment variables starting with KEYCUTTER_."
+        echo "This allows passing Keycutter-specific environment variables to the SSH server."
+        echo "However, this may have security implications if not properly managed."
+        read -p "Do you want to update sshd_config to AcceptEnv KEYCUTTER_*? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            print_color "$YELLOW" "Updating sshd configuration (requires sudo)..."
+            source_file="$install_dir/config/etc/ssh/sshd_config.d/50-keycutter.conf"
+            dest_file="$SSHD_CONFIG_DIR/50-keycutter.conf"
+            if show_diff_and_confirm "$source_file" "$dest_file"; then
+                sudo cp "$source_file" "$dest_file"
+                print_color "$YELLOW" "Please restart sshd service to apply changes."
+            fi
+        else
+            print_color "$GREEN" "Skipping sshd configuration update."
+        fi
     else
         print_color "$YELLOW" "sshd config directory not found. Skipping sshd configuration."
     fi
-
-    # Create necessary subdirectories in CONFIG_DIR
-    mkdir -p "$CONFIG_DIR/keys" "$CONFIG_DIR/scripts" "$CONFIG_DIR/hosts" "$CONFIG_DIR/agents/default"
 
     # Add bin_dir to PATH if not already present
     if [[ ":$PATH:" != *":$bin_dir:"* ]]; then

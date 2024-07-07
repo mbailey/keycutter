@@ -1,186 +1,132 @@
 ---
 alias: Keycutter
 ---
-# [Preview] Keycutter - FIDO SSH Keys made easy
 
--  8 Jun 2024: Preparing for alpha release (big changes being made)
-- 18 Mar 2024: Preview release for review only
+# [Preview] Keycutter - FIDO SSH Keys made easy
 
 Ever wondered how to contribute to an open-source project on GitHub from an employer managed (i.e. untrusted) laptop, without compromising the security of your personal GitHub account?
 
 Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying FIDO SSH Key management.
 
-Keycutter is a config cookie cutter that creates FIDO SSH keys on hardware security keys (e.g. Yubikeys), along with Git and SSH config so they're ready to use immediately.
+## 🚀 What is Keycutter?
 
-*While initially created for use with YubiKeys and GitHub, Keycutter supports other devices and services.*
+Keycutter streamlines the creation and management of FIDO SSH keys on hardware security devices (e.g., YubiKeys). It automatically sets up SSH configurations, making your keys ready for immediate use.
 
-## What Keycutter gives you
+Originally designed for YubiKeys and GitHub, Keycutter now supports various devices and services.
 
-**Security:**
+## 🌟 Key Features
 
-- **Unstealable\* FIDO SSH keys:** No way to extract them from the device.
-- **Physical presence verification:** touch to approve each use.
-- **PIN retry lockout:** defend against stolen hardware security token.
+### Security
+- **Unstealable FIDO SSH keys**: Keys cannot be extracted from the device
+- **Physical presence verification**: Require a touch to approve each use
+- **PIN retry lockout**: Protect against stolen hardware security tokens
 
-**Convenience:**
+### Convenience
+- **Automatic SSH key selection**: Based on service/identity and host aliases
+- **AWS SSH-over-SSM support**: Seamless integration with AWS environments
 
-- **Git commit and tag signing with your SSH keys**
-- **Automatic SSH key selection by given service/identity based on host aliases**
-- **SSH and Git config in one place**
-- **AWS SSH-over-SSM**
+### Privacy
+- **Security Boundary Separation**: Use different keys for personal, work, and other contexts
+- **Selective key forwarding**: Map keys to specific services and devices
 
-**Privacy:**
+### Flexibility
+- **Centralized configuration**: All configs stored in `~/.ssh/keycutter`
+- **Version control friendly**: Easy to backup and sync across devices
 
-- **Security Boundary Separation:** Different keys for different personal, work, etc.
-- **Selective key forwarding with ssh-agent:** Map keys to services and devices.
+## 🏷️ SSH Keytags: Simplified Key Management
 
-**All config is stored in a single directory (`~/.keycutter`) which:**
+Keycutter introduces SSH Keytags to effortlessly organize your FIDO SSH keys across multiple devices and services.
 
-- Can be kept in version control.
-- Can be used on multiple devices / hosts.
+**Format**: `<service>_<identity>@<device>`
 
-## SSH Keytags
+Example: `github.com_alex-work@workpc`
 
-Managing multiple FIDO SSH keys across multiple devices and services can be an effort.
+Learn more about [SSH Keytags](docs/design/ssh-keytags.md).
 
-Keycutter introduces **SSH Keytags**, labels to help you organise and keep track of your
-FIDO SSH Keys across multiple devices and services.
+## 🛠️ Quick Start
 
-**SSH Keytags are used:**
+### Prerequisites
 
-- In the SSH Key filename
-- In the public key comment
-- In the key name on services like GitHub
+- Bash >= 4.0
+- Git >= 2.34.0
+- OpenSSH >= 8.2p1 (WSL users: [OpenSSH for Windows >= 8.9p1-1](https://github.com/PowerShell/Win32-OpenSSH/releases))
+- nc (netcat)
 
-**SSH Keytag format:**  `<service>_<identity>@<device>`
+Recommended:
+- GitHub CLI >= 2.0
+- [YubiKey Touch Detector](docs/yubikeys/yubikey-touch-detector.md)
+- YubiKey Manager (`ykman`)
 
-- **Service:** FQDN of remote service (e.g. gitlab.com)
-- **Identity:** The **user account** on remote service (e.g. alex-work)
-- **Device**: The **hardware security key** or **computer** where the private key resides.
+### Installation
 
-*Read more about [SSH Keytags](docs/design/ssh-keytags.md)*
+Choose one of the following installation methods:
 
-## Installation
+#### Option 1: Quick Install (curlbash)
 
-### 1. Install Prerequisites
-
-*Note: The script `keycutter/bin/check-requirements` installed in Step 2 can do this for you.*
-
- **Required:**
-  
-- **Bash >= 4.0**
-- **Git >= 2.34.0**
-- **OpenSSH >= 8.2p1** (WSL users need `ssh-sk-helper`([OpenSSH for Windows >= 8.9p1-1](https://github.com/PowerShell/Win32-OpenSSH/releases)))
-- **nc**
-
-**Recommended:**
-
-- **GitHub CLI >= 2.0**: (Greater than 2.4.0+dfsg1-2 on Ubuntu)
-- **[YubiKey Touch Detector](docs/yubikeys/yubikey-touch-detector.md):**  Get notified when YubiKey needs a touch.
-- **YubiKey Manager (`ykman`)**: Used to set a PIN on Yubikeys, and perform other configuration.
-
-### 2. Install Keycutter
-
-**Clone the Git repo:**
-
-```shell
-git clone https://github.com/bash-my-aws/keycutter
+```bash
+curl -sSL https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh | bash
 ```
 
-**Add the following to your shell profile (e.g. bashrc or zshrc):**
+This script will check for prerequisites, clone the repository, and set up Keycutter for you.
 
-```shell
-# keycutter/ssh/config uses these to determine which SSH key to use
-export KEYCUTTER_HOSTNAME="$(hostname -s)" # or a preferred alias for this device
+#### Option 2: Manual Install
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/bash-my-aws/keycutter
+   ```
+
+2. Run the install script:
+   ```bash
+   cd keycutter
+   ./install.sh
+   ```
+
+### Post-Installation Setup
+
+Add the following to your shell profile (e.g., `.bashrc` or `.zshrc`):
+
+```bash
+export KEYCUTTER_HOSTNAME="$(hostname -s)"
 [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="${KEYCUTTER_HOSTNAME}"
+export PATH="$PATH:$HOME/.local/share/keycutter/bin"
 
-# WSL (Windows Subsystem for Linux) users need to set the path to ssh-sk-helper.exe
-if [[ -f "/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe" ]]; then
-	export SSH_SK_HELPER="/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe"
-fi
+# For WSL users:
+[[ -f "/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe" ]] && \
+  export SSH_SK_HELPER="/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe"
 ```
 
-**Optionally add the bin directory to your path:**
-
-*As a config cookie cutter, keycutter is not required to be in the path but it is useful for generating new configs.*
-
-```shell
-# Used for generating config with keycutter
-export PATH="$PATH:${PWD}/keycutter/bin"
-```
-
-## Usage
+## 💻 Usage
 
 ### Create a FIDO SSH Key
 
-**Provide an SSH Keytag (`<service>_<identity>@<device>`) to the create command:**
-
-```shell
+```bash
 keycutter create github.com_alex@workpc
 ```
 
-For a particular service and identity on a device:
+### Use Your New Key
 
-- Separate the domain name and user name with an underscore.
-- Append the device name after the `@` symbol.
-
-### Reviewing keycutter config
-
-All Git / SSH configuration generated by keycutter for your FIDO SSH keys lives in one place.
-
-```shell
-tree ~/.keycutter
-```
-
-**Example output:**
-
-    ```shell
-    $ tree ~/.keycutter
-    /home/alex/.keycutter
-    ├── git
-    │   ├── allowed_signers
-    │   ├── config.d
-    │   │   └── github.com_alex-work
-    │   └── config
-    ├── scripts
-    │   ├── git-default-key-command
-    │   └── ssh-agents-ensure
-    └── ssh
-        ├── agents
-        ├──config 
-        └── default
-        │   └── keys
-        │   └── github.com_alex@workpc -> /home/alex/.keycutter/ssh/keys/github.com_alex@workpc
-        └── keys
-            ├── github.com_alex-work@workpc
-            └── github.com_alex-work@workpc.pub
-    ```
-
-## Using the keys
-
-### 1. Clone a GitHub repo using your new key
-
-```shell
+Clone a repo using your new key:
+```bash
 git clone git@github.com_alex:bash-my-aws/keycutter
 ```
 
-### 2. Commit a change signed with your new SSH Key
+### Explore Your Keycutter Config
 
-```shell
-cd keycutter
-date >> README.md 
-git commit -m "I signed this commit with my new SSH Key"
+```bash
+tree ~/.ssh/keycutter
 ```
 
-### 3. Explore your new config
+## 📚 Learn More
 
-You're ready for FIDO SSH access to anything you were using file based SSH keys for.
+- [Full Documentation](docs/README.md)
+- [Tips and Tricks](docs/tips-and-tricks.md)
 
-## See also
+## 🙏 Acknowledgements
 
-- **[Keycutter Documentation](docs/README.md)**
-- **[Tips and tricks](docs/tips-and-tricks.md):** Undocumented features and cool tricks.
+- [ssh-over-ssm](https://github.com/elpy1/ssh-over-ssm): Inspiration for `keycutter/scripts/ssh-ssm`
+- [ssh-ident](https://github.com/ccontavalli/ssh-ident): Inspired our approach to key management
 
-- **Prior art (and inspiration):**
-    - **[ssh-over-ssm (github.com)](https://github.com/elpy1/ssh-over-ssm):** Original source of `keycutter/scripts/ssh-ssm`.
-    - **[ssh-ident (github.com)](https://github.com/ccontavalli/ssh-ident):** Different agents and different keys for different projects, with ssh. 
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).

@@ -4,7 +4,7 @@
 #
 # Usage: ssh-agents-ensure <agent_directory>
 
-# TODO: See if we can convert this into a one liner in ~/.keycutter/ssh/config
+# TODO: See if we can convert this into a one liner in ~/.ssh/keycutter/config
 
 set -eu -o pipefail
 
@@ -53,7 +53,7 @@ ssh-agents-ensure() {
 main() {
     [[ -n ${DEBUG:-} ]] && set -x
 
-    agents_dir="${1:-$HOME/.keycutter/ssh/agents}"
+    agents_dir="${1:-$HOME/.ssh/keycutter/agents}"
 
     local agent_dir
     for agent_dir in "$agents_dir"/*; do

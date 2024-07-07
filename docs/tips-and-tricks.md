@@ -4,7 +4,7 @@ Cool unadvertised tricks. Some may evolve into documented features.
 
 ## Using rsync or inline command
 
-A workaround is employed in `~/.keycutter/ssh/config` to avoid a conflict with `RemoteCommand` when using `rsync` or inline commands that resulted in the following error:
+A workaround is employed in `~/.ssh/keycutter/config` to avoid a conflict with `RemoteCommand` when using `rsync` or inline commands that resulted in the following error:
 
 ```shell
 $ ssh git date
@@ -27,13 +27,13 @@ The result is that remote host won't be able to request keys from the origin hos
 This works by making us appear to not be on an origin host.
 
 ```shell
-KEYCUTTER_HOSTNAME="" rsync -avz ~/.keycutter/ git:.keycutter/
+KEYCUTTER_HOSTNAME="" rsync -avz ~/.ssh/keycutter/ git:.ssh/keycutter/
 ```
 
 **Alternative**: Export env vars for things that need them:
 
 ```
-RSYNC_RSH="ssh -o RemoteCommand=none" rsync -avz ~/.keycutter/ git:.keycutter/
+RSYNC_RSH="ssh -o RemoteCommand=none" rsync -avz ~/.ssh/keycutter/ git:.ssh/keycutter/
 ```
 
 ## Recreate ssh configs for a key
@@ -49,11 +49,11 @@ Keycutter is composed of simple bash functions which can be run independantly.
 2. Recreate ssh config files:
 
     ```shell
-    $ keycuitter-ssh-config-create ~/.keycutter/ssh/keys/example.com_m\@keyring
-    File is identical: /home/alex/.keycutter/ssh/config
+    $ keycuitter-ssh-config-create ~/.ssh/keycutter/keys/example.com_m\@keyring
+    File is identical: /home/alex/.ssh/keycutter/config
     Line already present in /home/alex/.ssh/config
-    SSH configuration file exists (/home/alex/.keycutter/ssh/hosts/example.com_m)
-    Already in /home/alex/.keycutter/ssh/hosts/example.com_m:   IdentityFile ~/.keycutter/ssh/keys/example.com_m@keyring.pub
+    SSH configuration file exists (/home/alex/.ssh/keycutter/hosts/example.com_m)
+    Already in /home/alex/.ssh/keycutter/hosts/example.com_m:   IdentityFile ~/.ssh/keycutter/keys/example.com_m@keyring.pub
     Add key to default keycutter ssh-agent? [y/N] y
-    Creating symlink: ln -sf /home/alex/.keycutter/ssh/keys/example.com_m@keyring /home/alex/.keycutter/ssh/agents/default/keys
+    Creating symlink: ln -sf /home/alex/.ssh/keycutter/keys/example.com_m@keyring /home/alex/.ssh/keycutter/agents/default/keys
     ```
