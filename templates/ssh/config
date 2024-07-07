@@ -4,8 +4,10 @@
 #
 # Zeroconf SSH Key selection supporting:
 #
+# - FIDO SSH Keys:
+#   - Unstealable* SSH Keys on hardware security keys
+#   - User presence confirmation
 # - SSH Keytags: Convention to simplify use of multiple ssh keys.
-# - FIDO SSH Keys: Unstealable* SSH Keys on hardware security keys.
 # - ssh-agent forwarding: Remote hosts request correct key.
 # - Multiple ssh-agents: Enforce security boundaries
 # - SSH over SSM (AWS): Automatically copy public key to remote hosts
@@ -15,21 +17,21 @@
 
 # Required shell Environment Variables
 #
-# KEYCUTTER_HOSTNAME: hostname of local host 
+# KEYCUTTER_DEVICE: hostname of local host 
 # KEYCUTTER_ORIGIN: hostname of host with hardware security key
 #
 # Add the following to your shell profile to set these variables:
 #
 #    # keycutter needs these to determine which SSH key to use
-#    export KEYCUTTER_HOSTNAME="$(hostname -s)"
-#    [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="${KEYCUTTER_HOSTNAME}"
+#    export KEYCUTTER_DEVICE="$(hostname -s)"
+#    [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="${KEYCUTTER_DEVICE}"
 
 IdentitiesOnly yes # Don't offer public keys to just anyone.
 # ForwardAgent no    # Don't lend your SSH keys to just anyone.
 ForwardAgent yes
 
-# ORIGIN: Ensure ssh-agents are running, keys are added. Copy out keycutter ssh config.
-Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_HOSTNAME:-} ]]'" OriginalHost *,!github*,!gitlab*,!git.*
+# ORIGIN: Ensure ssh-agents are running, keys are added. # Copy out keycutter ssh config.
+Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_DEVICE:-} ]]'" OriginalHost *,!github*,!gitlab*
 
     PermitLocalCommand yes
     LocalCommand ~/.keycutter/scripts/ssh-agents-ensure # && scp -P %p ~/.keycutter/ssh/config %n:.keycutter/ssh/config
@@ -38,7 +40,7 @@ Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_HOSTNAME:-} ]]'" O
     IdentityAgent ~/.keycutter/ssh/agents/default/ssh-agent.socket
 
 ## ORIGIN/REMOTE: Send KEYCUTTER_ORIGIN to remote host
-Match OriginalHost *,!github*,!gitlab*,!git.*
+Match exec "bash -c '[[ $(ps h o args p $PPID | wc -w) -eq 2 ]]'" OriginalHost *,!github*,!gitlab*,!git.*
 
     # Using SendEnv enables KEYCUTTER_ORIGIN to be:
     #
@@ -55,7 +57,7 @@ Match OriginalHost *,!github*,!gitlab*,!git.*
     SendEnv KEYCUTTER_ORIGIN
 
 # ORIGIN: Set $KEYCUTTER_ORIGIN on remote to local hostname (SendEnv fallback).
-Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_HOSTNAME:-} && $(ps h o args p $PPID | wc -w) -eq 2 ]]'" OriginalHost *,!github*,!gitlab*,!git.*
+Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_DEVICE:-} && $(ps h o args p $PPID | wc -w) -eq 2 ]]'" OriginalHost *,!github*,!gitlab*,!git.*
 
     # Fallback in case remote sshd is not configured with: AcceptEnv KEYCUTTER_ORIGIN
     # Hack to avoid breaking rsync, command line, etc: Match only applies to commands
@@ -64,20 +66,20 @@ Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_HOSTNAME:-} && $(p
     RemoteCommand "$SHELL" -c 'export KEYCUTTER_ORIGIN=${KEYCUTTER_ORIGIN:-"%L"} && mkdir -p "${k:=${HOME}/.keycutter/ssh/keys}" && (cd "$k" && ssh-add -L | awk "{filename = $3 \".pub\"; print > filename}" || true ) && exec "$SHELL" -l' 
     RequestTTY yes
 
-# ORIGIN/NON-ORIGIN: Add private key based on remote hostname from keyring (if file exists)
-Match final exec "bash -c '[[ -f ~/.keycutter/ssh/keys/%n@keyring ]]'" Host *,!i-*
-    IdentityFile ~/.keycutter/ssh/keys/%n@keyring
-
 # ORIGIN/NON-ORIGIN: Add private key based on remote hostname from origin host (if file exists)
 Match final exec "bash -c '[[ -f ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN:-} ]]'" Host *,!i-*
     IdentityFile ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN}
 
+# ORIGIN/NON-ORIGIN: Add private key based on remote hostname from keyring (if file exists)
+Match final exec "bash -c '[[ -f ~/.keycutter/ssh/keys/%n@keyring ]]'" Host *,!i-*
+    IdentityFile ~/.keycutter/ssh/keys/%n@keyring
+
 # NON-ORIGIN: Add public key based on remote hostname from origin host (if file exists)
-Match final exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} != $KEYCUTTER_HOSTNAME && -f ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN}.pub ]]'" Host *,!i-*
+Match final exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} != $KEYCUTTER_DEVICE && -f ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN}.pub ]]'" Host *,!i-*
     IdentityFile ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN}.pub
 
 # NON-ORIGIN: Add public key based on remote hostname from keyring (if file exists)
-Match final exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} != $KEYCUTTER_HOSTNAME && -f ~/.keycutter/ssh/keys/%n@keyring.pub ]]'" Host *,!i-*
+Match final exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} != $KEYCUTTER_DEVICE && -f ~/.keycutter/ssh/keys/%n@keyring.pub ]]'" Host *,!i-*
     IdentityFile ~/.keycutter/ssh/keys/%n@keyring.pub
 
 # Catchall for <domain>_<username>

@@ -43,7 +43,7 @@ ssh-agent-ensure() {
     ssh-add -D
 
     # Load all keys in the agent directory
-    for key in "$agent_dir"/keys/*{${KEYCUTTER_HOSTNAME},keyring}; do
+    for key in "$agent_dir"/keys/*{${KEYCUTTER_DEVICE:-$(hostname -s)},keyring}; do
         if [[ -f "$key" && "$key" != *.pub ]]; then
             ssh-add "$key"
         fi
