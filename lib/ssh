@@ -42,7 +42,7 @@ keycutter-ssh-key-create() {
 
 keycutter-ssh-config-create() {
 
-    # Create or update SSH configuration file for the identity
+    # Copies in keycutter/ssh/config and offers to symlink new key into default agent
 
     local ssh_key_path="${1}"
     [[ -z $ssh_key_path ]] && log "Error! No value provided" && return 1
@@ -61,11 +61,11 @@ keycutter-ssh-config-create() {
     # Ensure $KEYCUTTER_CONFIG_DIR/ssh/config is Include'd by ~/.ssh/config.
     prepend-line-if-missing ~/.ssh/config "Include ${keycutter_ssh_config_path/#$HOME/'~'}"
 
-    # Copy in ssh-agent-ensure script
+    # Copy in ssh-agents-ensure script
     dir-ensure "${keycutter_scripts_dir}" 0700
     apply-template \
-        "${KEYCUTTER_ROOT}/templates/scripts/ssh-agent-ensure" \
-        "${keycutter_scripts_dir}/ssh-agent-ensure" 
+        "${KEYCUTTER_ROOT}/templates/scripts/ssh-agents-ensure" \
+        "${keycutter_scripts_dir}/ssh-agents-ensure" 
 
     # Offer to add key to config for default ssh-agent
     read -p "Add key to default keycutter ssh-agent? [y/N] " -n 1 -r

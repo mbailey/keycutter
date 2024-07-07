@@ -1,17 +1,33 @@
 # GitHub Functions
 
-github-ssh-key-add() {
-
-    # XXX Replace if same SSH Keytag exists on GitHub
-
+keycutter-github-ssh-key-add() {
     local ssh_key_path="$1"
-    local ssh_keytag="$2"
 
-    if [[ -z "$ssh_keytag" || -z "$ssh_key_path" ]]; then 
-        log "Error: ssh_keytag and ssh_key_path are required."
+    if [[ -z "$ssh_key_path" ]]; then 
+        log "Error: ssh_key_path is required."
         return 1
     fi
     
+    # Ensure the path ends with .pub
+    if [[ ! "$ssh_key_path" =~ \.pub$ ]]; then
+        log "Error: The provided key path must end with .pub to ensure only public keys are uploaded."
+        return 1
+    fi
+
+    # Check if the file exists
+    if [[ ! -f "$ssh_key_path" ]]; then
+        log "Error: The specified public key file does not exist: $ssh_key_path"
+        return 1
+    fi
+
+    # Validate the content of the file
+    if ! ssh-keygen -lf "$ssh_key_path" &>/dev/null; then
+        log "Error: The specified file does not appear to be a valid public key: $ssh_key_path"
+        return 1
+    fi
+
+    local ssh_keytag="$(basename "${ssh_key_path}" .pub)"
+
     read -p "Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) " choice
     choice=${choice:-Y}
     [[ $choice =~ ^[Yy]*$ ]] || return 1
@@ -19,19 +35,26 @@ github-ssh-key-add() {
     log "Tip: You can authorise GitHub CLI from a trusted device by visiting https://github.com/login/device"
 
     if github-auth; then
-        log "Add SSH authentication key (${ssh_key_path}.pub) to GitHub"
-        gh ssh-key add --type authentication --title "${ssh_keytag}" "${ssh_key_path}.pub"
-        log "Add SSH signing key (${ssh_key_path}.pub) to GitHub"
-        gh ssh-key add --type signing --title "${ssh_keytag}" "${ssh_key_path}.pub"
+        log "Add SSH authentication key ($ssh_key_path) to GitHub"
+        if ! gh ssh-key add --type authentication --title "${ssh_keytag}" "$ssh_key_path"; then
+            log "Error: Failed to add authentication key to GitHub"
+            return 1
+        fi
+
+        log "Add SSH signing key ($ssh_key_path) to GitHub"
+        if ! gh ssh-key add --type signing --title "${ssh_keytag}" "$ssh_key_path"; then
+            log "Error: Failed to add signing key to GitHub"
+            return 1
+        fi
+
         log
-        # echo "Log out of GitHub"
-        # gh auth logout # XXX Only if we logged in or requested additional scopes
-        log "Note:  GitHub Organisations that enable or enforce SAML SSO will require additional setup."
+        log "Note: GitHub Organisations that enable or enforce SAML SSO will require additional setup."
     else
-        log "Error: Not uploading to key to GitHub (not authenticated)"
+        log "Error: Not uploading key to GitHub (not authenticated)"
         return 1
     fi
 }
+
 
 github-auth() {
 

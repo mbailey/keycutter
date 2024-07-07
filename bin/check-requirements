@@ -2,7 +2,7 @@
 
 # check-requirements - Checks for minimum version requirements for various tools
 #
-# Usage: checkr-requirements
+# Usage: check-requirements
 
 check_version() {
     local current_version="$1"

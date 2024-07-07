@@ -144,7 +144,7 @@ tree ~/.keycutter
     │   └── config
     ├── scripts
     │   ├── git-default-key-command
-    │   └── ssh-agent-ensure
+    │   └── ssh-agents-ensure
     └── ssh
         ├── agents
         ├──config 

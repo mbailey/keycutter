@@ -7,39 +7,15 @@ KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/functions"
 
 # Set any undefined environment variables to default values
-: ${GIT_CONFIG:="${HOME}/.gitconfig"}
-: ${KEYCUTTER_CONFIG_DIR:="${HOME}/.keycutter"}
+: ${KEYCUTTER_CONFIG_DIR:="${HOME}/.ssh/keycutter"}
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
 
 # Prerequisites:
 #
 # - Bash >= 4.0
-# - Git >= 2.34.0
 # - GitHub CLI >= 2.0 (Greater than 2.4.0+dfsg1-2 on Ubuntu)
 # - OpenSSH >= 8.2p1
 # - YubiKey Manager
-#
-# WSL (Windows Subsystem for Linux) Setup:
-#
-#   WSL does not support USB devices natively, so we need to use Windows OpenSSH to access the YubiKey.
-#   This requires a recent version of OpenSSH for Windows and a helper program to access the YubiKey.
-#
-#   Download and install a recent version of OpenSSH for Windows. This will give you 'ssh-sk-helper.exe'
-#   1. Download and install a recent OpenSSH for Windows:
-#        OpenSSH for Windows: https://github.com/PowerShell/Win32-OpenSSH/releases
-#   2. Tell WSL OpenSSH to ask Windows for help:
-#
-#        echo 'export SSH_SK_HELPER="/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe"' >> ~/.bashrc
-#
-# Recommendations:
-#
-#   1. Use separate Github account per security domain (personal, work, public).
-#      This will give you more freedom to login to GitHub on a device you trust
-#      with that account without crossing security boundaries.
-#
-#   2. Only use GitHub CLI from a device you trust with that GitHub account.
-#      E.g. Don't login to your personal GitHub account from a managed laptop. 
-#
 
 usage() {
     log "Usage:"
@@ -49,8 +25,6 @@ usage() {
     log
     log "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
     log
-    log "  --email    Optional. Set Git user.email for this key."
-    log "  --name     Optional. Set Git user.name for this key."
     log "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
     log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk). Default is ecdsa-sk."
     log
@@ -68,22 +42,12 @@ create() {
     fi
 
     # Set default values, override with command line options
-    local git_user_email=""
-    local git_user_name=""
     local ssh_key_resident=""
     local ssh_key_type="$KEYCUTTER_SSH_KEY_TYPE"
     local ssh_keytag=""
 
     while (( "$#" )); do
         case "$1" in
-            --email)
-                git_user_email="$2"
-                shift 2
-                ;;
-            --name)
-                git_user_name="$2"
-                shift 2
-                ;;
             --resident)
                 ssh_key_resident="yes"
                 shift
@@ -119,36 +83,16 @@ create() {
     # Ensure base config dir exists wth correct perms
     dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700 
 
-    local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/ssh/keys/${ssh_keytag}" # Path SSH key will be written to
+    local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/keys/${ssh_keytag}" # Path SSH key will be written to
 
     # Create FIDO SSH Key for $ssh_keytag
     keycutter-ssh-key-create "$ssh_key_path" "$ssh_key_type" "$ssh_key_resident"
-
-    # Create SSH config for this key
-    #
-    # If SSH Keytag includes a Service:
-    #   - Add/Update a Host alias for the SSH Keytag's "Identity Part"
-    #   - This allows us to ssh to the service using this key.
-    #     e.g. `ssh github-alex`
-    #          `git clone git@github.com_alex:bash-my-aws/bash-my-aws.git``
-    #
-    # If SSH Keytag doesn't include a Service:
-    #   - Add an IdentityFile entry to Keycutter's sshconfig
-    #   - This allows us to use this key for any service that supports FIDO SSH keys.
-    #
-    keycutter-ssh-config-create "$ssh_key_path"
-
-    # Configure Git for repos where remote url includes SSH Keytag's "Identity Part"
-    #
-    # - Sets User email and name
-    # - Configures Git commit and tag signing
-    keycutter-git-config-create "$ssh_key_path" "$git_user_email" "$git_user_name"
 
     # If the SSH Keytags 
     # - Upload public key to GitHub for auth and commit signing
     if [[ $service =~ github.com ]]; then
       log "Add SSH key to GitHub for auth and commit/tag signing: $ssh_key_path"
-      github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
+      keycutter-github-ssh-key-add "$ssh_key_path"
       local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
     else 
         log "Skip GitHub specific setup - SSH Keytag identity part doesn't contain 'github.com'."
@@ -161,16 +105,6 @@ create() {
     fi
 }
 
-list() {
-    ssh-keys-fido
-    github-ssh-keys
-}
-
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    if [[ "${1:-}" == "list" ]]; then
-        list
-    else
-        [[ "${1:-}" == "create" ]] && shift
-        create "$@"
-    fi
+    create "$@"
 fi

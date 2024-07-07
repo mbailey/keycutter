@@ -1,7 +1,13 @@
-# Keycutter SSH Config
+# Keycutter SSH Config - https://github.com/bash-my-aws/keycutter
+
+# Add this line to start of ~/.ssh/config: 
 #
-# https://github.com/bash-my-aws/keycutter
+#     Include ~/.ssh/keycutter
 #
+# ...or replace it by setting shell environment variable:
+#
+#     SSH_CONFIG=~/.keycutter/ssh/config
+
 # Zeroconf SSH Key selection supporting:
 #
 # - FIDO SSH Keys:
@@ -11,24 +17,20 @@
 # - ssh-agent forwarding: Remote hosts request correct key.
 # - Multiple ssh-agents: Enforce security boundaries
 # - SSH over SSM (AWS): Automatically copy public key to remote hosts
-#
-# Source from ~/.ssh/config with: Include ~/.keycutter/ssh/config
-# ...or replace it by setting shell env var: SSH_CONFIG=~/.keycutter/ssh/config
 
 # Required shell Environment Variables
 #
-# KEYCUTTER_DEVICE: hostname of local host 
-# KEYCUTTER_ORIGIN: hostname of host with hardware security key
+# KEYCUTTER_DEVICE: Name of local device (defaults to hostname)
+# KEYCUTTER_ORIGIN: Name of device with hardware security key
 #
 # Add the following to your shell profile to set these variables:
 #
 #    # keycutter needs these to determine which SSH key to use
-#    export KEYCUTTER_DEVICE="$(hostname -s)"
+#    export KEYCUTTER_DEVICE="$(hostname -s)" # Name of local device (defaults to hostname)
 #    [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="${KEYCUTTER_DEVICE}"
 
-IdentitiesOnly yes # Don't offer public keys to just anyone.
-# ForwardAgent no    # Don't lend your SSH keys to just anyone.
-ForwardAgent yes
+IdentitiesOnly yes # Don't offer all public keys to remote hosts.
+ForwardAgent no    # Don't offer SSH agent forwarding to all remote hosts.
 
 # ORIGIN: Ensure ssh-agents are running, keys are added. # Copy out keycutter ssh config.
 Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_DEVICE:-} ]]'" OriginalHost *,!github*,!gitlab*
@@ -103,14 +105,14 @@ Match Host i-*,m-*
   ForwardAgent no
   IdentitiesOnly yes
   IdentityFile ~/.ssh/ssm-ssh-tmp
-  ProxyCommand bash -c "~/.keycutter/scripts/ssh-ssm %h %r"
+  ProxyCommand bash -c "~/.ssh/scripts/ssh-ssm %h %r"
   StrictHostKeyChecking no
-  IdentityAgent ~/.keycutter/ssh/agents/github/ssh-agent.socket
-  BatchMode yes # Needed?
+  # IdentityAgent ~/.ssh/agents/github/ssh-agent.socket
+  # BatchMode yes # Needed?
 
 # Define your custom hosts here
 Host *
-    Include ~/.keycutter/ssh/hosts/*
+    Include ~/.ssh/hosts/*
 
 # SSH over SSM (AWS Systems Manager) - Second Pass
 # Set values on Hosts whose HostName value was set by an Include'd file.

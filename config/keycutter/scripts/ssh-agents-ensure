@@ -15,7 +15,7 @@ ssh-agent-start() {
     ssh-agent -a "$SSH_AUTH_SOCK" -s >/dev/null
 }
 
-ssh-agent-ensure() {
+ssh-agents-ensure() {
 
     agent_dir="${1:?}"
 
@@ -58,7 +58,7 @@ main() {
     local agent_dir
     for agent_dir in "$agents_dir"/*; do
         echo >&2 "Ensuring SSH agent in $agent_dir"
-        ssh-agent-ensure "$agent_dir"
+        ssh-agents-ensure "$agent_dir"
     done
 }
 

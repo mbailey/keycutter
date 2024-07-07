@@ -21,7 +21,7 @@ The Keycutter configuration directory consists of the following components:
 │       ├── github.com_alex-work
 ├── scripts
 │   ├── git-default-key-command
-│   ├── ssh-agent-ensure
+│   ├── ssh-agents-ensure
 │   └── ssh-ssm
 └── ssh
     ├── agents
