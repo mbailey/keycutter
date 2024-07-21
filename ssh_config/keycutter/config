@@ -17,7 +17,7 @@
 Include ~/.ssh/keycutter/hosts/*
 
 # ORIGIN/NON-ORIGIN: Set $KEYCUTTER_ORIGIN on remote host and start $SHELL
-Match final exec "bash -c '[[ $(ps h o args p $PPID) =~ ^ssh[[:space:]]+((-[^ ]+[[:space:]]+)*[^-][^ ]*)?$ ]]'"
+Match final exec "bash -c '[[ $(ps h o args p $PPID) =~ ^ssh[[:space:]]+((-[^T ]+[[:space:]]+)*[^-][^ ]*)?$ ]]'"
 
   # Using SendEnv enables KEYCUTTER_ORIGIN to be:
   #
@@ -44,7 +44,7 @@ Match final exec "bash -c '[[ $(ps h o args p $PPID) =~ ^ssh[[:space:]]+((-[^ ]+
   RemoteCommand bash -c 'export KEYCUTTER_ORIGIN=${KEYCUTTER_ORIGIN:-"%L"} && (mkdir -p ~/.ssh/keycutter/keys && cd ~/.ssh/keycutter/keys && ssh-add -L | while read -r type key comment; do echo "$type $key $comment" > "${comment##*/}.pub"; done || true) && exec "$SHELL" -l'
 
 # ORIGIN: Ensure ssh-agents are running, keys are added.
-Match final exec "bash -c '[[ -z $SSH_CONNECTION && $(ps h o args p $PPID) =~ ^ssh[[:space:]]+((-[^ ]+[[:space:]]+)*[^-][^ ]*)?$ ]]'"
+Match final exec "bash -c '[[ -z $SSH_CONNECTION && $(ps h o args p $PPID) =~ ^ssh[[:space:]]+((-[^T ]+[[:space:]]+)*[^-][^ ]*)?$ ]]'"
 
   # Git is probably the only thing you need ssh-agent forwarding for
   # Override this for hosts that need other keys
