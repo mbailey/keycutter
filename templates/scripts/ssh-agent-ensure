@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# ssh-agent-ensure - Ensure agent is started and symlinked keys are loaded
+
+#!/usr/bin/env bash
+set -eu -o pipefail
+
+socket="$1"
+agent_dir=$(dirname "$socket")
+
+debug() {
+    if [[ "${DEBUG:-}" == "true" ]]; then
+        echo "DEBUG: $*" >&2
+    fi
+}
+
+debug "Socket: $socket"
+debug "Agent directory: $agent_dir"
+
+if [[ ! -S "$socket" ]] || ! SSH_AUTH_SOCK="$socket" ssh-add -o verify-required -l &>/dev/null; then
+    debug "Agent not running or not accessible. Starting new agent."
+    rm -f "$socket"
+    debug "$(ssh-agent -a "$socket")"
+else
+    debug "Agent is already running."
+fi
+
+export SSH_AUTH_SOCK="$socket"
+debug "SSH_AUTH_SOCK set to $SSH_AUTH_SOCK"
+
+debug "Removing existing keys:"
+debug "$(ssh-add -D 2>&1)"
+
+debug "Adding keys:"
+shopt -s nullglob
+for key in "$agent_dir"/keys/*@${KEYCUTTER_ORIGIN:-$(hostname -s)}; do
+    if [[ -f "$key" && "$key" != *.pub ]]; then
+        if ssh-add "$key" &>/dev/null; then
+            debug "Added key: $key"
+        else
+            debug "Failed to add key: $key"
+        fi
+    fi
+done
+shopt -u nullglob
+debug "Key addition complete."
