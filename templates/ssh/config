@@ -1,123 +1,105 @@
-# Keycutter SSH Config
-#
-# https://github.com/bash-my-aws/keycutter
-#
-# Zeroconf SSH Key selection supporting:
-#
-# - FIDO SSH Keys:
-#   - Unstealable* SSH Keys on hardware security keys
-#   - User presence confirmation
-# - SSH Keytags: Convention to simplify use of multiple ssh keys.
-# - ssh-agent forwarding: Remote hosts request correct key.
-# - Multiple ssh-agents: Enforce security boundaries
-# - SSH over SSM (AWS): Automatically copy public key to remote hosts
-#
-# Source from ~/.ssh/config with: Include ~/.keycutter/ssh/config
-# ...or replace it by setting shell env var: SSH_CONFIG=~/.keycutter/ssh/config
+# Keycutter SSH Config - https://github.com/bash-my-aws/keycutter/config
 
-# Required shell Environment Variables
+# SSH Config for improved SSH Key security providing:
 #
-# KEYCUTTER_DEVICE: hostname of local host 
-# KEYCUTTER_ORIGIN: hostname of host with hardware security key
+# - SSH Keytags: Naming convention to simplify use of multiple ssh keys.
+# - SSH Key Privacy: Define which keys to offer to remote hosts.
+# - SSH Agent Profiles: Define which keys to forward to different remote hosts.
+# - SSH over SSM: Automatically copy public SSH key to AWS EC2 remote hosts.
+#
+# Required shell Environment Variable
+#
+# KEYCUTTER_ORIGIN: Name of device where SSH Private Keys reside.
 #
 # Add the following to your shell profile to set these variables:
 #
-#    # keycutter needs these to determine which SSH key to use
-#    export KEYCUTTER_DEVICE="$(hostname -s)"
-#    [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="${KEYCUTTER_DEVICE}"
+#    # keycutter needs this to determine which SSH key to use
+#    [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="$(hostname -s)"
 
-IdentitiesOnly yes # Don't offer public keys to just anyone.
-# ForwardAgent no    # Don't lend your SSH keys to just anyone.
-ForwardAgent yes
+# Define your custom hosts here
+Include ~/.ssh/keycutter/hosts/*
 
-# ORIGIN: Ensure ssh-agents are running, keys are added. # Copy out keycutter ssh config.
-Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_DEVICE:-} ]]'" OriginalHost *,!github*,!gitlab*
-
-    PermitLocalCommand yes
-    LocalCommand ~/.keycutter/scripts/ssh-agents-ensure # && scp -P %p ~/.keycutter/ssh/config %n:.keycutter/ssh/config
-    # Git is probably the only thing you need ssh-agent forwarding for
-    # Override this for hosts that need other keys
-    IdentityAgent ~/.keycutter/ssh/agents/default/ssh-agent.socket
 
 ## ORIGIN/REMOTE: Send KEYCUTTER_ORIGIN to remote host
 Match exec "bash -c '[[ $(ps h o args p $PPID | wc -w) -eq 2 ]]'" OriginalHost *,!github*,!gitlab*,!git.*
 
-    # Using SendEnv enables KEYCUTTER_ORIGIN to be:
-    #
-    #   - a custom name, instead of $(hostname -s)
-    #   - forwarded more than one hop, enabling multihop ssh-agent forwarding
-    #
-    # Note:
-    #
-    #   - Requires remote host sshd configured with: AcceptEnv KEYCUTTER_ORIGIN.
-    #   - AcceptEnv has potential implications for security.
-    #   - ProxyJump is generally better for reaching hosts via other hosts.
-    #
-    # Set KEYCUTTER_ORIGIN environment variable on remote host
-    SendEnv KEYCUTTER_ORIGIN
+  # Using SendEnv enables KEYCUTTER_ORIGIN to be:
+  #
+  #   - a custom name, instead of $(hostname -s)
+  #   - forwarded more than one hop, enabling multihop ssh-agent forwarding
+  #
+  # Note:
+  #
+  #   - Requires remote host sshd configured with: AcceptEnv KEYCUTTER_ORIGIN.
+  #   - AcceptEnv has potential implications for security.
+  #   - ProxyJump is generally better for reaching hosts via other hosts.
+  #
+  # Set KEYCUTTER_ORIGIN environment variable on remote host
+  SendEnv KEYCUTTER_ORIGIN
 
-# ORIGIN: Set $KEYCUTTER_ORIGIN on remote to local hostname (SendEnv fallback).
-Match exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} == ${KEYCUTTER_DEVICE:-} && $(ps h o args p $PPID | wc -w) -eq 2 ]]'" OriginalHost *,!github*,!gitlab*,!git.*
+# ORIGIN/NON-ORIGIN: Set $KEYCUTTER_ORIGIN on remote to local hostname (SendEnv fallback).
+Match exec "bash -c '[[ $(ps h o args p $PPID | wc -w) -eq 2 ]]'" OriginalHost *,!github*,!gitlab*,!git.*
 
-    # Fallback in case remote sshd is not configured with: AcceptEnv KEYCUTTER_ORIGIN
-    # Hack to avoid breaking rsync, command line, etc: Match only applies to commands
-    # with two items has two items (e.g. ssh servername).
-    # Set KEYCUTTER_ORIGIN to current host's hostname (short)
-    RemoteCommand "$SHELL" -c 'export KEYCUTTER_ORIGIN=${KEYCUTTER_ORIGIN:-"%L"} && mkdir -p "${k:=${HOME}/.keycutter/ssh/keys}" && (cd "$k" && ssh-add -L | awk "{filename = $3 \".pub\"; print > filename}" || true ) && exec "$SHELL" -l' 
-    RequestTTY yes
-
-# ORIGIN/NON-ORIGIN: Add private key based on remote hostname from origin host (if file exists)
-Match final exec "bash -c '[[ -f ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN:-} ]]'" Host *,!i-*
-    IdentityFile ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN}
-
-# ORIGIN/NON-ORIGIN: Add private key based on remote hostname from keyring (if file exists)
-Match final exec "bash -c '[[ -f ~/.keycutter/ssh/keys/%n@keyring ]]'" Host *,!i-*
-    IdentityFile ~/.keycutter/ssh/keys/%n@keyring
-
-# NON-ORIGIN: Add public key based on remote hostname from origin host (if file exists)
-Match final exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} != $KEYCUTTER_DEVICE && -f ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN}.pub ]]'" Host *,!i-*
-    IdentityFile ~/.keycutter/ssh/keys/%n@${KEYCUTTER_ORIGIN}.pub
-
-# NON-ORIGIN: Add public key based on remote hostname from keyring (if file exists)
-Match final exec "bash -c '[[ ${KEYCUTTER_ORIGIN:-X} != $KEYCUTTER_DEVICE && -f ~/.keycutter/ssh/keys/%n@keyring.pub ]]'" Host *,!i-*
-    IdentityFile ~/.keycutter/ssh/keys/%n@keyring.pub
+  # Fallback in case remote sshd is not configured with: AcceptEnv KEYCUTTER_ORIGIN
+  # Hack to avoid breaking rsync, command line, etc: Match only applies to commands
+  # with two items has two items (e.g. ssh servername).
+  # Set KEYCUTTER_ORIGIN to value on current host.
+  # RemoteCommand bash -c 'export KEYCUTTER_ORIGIN=${KEYCUTTER_ORIGIN:-%L} && mkdir -p ~/.ssh/keycutter/keys && cd ~/.ssh/keycutter/keys && ssh-add -L | while read -r type key comment; do echo "$type $key $comment" > "${comment##*/}.pub"; done && exec "$SHELL" -l'
+  RemoteCommand bash -c 'export KEYCUTTER_ORIGIN=${KEYCUTTER_ORIGIN} && mkdir -p ~/.ssh/keycutter/keys && cd ~/.ssh/keycutter/keys && ssh-add -L | while read -r type key comment; do echo "$type $key $comment" > "${comment##*/}.pub"; done && exec "$SHELL" -l'
 
 # Catchall for <domain>_<username>
 Host *_* 
 
-    IdentitiesOnly yes # Don't expose random public keys to services
-    # Strip the username from the hostname
-    ProxyCommand nc "$(echo "%h" | sed "s/_.*$//")" %p 
-    RequestTTY no
+  IdentitiesOnly yes # Don't expose random public keys to services
+  # Strip the username from the hostname
+  ProxyCommand nc "$(echo "%h" | sed "s/_.*$//")" %p 
 
 # To get around firewalls blocking port 22: Connect to `ssh.github.com:443`
 Host *github.com*
 
-    User git
-    ForwardAgent no # GitHub doesn't need access to your ssh-agent
-    IdentitiesOnly yes # Don't expose random public keys to GitHub.com
+  User git
+  ForwardAgent no # GitHub doesn't need access to your ssh-agent
+  IdentitiesOnly yes # Don't expose random public keys to GitHub.com
+  RequestTTY no
 
 # SSH over SSM (AWS Systems Manager)
 Match Host i-*,m-*
+
   User ec2-user
   ForwardAgent no
   IdentitiesOnly yes
-  IdentityFile ~/.ssh/ssm-ssh-tmp
-  ProxyCommand bash -c "~/.keycutter/scripts/ssh-ssm %h %r"
+  IdentityFile ~/.ssh/keycutter/keys/ssm-ssh-pub-key-tmp
+  ProxyCommand bash -c "~/.ssh/scripts/ssh-ssm %h %r"
   StrictHostKeyChecking no
-  IdentityAgent ~/.keycutter/ssh/agents/github/ssh-agent.socket
-  BatchMode yes # Needed?
+  BatchMode yes
+  # IdentityAgent ~/.ssh/agents/github/ssh-agent.socket
 
-# Define your custom hosts here
+# ORIGIN: Ensure ssh-agents are running, keys are added. # Copy out keycutter ssh config.
+Match final exec "bash -c '[[ -z $SSH_CONNECTION ]]'" OriginalHost *,!github*,!gitlab*
+
+  PermitLocalCommand yes
+  LocalCommand ~/.ssh/keycutter/scripts/ssh-agents-ensure # && scp -P %p ~/.ssh/keycutter/config %n:.ssh/keycutter/config
+  # Git is probably the only thing you need ssh-agent forwarding for
+  # Override this for hosts that need other keys
+  IdentityAgent ~/.ssh/keycutter/agents/default/ssh-agent.socket
+
+# Select key to use based on:
+#
+# - Remote hostname (after any changes made by other entries)
+# - Whether we're connecting from an ORIGIN or REMOTE host
+
+# ORIGIN: Add private key (if file exists) based on remote hostname.
+Match final exec "bash -c '[[ -z $SSH_CONNECTION && -f ~/.ssh/keycutter/keys/%n@${KEYCUTTER_ORIGIN:-} ]]'" Host *,!i-*
+  IdentityFile ~/.ssh/keycutter/keys/%n@${KEYCUTTER_ORIGIN}
+
+# NON-ORIGIN: Add public key (if file exists) based on remote hostname.
+Match final exec "bash -c '[[ -n $SSH_CONNECTION && -f ~/.ssh/keycutter/keys/%n@${KEYCUTTER_ORIGIN}.pub ]]'" Host *,!i-*
+  IdentityFile ~/.ssh/keycutter/keys/%n@${KEYCUTTER_ORIGIN}.pub
+
+## Apply defaults for values that have not already been set.
 Host *
-    Include ~/.keycutter/ssh/hosts/*
+  IdentitiesOnly yes # Don't offer all public keys to remote hosts.
+  ForwardAgent no    # Don't offer SSH agent forwarding to all remote hosts.
+  RequestTTY yes
 
-# SSH over SSM (AWS Systems Manager) - Second Pass
-# Set values on Hosts whose HostName value was set by an Include'd file.
-Match final Host i-*,m-*
-  IdentitiesOnly yes
-  IdentityFile ~/.ssh/ssm-ssh-tmp
-  StrictHostKeyChecking no
-  # BatchMode yes
-
-  # vim:ft=sshconfig
+# vim:ft=sshconfig
