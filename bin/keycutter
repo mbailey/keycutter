@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eu -o pipefail
+# set -eu -o pipefail
 
 # [preview] keycutter - Create FIDO SSH keys for authentication and commit signing.
 
@@ -7,14 +7,13 @@ KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/functions"
 
 # Set any undefined environment variables to default values
-: ${GIT_CONFIG:="${HOME}/.gitconfig"}
-: ${KEYCUTTER_CONFIG_DIR:="${HOME}/.keycutter"}
+: ${KEYCUTTER_CONFIG_DIR:="${HOME}/.ssh/keycutter"}
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
 
 # Prerequisites:
 #
 # - Bash >= 4.0
-# - Git >= 2.34.0
+# - Git >= 2.34.0 # XXX Still needed?
 # - GitHub CLI >= 2.0 (Greater than 2.4.0+dfsg1-2 on Ubuntu)
 # - OpenSSH >= 8.2p1
 # - YubiKey Manager
@@ -43,14 +42,12 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 
 usage() {
     log "Usage:"
-    log "       $(basename "$0") <ssh-keytag> [--email <value>] [--name <value>] [--resident] [--type <value>]"
+    log "       $(basename "$0") <ssh-keytag> [--resident] [--type <value>]"
     log
     log "Arguments:"
     log
     log "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
     log
-    log "  --email    Optional. Set Git user.email for this key."
-    log "  --name     Optional. Set Git user.name for this key."
     log "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
     log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk). Default is ecdsa-sk."
     log
@@ -61,29 +58,19 @@ usage() {
     log "  - device  : Device this ssh key resides on ( e.g. 'yubikey1', 'work-laptop', 'zfold5')"
 }
 
-create() {
+keycutter-create() {
     if [[ $# -lt 1 ]]; then
         usage
         exit 1
     fi
 
     # Set default values, override with command line options
-    local git_user_email=""
-    local git_user_name=""
     local ssh_key_resident=""
     local ssh_key_type="$KEYCUTTER_SSH_KEY_TYPE"
     local ssh_keytag=""
 
     while (( "$#" )); do
         case "$1" in
-            --email)
-                git_user_email="$2"
-                shift 2
-                ;;
-            --name)
-                git_user_name="$2"
-                shift 2
-                ;;
             --resident)
                 ssh_key_resident="yes"
                 shift
@@ -114,37 +101,29 @@ create() {
         exit 1
     fi
 
+    # Check if the ssh_keytag ends with @$KEYCUTTER_ORIGIN
+    if [[ ! "$ssh_keytag" =~ @${KEYCUTTER_ORIGIN}$ ]]; then
+        read -p "Append the current device to the SSH Keytag? (${ssh_keytag}@${KEYCUTTER_ORIGIN}). (Y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            log "Proceeding with original ssh_keytag: $ssh_keytag"
+        else
+            ssh_keytag="${ssh_keytag}@${KEYCUTTER_ORIGIN}"
+            log "Updated ssh_keytag to: $ssh_keytag"
+        fi
+    fi
+
     local service="$(_ssh-keytag-service "$ssh_keytag")"
 
     # Ensure base config dir exists wth correct perms
     dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700 
 
-    local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/ssh/keys/${ssh_keytag}" # Path SSH key will be written to
+    local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/keys/${ssh_keytag}" # Path SSH key will be written to
 
     # Create FIDO SSH Key for $ssh_keytag
-    keycutter-ssh-key-create "$ssh_key_path" "$ssh_key_type" "$ssh_key_resident"
+    ssh-key-create "$ssh_key_path" "$ssh_key_type" "$ssh_key_resident"
 
-    # Create SSH config for this key
-    #
-    # If SSH Keytag includes a Service:
-    #   - Add/Update a Host alias for the SSH Keytag's "Identity Part"
-    #   - This allows us to ssh to the service using this key.
-    #     e.g. `ssh github-alex`
-    #          `git clone git@github.com_alex:bash-my-aws/bash-my-aws.git``
-    #
-    # If SSH Keytag doesn't include a Service:
-    #   - Add an IdentityFile entry to Keycutter's sshconfig
-    #   - This allows us to use this key for any service that supports FIDO SSH keys.
-    #
-    keycutter-ssh-config-create "$ssh_key_path"
-
-    # Configure Git for repos where remote url includes SSH Keytag's "Identity Part"
-    #
-    # - Sets User email and name
-    # - Configures Git commit and tag signing
-    keycutter-git-config-create "$ssh_key_path" "$git_user_email" "$git_user_name"
-
-    # If the SSH Keytags 
+    # If the SSH Keytag includes github.com 
     # - Upload public key to GitHub for auth and commit signing
     if [[ $service =~ github.com ]]; then
       log "Add SSH key to GitHub for auth and commit/tag signing: $ssh_key_path"
@@ -161,16 +140,31 @@ create() {
     fi
 }
 
-list() {
-    ssh-keys-fido
+keycutter-authorized-keys() {
+    ssh-authorized-keys "$@"
+}
+
+keycutter-list() {
+    # ssh-keys-fido
     github-ssh-keys
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    if [[ "${1:-}" == "list" ]]; then
-        list
+    if [[ $# -eq 0 ]]; then
+        # Show help if no arguments
+        echo "Usage: $0 <function> [arguments]"
+        echo "Available functions:"
+        declare -F | cut -d' ' -f3 | grep '^keycutter-' | sed 's/^keycutter-//'
+        exit 1
+    elif declare -f "keycutter-${1}" > /dev/null; then
+        # Remove the first argument (the function name) and pass the rest to the function
+        func="keycutter-$1"
+        shift
+        "$func" "$@"
     else
-        [[ "${1:-}" == "create" ]] && shift
-        create "$@"
+        echo "Unknown function: $1"
+        echo "Available functions:"
+        declare -F | cut -d' ' -f3 | grep '^keycutter-' | sed 's/^keycutter-//'
+        exit 1
     fi
 fi

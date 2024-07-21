@@ -5,11 +5,11 @@ source "${KEYCUTTER_ROOT}/lib/utils"
 
 # Initialise some environment variables
 
-: ${KEYCUTTER_CONFIG_DIR:="${HOME}/.keycutter"}
-: ${KEYCUTTER_SSH_KEY_DIR:="${KEYCUTTER_CONFIG_DIR}/ssh/keys"}
+: ${KEYCUTTER_CONFIG_DIR:="${HOME}/.ssh/keycutter"}
+: ${KEYCUTTER_SSH_KEY_DIR:="${KEYCUTTER_CONFIG_DIR}/keys"}
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
 
-keycutter-ssh-key-create() {
+ssh-key-create() {
 
     # Generate a new FIDO SSH key
 
@@ -40,45 +40,50 @@ keycutter-ssh-key-create() {
     fi
 }
 
-keycutter-ssh-config-create() {
+ssh-authorized-keys() {
+    local hostname="$1"
 
-    # Create or update SSH configuration file for the identity
+    # Extract identity files using `ssh -G`
+    local identity_files
+    identity_files=$(ssh -G "$hostname" | grep '^identityfile ' | awk '{print $2}')
 
-    local ssh_key_path="${1}"
-    [[ -z $ssh_key_path ]] && log "Error! No value provided" && return 1
-
-    local keycutter_ssh_config_path="${KEYCUTTER_CONFIG_DIR}/ssh/config"
-    local ssh_agents_dir="${KEYCUTTER_CONFIG_DIR}/ssh/agents"
-    local keycutter_scripts_dir="${KEYCUTTER_CONFIG_DIR}/scripts"
-
-    # Ensure keycutter config dir exists
-    dir-ensure "${KEYCUTTER_CONFIG_DIR}" 0700
-
-    # Copy in main keycutter ssh config
-    dir-ensure "$(dirname "${keycutter_ssh_config_path}")" 0700
-    apply-template "${KEYCUTTER_ROOT}/templates/ssh/config" "${keycutter_ssh_config_path}"
-
-    # Ensure $KEYCUTTER_CONFIG_DIR/ssh/config is Include'd by ~/.ssh/config.
-    prepend-line-if-missing ~/.ssh/config "Include ${keycutter_ssh_config_path/#$HOME/'~'}"
-
-    # Copy in ssh-agent-ensure script
-    dir-ensure "${keycutter_scripts_dir}" 0700
-    apply-template \
-        "${KEYCUTTER_ROOT}/templates/scripts/ssh-agent-ensure" \
-        "${keycutter_scripts_dir}/ssh-agent-ensure" 
-
-    # Offer to add key to config for default ssh-agent
-    read -p "Add key to default keycutter ssh-agent? [y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        dir-ensure "${ssh_agents_dir}" 0700
-        dir-ensure "${ssh_agents_dir}/default/keys" 0700
-        log "Create symlink: ln -sf ${ssh_key_path} ${ssh_agents_dir}/default/keys"
-        ln -sf "${ssh_key_path}" "${ssh_agents_dir}/default/keys" # XXX Prompt before overwrite
-    fi
+    # Loop through each identity file and output the public key to stdout
+    for id_file in $identity_files; do
+        # Expand ~ to the home directory
+        id_file="${id_file/#\~/$HOME}"
+        # Expand %n to the hostname
+        id_file="${id_file//%n/$hostname}"
+        # Expand ${KEYCUTTER_ORIGIN} if it's set
+        if [[ -n "${KEYCUTTER_ORIGIN:-}" ]]; then
+            id_file="${id_file/\$\{KEYCUTTER_ORIGIN\}/$KEYCUTTER_ORIGIN}"
+        fi
+        pub_file="${id_file}.pub"
+        
+        if [[ -f "$pub_file" ]]; then
+            # Use the existing .pub file
+            cat "$pub_file"
+        else
+            echo >&2 "Warning: Public key $pub_file not found." 
+            if [[ -f "$id_file" ]]; then
+                # Try extracting the public key without a passphrase
+                if ssh-keygen -y -P '' -f "$id_file" > /dev/null 2>&1; then
+                    ssh-keygen -y -P '' -f "$id_file"
+                else
+                    # Prompt the user for a passphrase if required
+                    echo "The private key $id_file requires a passphrase. Do you want to enter it? (yes/no)"
+                    read -r answer
+                    if [[ "$answer" == "yes" ]]; then
+                        ssh-keygen -y -f "$id_file"
+                    else
+                        echo "Skipping key $id_file due to missing passphrase."
+                    fi
+                fi
+            else
+                echo "Warning: Private key $id_file not found." >&2
+            fi
+        fi
+    done
 }
-
-# sixty-ten 
 
 ## SSH Keytags - Manipulate SSH Keytags (strings) used by Keycutter
 
