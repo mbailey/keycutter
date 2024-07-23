@@ -75,7 +75,7 @@ Match Host i-*,m-*
   ForwardAgent no
   IdentitiesOnly yes
   IdentityFile ~/.ssh/keycutter/keys/ssm-ssh-tmp-key
-  ProxyCommand bash -c "~/.ssh/scripts/ssh-ssm %h %r"
+  ProxyCommand bash -c "~/.ssh/keycutter/scripts/ssh-ssm %h %r"
   StrictHostKeyChecking no
   BatchMode yes
   # IdentityAgent ~/.ssh/agents/github/ssh-agent.socket
