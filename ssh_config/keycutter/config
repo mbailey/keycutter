@@ -78,6 +78,9 @@ Match Host i-*,m-*
   ProxyCommand bash -c "~/.ssh/keycutter/scripts/ssh-ssm %h %r"
   StrictHostKeyChecking no
   BatchMode yes
+  TCPKeepAlive yes
+  ServerAliveInterval 30
+  ConnectTimeout 10
   # IdentityAgent ~/.ssh/agents/github/ssh-agent.socket
 
 # Add SSH key (if it exists) based on:
