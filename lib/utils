@@ -163,7 +163,7 @@ log() {
     local message="$*"
     local first_word_downcased=$(echo "$message" | awk '{print tolower($1)}')
 
-    if [[ "$first_word_downcased" == "debug" && -z ${DEBUG:-} ]]; then
+    if [[ "$first_word_downcased" =~ "debug" && -z ${DEBUG:-} ]]; then
         return
     fi
 

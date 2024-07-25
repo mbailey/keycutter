@@ -251,6 +251,46 @@ keycutter-update-ssh-config() {
     log "Keycutter installation/update complete."
 }
 
+keycutter-generate-completion() {
+    local completion_file="${KEYCUTTER_ROOT}/bin/keycutter-completion.bash"
+    local commands=$(declare -F | cut -d' ' -f3 | grep '^keycutter-' | sed 's/^keycutter-//' | tr '\n' ' ')
+
+    cat > "$completion_file" <<EOL
+#!/usr/bin/env bash
+
+_keycutter_completion() {
+    local cur prev words cword
+    _init_completion || return
+
+    local commands="$commands"
+
+    case \$prev in
+        keycutter)
+            COMPREPLY=(\$(compgen -W "\$commands" -- "\$cur"))
+            return
+            ;;
+        create)
+            # Add completion for create subcommand options
+            COMPREPLY=(\$(compgen -W "--resident --type" -- "\$cur"))
+            return
+            ;;
+        --type)
+            COMPREPLY=(\$(compgen -W "ecdsa-sk ed25519-sk" -- "\$cur"))
+            return
+            ;;
+    esac
+
+    # Default to filename completion
+    COMPREPLY=(\$(compgen -f -- "\$cur"))
+}
+
+complete -F _keycutter_completion keycutter
+EOL
+
+    chmod +x "$completion_file"
+    echo "Completion script generated at $completion_file"
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     if [[ $# -eq 0 ]]; then
         # Show help if no arguments
@@ -258,6 +298,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         echo "Available functions:"
         declare -F | cut -d' ' -f3 | grep '^keycutter-' | sed 's/^keycutter-//'
         exit 1
+    elif [[ "$1" == "generate-completion" ]]; then
+        keycutter-generate-completion
     elif declare -f "keycutter-${1}" > /dev/null; then
         # Remove the first argument (the function name) and pass the rest to the function
         func="keycutter-$1"
