@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# set -euo pipefail XXX restore this later
 
 # install.sh - keycutter curl-pipe-bash installer
 
