@@ -44,29 +44,42 @@ add-line-if-missing() {
 
     # Check if the line is already in the file to avoid duplicates
     if ! grep -qxF "$line_to_add" "$target_file"; then
-        log "Adding line to $target_file in $mode mode."
+        log "Proposed change to $target_file in $mode mode:"
         case "$mode" in
             append)
-                # Append the line
-                log "Append line to $target_file"
-                cp "$target_file" "$target_file$backup_extension"
-                echo "$line_to_add" >> "$target_file"
+                diff --color=always -u "$target_file" <(cat "$target_file"; echo "$line_to_add") || true
                 ;;
             prepend)
-                # Prepend the line
-                log "Prepend line to $target_file"
-                if [[ ! -s "$target_file" ]]; then
-                    echo "$line_to_add" > "$target_file"
-                else
-                    sed -i"$backup_extension" "1i$line_to_add" "$target_file"
-                fi
+                diff --color=always -u "$target_file" <(echo "$line_to_add"; cat "$target_file") || true
                 ;;
             *)
                 echo "Error: Invalid mode specified. Use 'prepend' or 'append'."
                 return 1
                 ;;
         esac
-        log "Backup of original file created with extension: $backup_extension"
+
+        prompt "Apply this change? [y/N]"
+        read -n 1 -r
+        echo  # Move to a new line after user input
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log "Applying change to $target_file"
+            cp "$target_file" "$target_file$backup_extension"
+            case "$mode" in
+                append)
+                    echo "$line_to_add" >> "$target_file"
+                    ;;
+                prepend)
+                    if [[ ! -s "$target_file" ]]; then
+                        echo "$line_to_add" > "$target_file"
+                    else
+                        sed -i"$backup_extension" "1i$line_to_add" "$target_file"
+                    fi
+                    ;;
+            esac
+            log "Backup of original file created with extension: $backup_extension"
+        else
+            log "Change not applied."
+        fi
     else
         log "Debug: Line already present in $target_file"
     fi
