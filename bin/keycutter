@@ -151,6 +151,61 @@ keycutter-list() {
     github-ssh-keys
 }
 
+keycutter-update() {
+    log "Updating Keycutter..."
+
+    # Check if we're in a git repository
+    if ! git -C "${KEYCUTTER_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        log "Error: ${KEYCUTTER_ROOT} is not a git repository."
+        return 1
+    fi
+
+    # Change to the KEYCUTTER_ROOT directory
+    cd "${KEYCUTTER_ROOT}" || {
+        log "Error: Unable to change to directory ${KEYCUTTER_ROOT}"
+        return 1
+    }
+
+    # Get the current branch name
+    local current_branch=$(git symbolic-ref --short HEAD)
+    if [ -z "$current_branch" ]; then
+        log "Error: Unable to determine current branch."
+        return 1
+    fi
+
+    # Check if we're on the master branch
+    if [[ "$current_branch" != "master" ]]; then
+        log "Not on master branch. Current branch is $current_branch. Skipping update."
+        return 0
+    fi
+
+    # Fetch the latest changes
+    if ! git fetch origin; then
+        log "Error: Failed to fetch updates from remote repository."
+        return 1
+    fi
+
+    # Check if there are any changes to pull
+    local behind_by=$(git rev-list HEAD..origin/"$current_branch" --count 2>/dev/null)
+    if [ $? -ne 0 ]; then
+        log "Error: Unable to determine if there are updates available."
+        return 1
+    fi
+
+    if [ -z "$behind_by" ] || [ "$behind_by" -eq 0 ]; then
+        log "Keycutter is already up to date."
+        return 0
+    fi
+
+    # Pull the latest changes
+    if ! git pull origin "$current_branch"; then
+        log "Error: Failed to pull updates from remote repository."
+        return 1
+    fi
+
+    log "Keycutter has been successfully updated."
+}
+
 keycutter-install() {
     local src_dir="${KEYCUTTER_ROOT}/ssh_config/keycutter"
     local dest_dir="$HOME/.ssh/keycutter"
