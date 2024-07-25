@@ -78,7 +78,7 @@ cd "$INSTALL_DIR" || error "Failed to change to installation directory"
 
 # Run keycutter install
 echo "Running keycutter installation..."
-bin/keycutter install || error "Failed to run keycutter install"
+bin/keycutter update-ssh-config || error "Failed to run keycutter install"
 
 # Symlink binaries
 echo "Symlinking binaries..."
