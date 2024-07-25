@@ -34,7 +34,7 @@ Overwrite key in token (y/n)?
 
 Annoyance where user is prompted with 'yes/no' when using key to sign/push git commit in VSCode.
 
-![](vscode-prompts-with-key-has-fingerprint.png)
+![](assets/vscode-prompts-with-key-has-fingerprint.png)
 
     "Key" has fingerprint ""
     Are you sure yuou want to coninue connecting?
