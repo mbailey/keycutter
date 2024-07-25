@@ -3,7 +3,9 @@
 
 # [preview] keycutter - Create FIDO SSH keys for authentication and commit signing.
 
-KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
+# KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-${0:A}}")")" && pwd)"
+KEYCUTTER_ROOT="$(cd -- "$SCRIPT_DIR/../" && pwd)"
 source "${KEYCUTTER_ROOT}/lib/functions"
 
 # Set any undefined environment variables to default values
