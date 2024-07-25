@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-${0:A}}")")" && pw
 KEYCUTTER_ROOT="$(cd -- "$SCRIPT_DIR/../" && pwd)"
 source "${KEYCUTTER_ROOT}/lib/functions"
 
+[ -t 0 ] || exec </dev/tty # reattach keyboard to STDIN
+
 # Set any undefined environment variables to default values
 : ${KEYCUTTER_CONFIG_DIR:="${HOME}/.ssh/keycutter"}
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
