@@ -12,7 +12,8 @@ github-ssh-key-add() {
         return 1
     fi
     
-    read -p "Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) " choice
+    prompt "Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) "
+    read -p choice
     choice=${choice:-Y}
     [[ $choice =~ ^[Yy]*$ ]] || return 1
 

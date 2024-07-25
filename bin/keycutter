@@ -106,7 +106,7 @@ keycutter-create() {
     # Check if the ssh_keytag ends with @$KEYCUTTER_ORIGIN
     if [[ ! "$ssh_keytag" =~ @${KEYCUTTER_ORIGIN}$ ]]; then
         local ssh_keytag_proposed="${ssh_keytag/@*}@${KEYCUTTER_ORIGIN}"
-        log -n "Append the current device to the SSH Keytag? (${ssh_keytag_proposed}). (Y/n) "
+        prompt "Append the current device to the SSH Keytag? (${ssh_keytag_proposed}). (Y/n) "
         read -n 1 -r
         echo
         if [[ $REPLY =~ ^[Nn]$ ]]; then
@@ -135,7 +135,7 @@ keycutter-create() {
         github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
         local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
         # Option to access GitHub when firewall blocks outbound port 22
-        log -n "Symlink key to enable ssh.github.com:443? [Y/n] "
+        prompt "Symlink key to enable ssh.github.com:443? [Y/n] "
         read -n 1 -r
         echo
         if ! [[ $REPLY =~ ^[Nn]$ ]]; then

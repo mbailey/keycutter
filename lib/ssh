@@ -38,7 +38,7 @@ ssh-authorized-keys() {
                     ssh-keygen -y -P '' -f "$id_file"
                 else
                     # Prompt the user for a passphrase if required
-                    echo "The private key $id_file requires a passphrase. Do you want to enter it? (yes/no)"
+                    prompt "The private key $id_file requires a passphrase. Do you want to enter it? (yes/no)"
                     read -r answer
                     if [[ "$answer" == "yes" ]]; then
                         ssh-keygen -y -f "$id_file"

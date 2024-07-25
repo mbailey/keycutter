@@ -10,6 +10,21 @@ append-line-if-missing() {
     add-line-if-missing append "$@"
 }
 
+# Display a consistent prompt for user confirmation
+prompt() {
+    local message="$1"
+    local color="\033[1;35m"  # Magenta color
+    local reset="\033[0m"
+    local prefix="❓ "
+
+    # Check for NO_COLOR or if output is not a terminal
+    if [[ -n ${NO_COLOR:-} ]] || [[ ! -t 1 ]]; then
+        printf "%s%s " "$prefix" "$message"
+    else
+        printf "%b%s%s %b" "$color" "$prefix" "$message" "$reset"
+    fi
+}
+
 prepend-line-if-missing() {
     add-line-if-missing prepend "$@"
 }
@@ -123,7 +138,7 @@ apply-template() {
             log "File is different: $target_path"
             # command diff -u "$target_path" "$template_path" || true
             command diff --color=always -u "$target_path" "$template_path" || true
-            log -n "Overwrite? [y/N] "
+            prompt "Overwrite? [y/N]"
             read -n 1 -r
             echo  # Move to a new line after user input
             if [[ $REPLY =~ ^[Yy]$ ]]; then
