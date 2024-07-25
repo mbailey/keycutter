@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# install.sh - keycutter curl-pipe-bash installer
+
+echo "Not working yet!"
+
 # Safe boilerplate install.sh script with thorough binary conflict checking
 # Usage: curl -sSL https://raw.githubusercontent.com/bash-my-aws/keycutter/main/install.sh | bash
 # Or: ./install.sh (when run from within the repository)
