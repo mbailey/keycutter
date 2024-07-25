@@ -149,6 +149,35 @@ keycutter-list() {
     github-ssh-keys
 }
 
+keycutter-install() {
+    local src_dir="${KEYCUTTER_ROOT}/ssh_config/keycutter"
+    local dest_dir="$HOME/.ssh/keycutter"
+
+    # Create the destination directory structure
+    dir-ensure "$dest_dir"
+    dir-ensure "$dest_dir/agents"
+    dir-ensure "$dest_dir/hosts"
+    dir-ensure "$dest_dir/keys"
+    dir-ensure "$dest_dir/scripts"
+
+    # Apply the template for the main config file
+    apply-template "$src_dir/config" "$dest_dir/config"
+
+    # Copy other files and directories
+    cp -R "$src_dir/agents" "$dest_dir"
+    cp -R "$src_dir/hosts" "$dest_dir"
+    cp -R "$src_dir/keys" "$dest_dir"
+
+    # Apply template for each script in the scripts directory
+    for script in "$src_dir/scripts"/*; do
+        if [[ -f "$script" ]]; then
+            apply-template "$script" "$dest_dir/scripts/$(basename "$script")"
+        fi
+    done
+
+    log "Keycutter installation/update complete."
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     if [[ $# -eq 0 ]]; then
         # Show help if no arguments
