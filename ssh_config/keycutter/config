@@ -13,7 +13,7 @@
 #    # keycutter uses this to determine which SSH key to use
 #    [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="$(hostname -s)"
 
-# Load custom rules for hosts
+# Load custom rules for hosts (that override or append to directives below).
 Include ~/.ssh/keycutter/hosts/*
 
 # ORIGIN/NON-ORIGIN: Set $KEYCUTTER_ORIGIN on remote host and start $SHELL
