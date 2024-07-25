@@ -248,6 +248,9 @@ keycutter-update-ssh-config() {
         fi
     done
 
+    # Add Include directive to the main SSH config file
+    prepend-line-if-missing "${HOME}/.ssh/config" "Include keycutter/config"
+
     log "Keycutter installation/update complete."
 }
 
