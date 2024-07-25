@@ -10,7 +10,7 @@ Ever wondered how to contribute to an open-source project on GitHub from an empl
 
 Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying FIDO SSH Key management.
 
-Keycutter is a config cookie cutter that creates FIDO SSH keys on hardware security keys (e.g. Yubikeys), along with Git and SSH config so they're ready to use immediately.
+Keycutter is a config cookie cutter that creates FIDO SSH keys on hardware security keys (e.g. Yubikeys), along with SSH config so they're ready to use immediately.
 
 *While initially created for use with YubiKeys and GitHub, Keycutter supports other devices and services.*
 
@@ -24,9 +24,8 @@ Keycutter is a config cookie cutter that creates FIDO SSH keys on hardware secur
 
 **Convenience:**
 
-- **Git commit and tag signing with your SSH keys**
 - **Automatic SSH key selection by given service/identity based on host aliases**
-- **SSH and Git config in one place**
+- **SSH config in one place**
 - **AWS SSH-over-SSM**
 
 **Privacy:**
@@ -34,7 +33,7 @@ Keycutter is a config cookie cutter that creates FIDO SSH keys on hardware secur
 - **Security Boundary Separation:** Different keys for different personal, work, etc.
 - **Selective key forwarding with ssh-agent:** Map keys to services and devices.
 
-**All config is stored in a single directory (`~/.keycutter`) which:**
+**All config is stored in a single directory (`~/.ssh/keycutter`) which:**
 
 - Can be kept in version control.
 - Can be used on multiple devices / hosts.
@@ -59,6 +58,14 @@ FIDO SSH Keys across multiple devices and services.
 - **Device**: The **hardware security key** or **computer** where the private key resides.
 
 *Read more about [SSH Keytags](docs/design/ssh-keytags.md)*
+
+## Quick install with curl-pipe-bash
+
+Use at own risk.
+
+```shell
+curl -s https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh | bash
+```
 
 ## Installation
 
