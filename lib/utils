@@ -146,7 +146,7 @@ log() {
     fi
 
     local message="$*"
-    local first_word_downcased=$(echo "$message" | awk '{print tolower($1)}' | sed 's/:*$//')
+    local first_word_downcased=$(echo "$message" | awk '{print tolower($1)}')
 
     if [[ "$first_word_downcased" == "debug" && -z ${DEBUG:-} ]]; then
         return
@@ -168,14 +168,14 @@ log() {
     # Default colour
     local color="$reset"
     case $first_word_downcased in
-        info|tip)             color="$blue";    prefix="️🛈 " ; destination='stderr';;
-        warn|note)            color="$yellow";  prefix="⚠️ "; destination='stderr';;
-        error)                color="$red";     prefix="🚫 " ;;
-        debug)                color="$cyan";    prefix="🔍 " ;;
-        success)              color="$green";   prefix="✅ " ;;
-        prompt|overwrite)     color="$magenta"; prefix="❓ " ;;
+        info*|tip*)             color="$blue";    prefix="️🛈 " ; destination='stderr';;
+        warn*|note*)            color="$yellow";  prefix="⚠️ "; destination='stderr';;
+        error*)                color="$red";     prefix="🚫 " ;;
+        debug*)                color="$cyan";    prefix="🔍 " ;;
+        success*)              color="$green";   prefix="✅ " ;;
+        prompt*|overwrite*)     color="$magenta"; prefix="❓ " ;;
         add*|creat*|generat*) color="$orange";  prefix="➕ " ;;
-        append|prepend)       color="$orange";  prefix="➕ " ;;
+        append*|prepend*)       color="$orange";  prefix="➕ " ;;
         chang*|modif*|updat*) color="$orange";  prefix="🔄 " ;;
         configur*)            color="$orange";  prefix="🔄 " ;;
         delet*|remov*|rm)     color="$orange";  prefix="➖ " ;;

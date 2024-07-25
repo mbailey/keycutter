@@ -105,34 +105,45 @@ keycutter-create() {
 
     # Check if the ssh_keytag ends with @$KEYCUTTER_ORIGIN
     if [[ ! "$ssh_keytag" =~ @${KEYCUTTER_ORIGIN}$ ]]; then
-        read -p "Append the current device to the SSH Keytag? (${ssh_keytag}@${KEYCUTTER_ORIGIN}). (Y/n) " -n 1 -r
+        local ssh_keytag_proposed="${ssh_keytag/@*}@${KEYCUTTER_ORIGIN}"
+        log -n "Append the current device to the SSH Keytag? (${ssh_keytag_proposed}). (Y/n) "
+        read -n 1 -r
         echo
         if [[ $REPLY =~ ^[Nn]$ ]]; then
             log "Proceeding with original ssh_keytag: $ssh_keytag"
         else
-            ssh_keytag="${ssh_keytag}@${KEYCUTTER_ORIGIN}"
+            ssh_keytag="${ssh_keytag_proposed}"
             log "Updated ssh_keytag to: $ssh_keytag"
         fi
     fi
 
-    local service="$(_ssh-keytag-service "$ssh_keytag")"
-
-    # Ensure base config dir exists wth correct perms
-    dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700 
-
     local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/keys/${ssh_keytag}" # Path SSH key will be written to
 
+    # Ensure config dirs exists wth correct perms
+    dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700 
+    dir-ensure "$(dirname "$ssh_key_path")" 0700
+
     # Create FIDO SSH Key for $ssh_keytag
-    ssh-key-create "$ssh_key_path" "$ssh_key_type" "$ssh_key_resident"
+    log "Generating FIDO SSH key: $ssh_key_path"
+    ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag"  ${resident:+-O resident} # -N "" # Uncomment for no passphrase prompt
+    chmod 0600 "${ssh_key_path}.pub"
 
     # If the SSH Keytag includes github.com 
-    # - Upload public key to GitHub for auth and commit signing
+    local service="$(_ssh-keytag-service "$ssh_keytag")"
     if [[ $service =~ github.com ]]; then
-      log "Add SSH key to GitHub for auth and commit/tag signing: $ssh_key_path"
-      github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
-      local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
+        # Optionally add SSH key to GitHub for auth and commit/tag signing: $ssh_key_path
+        github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
+        local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
+        # Option to access GitHub when firewall blocks outbound port 22
+        log -n "Symlink key to enable ssh.github.com:443? [Y/n] "
+        read -n 1 -r
+        echo
+        if ! [[ $REPLY =~ ^[Nn]$ ]]; then
+            log "Creating symlink: ln -sf $ssh_key_path ${ssh_key_path/github.com/ssh.github.com}"
+            ln -sf "$ssh_key_path" "${ssh_key_path/github.com/ssh.github.com}"
+        fi
     else 
-        log "Skip GitHub specific setup - SSH Keytag identity part doesn't contain 'github.com'."
+        log "DEBUG Skipping GitHub specific setup - SSH Keytag identity part doesn't contain 'github.com'."
     fi
 
     log "Success! Setup complete for key: $ssh_keytag"
@@ -152,7 +163,12 @@ keycutter-list() {
 }
 
 keycutter-update() {
-    log "Updating Keycutter..."
+    keycutter-update-git
+    keycutter-update-ssh-config
+}
+
+keycutter-update-git() {
+    log "Updating Keycutter from git..."
 
     # Check if we're in a git repository
     if ! git -C "${KEYCUTTER_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -206,7 +222,7 @@ keycutter-update() {
     log "Keycutter has been successfully updated."
 }
 
-keycutter-install() {
+keycutter-update-ssh-config() {
     local src_dir="${KEYCUTTER_ROOT}/ssh_config/keycutter"
     local dest_dir="$HOME/.ssh/keycutter"
 
