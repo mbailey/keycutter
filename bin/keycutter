@@ -13,6 +13,7 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 # Set any undefined environment variables to default values
 : ${KEYCUTTER_CONFIG_DIR:="${HOME}/.ssh/keycutter"}
 : ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
+: ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
 
 # Prerequisites:
 #
