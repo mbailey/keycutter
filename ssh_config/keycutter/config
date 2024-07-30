@@ -14,7 +14,7 @@
 #    [[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="$(hostname -s)"
 
 # Load custom rules for hosts (that override or append to directives below).
-Include ~/.ssh/keycutter/hosts/*
+Include keycutter/hosts/*
 
 # ORIGIN/NON-ORIGIN: Set $KEYCUTTER_ORIGIN on remote host and start $SHELL
 Match final exec "bash -c '[[ $(ps -o args= -p $PPID) =~ ^ssh[[:space:]]+((-[^T ]+[[:space:]]+)*[^-][^ ]*)?$ ]]'"
