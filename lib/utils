@@ -72,7 +72,11 @@ add-line-if-missing() {
                     if [[ ! -s "$target_file" ]]; then
                         echo "$line_to_add" > "$target_file"
                     else
-                        sed -i"$backup_extension" "1i$line_to_add" "$target_file"
+                        tmpfile=$(mktemp)
+                        sed -e "1i\\
+$line_to_add
+" "$target_file" > "$tmpfile" && mv "$tmpfile" "$target_file"
+                    rm -f "$tmpfile"
                     fi
                     ;;
             esac
