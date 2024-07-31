@@ -44,7 +44,7 @@ github-auth() {
     log >&2 "GitHub CLI: Logged in as ${logged_in_user}."
 
     read -p "Do you want to switch to another GitHub account? (Y/n) " choice
-    github-check-scopes
+
     choice=${choice:-Y}
 
     if [[ $choice =~ ^[Yy]$ ]]; then
