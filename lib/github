@@ -43,8 +43,7 @@ github-auth() {
     logged_in_user=$(gh auth status | grep 'account ' | awk '{print $7}')
     log >&2 "GitHub CLI: Logged in as ${logged_in_user}."
 
-
-    prompt "You're already logged into github.com. Do you want to re-authenticate? (y/N) "
+    prompt " You're already logged into github.com. Do you want to re-authenticate? (y/N)"
     read choice
 
     choice=${choice:-N}
