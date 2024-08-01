@@ -44,10 +44,10 @@ github-auth() {
     log >&2 "GitHub CLI: Logged in as ${logged_in_user}."
 
 
-    prompt "Do you want to switch to another GitHub account? (Y/n) "
+    prompt "You're already logged into github.com. Do you want to re-authenticate? (y/N) "
     read choice
 
-    choice=${choice:-Y}
+    choice=${choice:-N}
 
     if [[ $choice =~ ^[Yy]$ ]]; then
       gh auth logout
