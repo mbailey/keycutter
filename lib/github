@@ -13,7 +13,7 @@ github-ssh-key-add() {
     fi
 
     prompt "Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) "
-    read choice
+    read -r choice
     choice=${choice:-Y}
     [[ $choice =~ ^[Yy]*$ ]] || return 1
 
@@ -42,9 +42,9 @@ github-auth() {
   if [[ $auth_status -eq 0 ]]; then
     logged_in_user=$(gh auth status | grep 'account ' | awk '{print $7}')
     log >&2 "GitHub CLI: Logged in as ${logged_in_user}."
-
-    prompt " You're already logged into github.com. Do you want to re-authenticate? (y/N)"
-    read choice
+    
+    prompt " Do you want to switch to another GitHub account? (Y/n)"
+    read -r choice
 
     choice=${choice:-N}
 
