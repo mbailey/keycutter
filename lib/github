@@ -43,7 +43,9 @@ github-auth() {
     logged_in_user=$(gh auth status | grep 'account ' | awk '{print $7}')
     log >&2 "GitHub CLI: Logged in as ${logged_in_user}."
 
-    read -p "Do you want to switch to another GitHub account? (Y/n) " choice
+
+    prompt "Do you want to switch to another GitHub account? (Y/n) "
+    read choice
 
     choice=${choice:-Y}
 
