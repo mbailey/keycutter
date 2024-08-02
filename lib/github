@@ -7,11 +7,11 @@ github-ssh-key-add() {
     local ssh_key_path="$1"
     local ssh_keytag="$2"
 
-    if [[ -z "$ssh_keytag" || -z "$ssh_key_path" ]]; then 
+    if [[ -z "$ssh_keytag" || -z "$ssh_key_path" ]]; then
         log "Error: ssh_keytag and ssh_key_path are required."
         return 1
     fi
-    
+
     prompt "Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) "
     read choice
     choice=${choice:-Y}
@@ -48,7 +48,7 @@ github-auth() {
 
     local gh_auth_token_scopes
     # If user is authenticated to GitHub
-    if gh_auth_token_scopes=$(gh auth status | grep scopes); then 
+    if gh_auth_token_scopes=$(gh auth status | grep scopes); then
       if [[ $gh_auth_token_scopes =~ 'admin:public_key' ]] && [[ $gh_auth_token_scopes =~ 'admin:ssh_signing_key' ]] ; then
         log >&2 "GitHub CLI: Required scopes are available."
       else
@@ -69,4 +69,19 @@ github-ssh-keys-authentication() {
 
 github-ssh-keys-signing() {
   github-ssh-keys | grep signing
+}
+
+github-handle() {
+    local ssh_key_path="$1"
+    local ssh_keytag="$2"
+
+    github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
+    local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
+    prompt "Symlink key to enable ssh.github.com:443? [Y/n] "
+    read -n 1 -r
+    echo
+    if ! [[ $REPLY =~ ^[Nn]$ ]]; then
+        log "Creating symlink: ln -sf $ssh_key_path ${ssh_key_path/github.com/ssh.github.com}"
+        ln -sf "$ssh_key_path" "${ssh_key_path/github.com/ssh.github.com}"
+    fi
 }

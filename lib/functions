@@ -2,6 +2,7 @@
 
 KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 
+source "${KEYCUTTER_ROOT}/lib/gitlab"
 source "${KEYCUTTER_ROOT}/lib/github"
 source "${KEYCUTTER_ROOT}/lib/ssh"
 source "${KEYCUTTER_ROOT}/lib/utils"

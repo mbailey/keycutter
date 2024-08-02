@@ -1,0 +1,138 @@
+# GitLab functions
+
+# Function to log into GitLab using glab
+check-glab-cli() {
+    if ! command -v glab &> /dev/null; then
+        echo "glab could not be found. Please install glab CLI first."
+        exit 1
+    fi
+}
+
+gitlab-ssh-key-add() {
+    # XXX Replace if same SSH Keytag exists on GitHub
+
+    local ssh_key_path="$1"
+    local ssh_keytag="$2"
+
+    if [[ -z "$ssh_keytag" || -z "$ssh_key_path" ]]; then
+        log "Error: ssh_keytag and ssh_key_path are required."
+        return 1
+    fi
+
+    prompt "Upload public key to GitLab for auth using GitLab CLI? (Y/n) "
+    read choice
+    choice=${choice:-Y}
+    [[ $choice =~ ^[Yy]*$ ]] || return 1
+
+    check-glab-cli
+    if gitlab-auth; then
+        log "Add SSH authentication & signing key (${ssh_key_path}.pub) to GitLab"
+        glab ssh-key add "${ssh_key_path}.pub" -t "${ssh_keytag}"
+        log
+        log "Note: Enforce SSO-only authentication for Git and Dependency Proxy will require additional setup."
+    else
+        log "Error: Not uploading key to GitLab (no auth)"
+        return 1
+    fi
+}
+
+
+# Function to log into GitLab using glab
+gitlab-auth() {
+    check-glab-cli
+    glab auth status > /dev/null 2>&1
+    auth_status=$?
+
+    if [[ $auth_status -eq 0 ]]; then
+        logged_in_user=$(glab auth status 2>&1 | grep 'Logged in' | awk '{print $7}')
+        log "Logged in as ${logged_in_user}."
+        prompt "Do you want to switch to another GitLab account? (y/N): "
+        read -r choice
+
+        choice=${choice:-N}
+
+        if [[ $choice =~ ^[Yy]$ ]]; then
+            log " Info: Starting glab login process..."
+            prompt "Enter GitLab instance URL (default: https://gitlab.com): "
+            read -r GITLAB_URL
+            GITLAB_URL=${GITLAB_URL:-https://gitlab.com}
+            prompt "Enter your Personal Access Token (leave blank to use username/password): "
+            read -r GITLAB_TOKEN
+            echo
+
+            if [ -n "$GITLAB_TOKEN" ]; then
+                glab auth login --hostname "$GITLAB_URL" --token "$GITLAB_TOKEN"
+            else
+                prompt "Enter your GitLab Username: "
+                read -r GITLAB_USERNAME
+                prompt "Enter your GitLab Password: "
+                read -rs GITLAB_PASSWORD
+                log
+                glab auth login --hostname "$GITLAB_URL" --username "$GITLAB_USERNAME" --password "$GITLAB_PASSWORD"
+            fi
+
+            if [ $? -eq 0 ]; then
+                log "Logged into GitLab successfully."
+                return 0
+            else
+                log "Failed to log into GitLab. Please check your credentials and try again."
+                exit 1
+            fi
+        fi
+    else
+        log "warn Not logged into GitLab CLI."
+        # read -p "Do you want to log into a GitLab account? (y/N): " choice
+        log "prompt Do you want to log into a GitLab account? (y/N): "
+        read -r choice
+
+        choice=${choice:-N}
+
+        if [[ $choice =~ ^[Yy]$ ]]; then
+            log "info starting glab login process..."
+            log "prompt Enter GitLab instance URL (default: https://gitlab.com): "
+            read -r GITLAB_URL
+
+            GITLAB_URL=${GITLAB_URL:-https://gitlab.com}
+            read -sp "Enter your Personal Access Token (leave blank to use username/password): " GITLAB_TOKEN
+            echo
+
+            if [ -n "$GITLAB_TOKEN" ]; then
+                glab auth login --hostname "$GITLAB_URL" --token "$GITLAB_TOKEN"
+            else
+                read -p "Enter your GitLab Username: " GITLAB_USERNAME
+                read -sp "Enter your GitLab Password: " GITLAB_PASSWORD
+                echo
+                glab auth login --hostname "$GITLAB_URL" --username "$GITLAB_USERNAME" --password "$GITLAB_PASSWORD"
+            fi
+
+            if [ $? -eq 0 ]; then
+                log "Logged into GitLab successfully."
+                return 0
+            else
+                log "Failed to log into GitLab. Please check your credentials and try again."
+                exit 1
+            fi
+        fi
+    fi
+}
+
+
+gitlab-ssh-keys() {
+    gitlab-auth
+    glab ssh-key list
+}
+
+gitlab-handle() {
+    local ssh_key_path="$1"
+    local ssh_keytag="$2"
+
+    gitlab-ssh-key-add "$ssh_key_path" "$ssh_keytag"
+    local demo_message="\nYou can SSH to GitLab by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
+    prompt "Symlink key to enable ssh.gitlab.com:443? [Y/n] "
+    read -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        log "Creating symlink: ln -sf $ssh_key_path ${ssh_key_path/gitlab.com/ssh.gitlab.com}"
+        ln -sf "$ssh_key_path" "${ssh_key_path/gitlab.com/ssh.gitlab.com}"
+    fi
+}
