@@ -5,7 +5,8 @@ source "${KEYCUTTER_ROOT}/lib/utils"
 
 # Initialise some environment variables
 
-: ${KEYCUTTER_CONFIG_DIR:="${HOME}/.ssh/keycutter"}
+: ${KEYCUTTER_CONFIG:="${HOME}/.ssh/keycutter/keycutter.conf"}
+: ${KEYCUTTER_CONFIG_DIR:="$(dirname "${KEYCUTTER_CONFIG}")"}
 : ${KEYCUTTER_SSH_KEY_DIR:="${KEYCUTTER_CONFIG_DIR}/keys"}
 
 ssh-authorized-keys() {

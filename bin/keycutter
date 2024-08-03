@@ -11,8 +11,12 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 [ -t 0 ] || exec </dev/tty # reattach keyboard to STDIN
 
 # Set any undefined environment variables to default values
-: ${KEYCUTTER_CONFIG_DIR:="${HOME}/.ssh/keycutter"}
-: ${KEYCUTTER_SSH_KEY_TYPE:="ecdsa-sk"}
+: ${KEYCUTTER_CONFIG:="${HOME}/.ssh/keycutter/keycutter.conf"}
+: ${KEYCUTTER_CONFIG_DIR:="$(dirname "${KEYCUTTER_CONFIG}")"}
+: ${KEYCUTTER_SSH_KEY_DIR:="${KEYCUTTER_CONFIG_DIR}/keys"}
+
+: ${KEYCUTTER_SSH_KEY_TYPE_SK:="ed25519-sk"} # was ecdsa-sk
+: ${KEYCUTTER_SSH_KEY_TYPE_NON_SK:="ed25519"}
 : ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
 
 # Prerequisites:
@@ -54,7 +58,7 @@ usage() {
     log "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
     log
     log "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
-    log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk). Default is ecdsa-sk."
+    log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk). Default is ed25519-sk."
     log
     log "SSH Keytag format: service_user@device"
     log 
@@ -64,6 +68,7 @@ usage() {
 }
 
 keycutter-create() {
+
     if [[ $# -lt 1 ]]; then
         usage
         exit 1
@@ -73,6 +78,8 @@ keycutter-create() {
     local ssh_key_resident=""
     local ssh_key_type="$KEYCUTTER_SSH_KEY_TYPE"
     local ssh_keytag=""
+
+    local KEYCUTTER_CONFIG_DIR="$(dirname "${KEYCUTTER_CONFIG}")"
 
     while (( "$#" )); do
         case "$1" in
@@ -217,17 +224,18 @@ keycutter-update-git() {
     fi
 
     # Pull the latest changes
-    if ! git pull origin "$current_branch"; then
+    if ! git pull --depth 1 origin "$current_branch"; then
         log "Error: Failed to pull updates from remote repository."
         return 1
     fi
 
-    log "Keycutter has been successfully updated."
+    log "Keycutter git update complete."
 }
 
 keycutter-update-ssh-config() {
+
     local src_dir="${KEYCUTTER_ROOT}/ssh_config/keycutter"
-    local dest_dir="$HOME/.ssh/keycutter"
+    local dest_dir="${KEYCUTTER_CONFIG_DIR}"
 
     # Create the destination directory structure
     dir-ensure "$dest_dir"
@@ -237,12 +245,7 @@ keycutter-update-ssh-config() {
     dir-ensure "$dest_dir/scripts"
 
     # Apply the template for the main config file
-    apply-template "$src_dir/config" "$dest_dir/config"
-
-    # Copy other files and directories
-    cp -R "$src_dir/agents" "$dest_dir"
-    cp -R "$src_dir/hosts" "$dest_dir"
-    cp -R "$src_dir/keys" "$dest_dir"
+    apply-template "$src_dir/keycutter.conf" "$dest_dir/keycutter.conf"
 
     # Apply template for each script in the scripts directory
     for script in "$src_dir/scripts"/*; do
@@ -252,9 +255,9 @@ keycutter-update-ssh-config() {
     done
 
     # Add Include directive to the main SSH config file
-    prepend-line-if-missing "${HOME}/.ssh/config" "Include keycutter/config"
+    prepend-line-if-missing "${HOME}/.ssh/config" "Include ${KEYCUTTER_CONFIG#${HOME}/.ssh/}"
 
-    log "Keycutter installation/update complete."
+    log "Keycutter SSH update complete."
 }
 
 keycutter-generate-completion() {
