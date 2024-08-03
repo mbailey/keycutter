@@ -131,11 +131,11 @@ gitlab-handle() {
 
     gitlab-ssh-key-add "$ssh_key_path" "$ssh_keytag"
     local demo_message="\nYou can SSH to GitLab by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
-    prompt "Symlink key to enable ssh.gitlab.com:443? [Y/n] "
+    prompt "Symlink key to enable altssh.gitlab.com:443? [Y/n] " # https://about.gitlab.com/blog/2016/02/18/gitlab-dot-com-now-supports-an-alternate-git-plus-ssh-port/
     read -n 1 -r
     log
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        log "Creating symlink: ln -sf $ssh_key_path ${ssh_key_path/gitlab.com/ssh.gitlab.com}"
-        ln -sf "$ssh_key_path" "${ssh_key_path/gitlab.com/ssh.gitlab.com}"
+        log "Creating symlink: ln -sf $ssh_key_path ${ssh_key_path/gitlab.com/altssh.gitlab.com}"
+        ln -sf "$ssh_key_path" "${ssh_key_path/gitlab.com/altssh.gitlab.com}"
     fi
 }
