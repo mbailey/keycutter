@@ -47,17 +47,17 @@ gitlab-auth() {
         logged_in_user=$(glab auth status 2>&1 | grep 'Logged in' | awk '{print $7}')
         log "Logged in as ${logged_in_user}."
         prompt "Do you want to switch to another GitLab account? (y/N): "
-        read -r choice
+        read choice
 
         choice=${choice:-N}
 
         if [[ $choice =~ ^[Yy]$ ]]; then
             log " Info: Starting glab login process..."
             prompt "Enter GitLab instance URL (default: https://gitlab.com): "
-            read -r GITLAB_URL
+            read GITLAB_URL
             GITLAB_URL=${GITLAB_URL:-https://gitlab.com}
             prompt "Enter your Personal Access Token (leave blank to use username/password): "
-            read -r GITLAB_TOKEN
+            read -r GITLAB_TOKEN # -r flag to prevent backslash escapes
             log
 
             if [ -n "$GITLAB_TOKEN" ]; then
@@ -83,27 +83,27 @@ gitlab-auth() {
         log "warn Not logged into GitLab CLI."
         # read -p "Do you want to log into a GitLab account? (y/N): " choice
         log "prompt Do you want to log into a GitLab account? (y/N): "
-        read -r choice
+        read choice
 
         choice=${choice:-N}
 
         if [[ $choice =~ ^[Yy]$ ]]; then
             log "info starting glab login process..."
             log "prompt Enter GitLab instance URL (default: https://gitlab.com): "
-            read -r GITLAB_URL
+            read GITLAB_URL
 
             GITLAB_URL=${GITLAB_URL:-https://gitlab.com}
             prompt "Enter your Personal Access Token (leave blank to use username/password): "
-            read -r GITLAB_TOKEN
+            read -r GITLAB_TOKEN # -r flag to prevent backslash escapes
             log
 
             if [ -n "$GITLAB_TOKEN" ]; then
                 glab auth login --hostname "$GITLAB_URL" --token "$GITLAB_TOKEN"
             else
                 prompt "Enter your GitLab Username: "
-                read -r GITLAB_USERNAME
+                read GITLAB_USERNAME
                 prompt "Enter your GitLab Password: "
-                read -rs GITLAB_PASSWORD
+                read -rs GITLAB_PASSWORD # -s flag to prevent password from being displayed in the terminal, -r flag to prevent backslash escapes
                 log
                 glab auth login --hostname "$GITLAB_URL" --username "$GITLAB_USERNAME" --password "$GITLAB_PASSWORD"
             fi
