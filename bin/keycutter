@@ -42,7 +42,7 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 #      with that account without crossing security boundaries.
 #
 #   2. Only use GitHub CLI from a device you trust with that GitHub account.
-#      E.g. Don't login to your personal GitHub account from a managed laptop. 
+#      E.g. Don't login to your personal GitHub account from a managed laptop.
 #
 
 usage() {
@@ -57,7 +57,7 @@ usage() {
     log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk). Default is ecdsa-sk."
     log
     log "SSH Keytag format: service_user@device"
-    log 
+    log
     log "  - service : Service this key is used with (e.g. 'github.com', 'aws', 'digitalocean')"
     log "  - user    : Service User this SSH Key authenticates as (e.g. 'alex')"
     log "  - device  : Device this ssh key resides on ( e.g. 'yubikey1', 'work-laptop', 'zfold5')"
@@ -122,38 +122,41 @@ keycutter-create() {
 
     local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/keys/${ssh_keytag}" # Path SSH key will be written to
 
-    # Ensure config dirs exists wth correct perms
-    dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700 
+    # Ensure config dirs exists with correct perms
+    dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700
     dir-ensure "$(dirname "$ssh_key_path")" 0700
 
     # Create FIDO SSH Key for $ssh_keytag
     log "Generating FIDO SSH key: $ssh_key_path"
-    ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag"  ${resident:+-O resident} # -N "" # Uncomment for no passphrase prompt
+    ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${resident:+-O resident} # -N "" # Uncomment for no passphrase prompt
     chmod 0600 "${ssh_key_path}.pub"
 
-    # If the SSH Keytag includes github.com 
-    local service="$(_ssh-keytag-service "$ssh_keytag")"
-    if [[ $service =~ github.com ]]; then
-        # Optionally add SSH key to GitHub for auth and commit/tag signing: $ssh_key_path
-        github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
-        local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
-        # Option to access GitHub when firewall blocks outbound port 22
-        prompt "Symlink key to enable ssh.github.com:443? [Y/n] "
-        read -n 1 -r
-        echo
-        if ! [[ $REPLY =~ ^[Nn]$ ]]; then
-            log "Creating symlink: ln -sf $ssh_key_path ${ssh_key_path/github.com/ssh.github.com}"
-            ln -sf "$ssh_key_path" "${ssh_key_path/github.com/ssh.github.com}"
-        fi
-    else 
-        log "DEBUG Skipping GitHub specific setup - SSH Keytag identity part doesn't contain 'github.com'."
-    fi
+    # Check the service and call the appropriate handler
+    check-service "$ssh_keytag" "$ssh_key_path"
 
     log "Success! Setup complete for key: $ssh_keytag"
 
     if [[ -n ${demo_message:-} ]]; then
-      echo -e "$demo_message" # Only for GitHub keys
+      echo -e "$demo_message" # Only for known services
     fi
+}
+
+check-service() {
+    local ssh_keytag="$1"
+    local ssh_key_path="$2"
+
+    local service="$(_ssh-keytag-service "$ssh_keytag")"
+    case "$service" in
+        github.com)
+            github-handle "$ssh_key_path" "$ssh_keytag"
+            ;;
+        gitlab.com)
+            gitlab-handle "$ssh_key_path" "$ssh_keytag"
+            ;;
+        *)
+            log "DEBUG Skipping specific setup - SSH Keytag identity part doesn't match known services."
+            ;;
+    esac
 }
 
 keycutter-authorized-keys() {
