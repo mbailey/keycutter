@@ -5,30 +5,6 @@ alias: Keycutter
 
 Keycutter simplifies using multiple private SSH keys on multiple devices.
 
-It supports:
-
-- **Multi-account SSH access to services:** GitHub.com, GitLab.com, etc.
-- **FIDO SSH keys ( e.g. Yubikey )):** Uncopiable, physical presence verification, pin retry lockout.
-- **Selective SSH Agent Forwarding:** Enforce security boundaries.
-- **Public SSH Key privacy:** Only offer relevant keys to remote host.
-- **SSH over SSM (AWS):** Public key removed from remote host after login.
-
-## Contents
-
-- Quickstart
-- Overview
-- SSH Keytags
-- Installation
-- Usage
-
-## Quickstart
-
-```shell
-curl https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh | bash
-```
-
-## Overview
-
 Ever wondered how to contribute to an open-source project on GitHub from an employer managed (i.e. untrusted) laptop, without compromising the security of your personal GitHub account?
 
 Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying management and use of FIDO SSH Keys.
@@ -39,7 +15,32 @@ Keycutter consists of:
 - `keycutter`: CLI tool for creating FIDO SSH keys and managing SSH config.
 - SSH configuration and scripts that supercharge your SSH client.
 
+- **Multi-account SSH access to services:** GitHub.com, GitLab.com, etc.
+- **FIDO SSH keys ( e.g. Yubikey )):** Uncopiable, physical presence verification, pin retry lockout.
+- **Selective SSH Agent Forwarding:** Enforce security boundaries.
+- **Public SSH Key privacy:** Only offer relevant keys to remote host.
+- **SSH over SSM (AWS):** Public key removed from remote host after login.
+
 *While initially created for use with YubiKeys and GitHub, Keycutter supports other devices and services.*
+
+## Contents
+
+- Quickstart
+- SSH Keytags
+- Installation
+- Usage
+
+## Quickstart
+
+```shell
+curl https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh | bash
+```
+
+## Goals
+
+- **Safe:** Don't screw up users SSH keys or config. Confirm and backup changes.
+- **Simple:** Keep the code and config it generates simple to audit.
+- **Solid:** Support all the things people use SSH for (e.g. scp, rsync, etc).
 
 ## SSH Keytags
 
