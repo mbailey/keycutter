@@ -28,7 +28,7 @@ Keycutter came out of an attempt to solve this problem but evolved into a tool t
 ## Contents
 
 - [Quickstart](#QUickstart)
-- [SSH Keytags](#SSH Keytags)
+- [SSH Keytags](#SSH-Keytags)
 - [Installation](#Installation)
 - [Usage](#Usage)
 
