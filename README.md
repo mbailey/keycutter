@@ -1,7 +1,7 @@
 ---
 alias: Keycutter
 ---
-# [Preview] Keycutter: FIDO SSH keys made easy.
+# Keycutter: FIDO SSH keys made easy.
 
 Keycutter simplifies using multiple private SSH keys on multiple devices.
 
