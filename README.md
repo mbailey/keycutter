@@ -9,11 +9,13 @@ Ever wondered how to contribute to an open-source project on GitHub from an empl
 
 Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying management and use of FIDO SSH Keys.
 
-Keycutter consists of:
+**Keycutter consists of:**
 
-- SSH Keytags: A naming convention that removes need for custom SSH configuration.
-- `keycutter`: CLI tool for creating FIDO SSH keys and managing SSH config.
-- SSH configuration and scripts that supercharge your SSH client.
+- **`keycutter`:** A CLI tool for creating FIDO SSH keys and managing SSH config.
+- **SSH Keytags:** A naming convention that removes need for custom SSH configuration.
+- **SSH configuration and scripts:** These don't require modification to use.
+
+**It supports:**
 
 - **Multi-account SSH access to services:** GitHub.com, GitLab.com, etc.
 - **FIDO SSH keys ( e.g. Yubikey )):** Uncopiable, physical presence verification, pin retry lockout.
