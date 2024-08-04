@@ -239,3 +239,71 @@ log() {
         fi
     fi
 }
+
+check_version() {
+    local current_version="$1"
+    local required_version="$2"
+
+    # Compare versions
+    if [[ $(printf '%s\n' "$required_version" "$current_version" | sort -V | head -n1) == "$required_version" ]]; then
+        if [[ "$required_version" != "$current_version" ]]; then
+            echo "true"
+        else
+            echo "true"
+        fi
+    else
+        echo "false"
+    fi
+}
+
+check_requirements() {
+    local errors=0
+
+    # Check Bash version
+    bash_version=$(bash --version | head -n1 | awk '{print $4}')
+    if [[ $(check_version "$bash_version" "4.0") == "false" ]]; then
+        echo "Bash version 4.0 or higher is required. Current version: $bash_version"
+        errors=$((errors + 1))
+    fi
+
+    # Check Git version
+    git_version=$(git --version | awk '{print $3}')
+    if [[ $(check_version "$git_version" "2.34.0") == "false" ]]; then
+        echo "Git version 2.34.0 or higher is required. Current version: $git_version"
+        errors=$((errors + 1))
+    fi
+
+    # Check GitHub CLI version
+    gh_version=$(gh --version | head -n1 | awk '{print $3}')
+    if [[ $(check_version "$gh_version" "2.4.0+dfsg1-2") == "false" ]]; then
+        echo "GitHub CLI version 2.4.0+dfsg1-2 or higher is required. Current version: $gh_version"
+        errors=$((errors + 1))
+    fi
+
+    # Check OpenSSH version
+    ssh_version=$(ssh -V 2>&1 | awk '{print $1}' | awk -F[_p] '{print $2}')
+    if [[ $(check_version "$ssh_version" "8.2") == "false" ]]; then
+        echo "OpenSSH version 8.2p1 or higher is required. Current version: $ssh_version"
+        errors=$((errors + 1))
+    fi
+
+    # Check YubiKey Manager (ykman) version
+    if command -v ykman &> /dev/null; then
+        ykman_version=$(ykman --version | head -n1 | awk '{print $3}')
+        if [[ $(check_version "$ykman_version" "0.0.0") == "false" ]]; then
+            echo "YubiKey Manager (ykman) is required. Current version: $ykman_version"
+            errors=$((errors + 1))
+        fi
+    else
+        echo "YubiKey Manager (ykman) is required but not installed."
+        errors=$((errors + 1))
+    fi
+
+    if [[ $errors -gt 0 ]]; then
+        echo "Some requirements are not met. Please install the required versions."
+        return 1
+    else
+        echo "All requirements are met."
+        return 0
+    fi
+}

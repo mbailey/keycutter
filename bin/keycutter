@@ -176,6 +176,7 @@ keycutter-list() {
 
 keycutter-update() {
     keycutter-update-git
+    check_requirements
     keycutter-update-ssh-config
 }
 
@@ -260,6 +261,10 @@ keycutter-update-ssh-config() {
     prepend-line-if-missing "${HOME}/.ssh/config" "Include ${KEYCUTTER_CONFIG#${HOME}/.ssh/}"
 
     log "Keycutter SSH update complete."
+}
+
+keycutter-check-requirements() {
+    check_requirements
 }
 
 keycutter-generate-completion() {

@@ -69,7 +69,7 @@ FIDO SSH Keys across multiple devices and services.
 
 ### 1. Install Prerequisites
 
-*Note: The script `keycutter/bin/check-requirements` installed in Step 2 can do this for you.*
+*Note: The installer checks requirements for you.*
 
  **Required:**
   
@@ -81,7 +81,7 @@ FIDO SSH Keys across multiple devices and services.
 **Recommended:**
 
 - **GitHub CLI >= 2.0**: (Greater than 2.4.0+dfsg1-2 on Ubuntu)
-- **[YubiKey Touch Detector](docs/yubikeys/yubikey-touch-detector.md):**  Get notified when YubiKey needs a touch.
+- **[YubiKey Touch Detector](https://github.com/maximbaz/yubikey-touch-detector):**  Get notified when YubiKey needs a touch.
 - **YubiKey Manager (`ykman`)**: Used to set a PIN on Yubikeys, and perform other configuration.
 
 ### 2. Install Keycutter
