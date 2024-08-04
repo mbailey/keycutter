@@ -61,9 +61,13 @@ FIDO SSH Keys across multiple devices and services.
 
 ## Quick install
 
+- curl-pipe-bash is a dangerous habit.
+- You should download and read `[install.sh](./install.sh)` before you run it.
+- I've made it short and simple to read.
+- This is here for now to make for a short and simple install.
+
 ```shell
-wget https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh
-bash -c ./install.sh
+curl https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh | bash
 ```
 
 ## Installation
