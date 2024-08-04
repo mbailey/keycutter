@@ -1,42 +1,45 @@
 ---
 alias: Keycutter
 ---
-# [Preview] Keycutter - FIDO SSH Keys made easy
+# [Preview] Keycutter: FIDO SSH keys made easy.
 
--  8 Jun 2024: Preparing for alpha release (big changes being made)
-- 18 Mar 2024: Preview release for review only
+Keycutter simplifies using multiple private SSH keys on multiple devices.
+
+It supports:
+
+- **Multi-account SSH access to services:** GitHub.com, GitLab.com, etc.
+- **FIDO SSH keys ( e.g. Yubikey )):** Uncopiable, physical presence verification, pin retry lockout.
+- **Selective SSH Agent Forwarding:** Enforce security boundaries.
+- **Public SSH Key privacy:** Only offer relevant keys to remote host.
+- **SSH over SSM (AWS):** Public key removed from remote host after login.
+
+## Contents
+
+- Quickstart
+- Overview
+- SSH Keytags
+- Installation
+- Usage
+
+## Quickstart
+
+```shell
+curl https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh | bash
+```
+
+## Overview
 
 Ever wondered how to contribute to an open-source project on GitHub from an employer managed (i.e. untrusted) laptop, without compromising the security of your personal GitHub account?
 
-Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying FIDO SSH Key management.
+Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying management and use of FIDO SSH Keys.
 
-Keycutter is a config cookie cutter that creates FIDO SSH keys on hardware security keys (e.g. Yubikeys), along with SSH config so they're ready to use immediately.
+Keycutter consists of:
+
+- SSH Keytags: A naming convention that removes need for custom SSH configuration.
+- `keycutter`: CLI tool for creating FIDO SSH keys and managing SSH config.
+- SSH configuration and scripts that supercharge your SSH client.
 
 *While initially created for use with YubiKeys and GitHub, Keycutter supports other devices and services.*
-
-## What Keycutter gives you
-
-**Security:**
-
-- **Unstealable\* FIDO SSH keys:** No way to extract them from the device.
-- **Physical presence verification:** touch to approve each use.
-- **PIN retry lockout:** defend against stolen hardware security token.
-
-**Convenience:**
-
-- **Automatic SSH key selection by given service/identity based on host aliases**
-- **SSH config in one place**
-- **AWS SSH-over-SSM**
-
-**Privacy:**
-
-- **Security Boundary Separation:** Different keys for different personal, work, etc.
-- **Selective key forwarding with ssh-agent:** Map keys to services and devices.
-
-**All config is stored in a single directory (`~/.ssh/keycutter`) which:**
-
-- Can be kept in version control.
-- Can be used on multiple devices / hosts.
 
 ## SSH Keytags
 
@@ -59,17 +62,6 @@ FIDO SSH Keys across multiple devices and services.
 
 *Read more about [SSH Keytags](docs/design/ssh-keytags.md)*
 
-## Quick install
-
-- curl-pipe-bash is a dangerous habit.
-- You should download and read `[install.sh](./install.sh)` before you run it.
-- I've made it short and simple to read.
-- This is here for now to make for a short and simple install.
-
-```shell
-curl https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh | bash
-```
-
 ## Installation
 
 ### 1. Install Prerequisites
@@ -91,7 +83,7 @@ curl https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh |
 
 ### 2. Install Keycutter
 
-**Clone the Git repo:**
+**Clone the Git repo and run installer:**
 
 ```shell
 git clone https://github.com/bash-my-aws/keycutter
