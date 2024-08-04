@@ -2,6 +2,9 @@
 
 KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 
+# If run on ORIGIN (not connected by SSH), default KEYCUTTER_ORIGIN to local hostname.
+[[ -z $SSH_CONNECTION ]] && : ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
+
 source "${KEYCUTTER_ROOT}/lib/github"
 source "${KEYCUTTER_ROOT}/lib/ssh"
 source "${KEYCUTTER_ROOT}/lib/utils"

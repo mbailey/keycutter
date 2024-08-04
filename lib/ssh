@@ -3,6 +3,9 @@
 KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/utils"
 
+# If run on ORIGIN (not connected by SSH), default KEYCUTTER_ORIGIN to local hostname.
+[[ -z $SSH_CONNECTION ]] && : ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
+
 # Initialise some environment variables
 
 : ${KEYCUTTER_CONFIG:="${HOME}/.ssh/keycutter/keycutter.conf"}
@@ -25,8 +28,10 @@ ssh-authorized-keys() {
         # Expand ${KEYCUTTER_ORIGIN} if it's set
         if [[ -n "${KEYCUTTER_ORIGIN:-}" ]]; then
             id_file="${id_file/\$\{KEYCUTTER_ORIGIN\}/$KEYCUTTER_ORIGIN}"
+            id_file="${id_file/\%L/$KEYCUTTER_ORIGIN}"
         fi
         pub_file="${id_file}.pub"
+        echo $KEYCUTTER_ORIGIN
         
         if [[ -f "$pub_file" ]]; then
             # Use the existing .pub file

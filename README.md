@@ -59,12 +59,11 @@ FIDO SSH Keys across multiple devices and services.
 
 *Read more about [SSH Keytags](docs/design/ssh-keytags.md)*
 
-## Quick install with curl-pipe-bash
-
-Use at own risk.
+## Quick install
 
 ```shell
-curl -s https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh | bash
+wget https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh
+bash -c ./install.sh
 ```
 
 ## Installation
@@ -92,28 +91,17 @@ curl -s https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.s
 
 ```shell
 git clone https://github.com/bash-my-aws/keycutter
+cd keycutter
+./install.sh
 ```
 
-**Add the following to your shell profile (e.g. bashrc or zshrc):**
+**WSL users: Add this to you shell to your shell profile (e.g. bashrc or zshrc):**
 
 ```shell
-# keycutter/ssh/config uses these to determine which SSH key to use
-export KEYCUTTER_HOSTNAME="$(hostname -s)" # or a preferred alias for this device
-[[ -z "${SSH_CONNECTION}" ]] && export KEYCUTTER_ORIGIN="${KEYCUTTER_HOSTNAME}"
-
 # WSL (Windows Subsystem for Linux) users need to set the path to ssh-sk-helper.exe
 if [[ -f "/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe" ]]; then
 	export SSH_SK_HELPER="/mnt/c/Program Files/OpenSSH/ssh-sk-helper.exe"
 fi
-```
-
-**Optionally add the bin directory to your path:**
-
-*As a config cookie cutter, keycutter is not required to be in the path but it is useful for generating new configs.*
-
-```shell
-# Used for generating config with keycutter
-export PATH="$PATH:${PWD}/keycutter/bin"
 ```
 
 ## Usage

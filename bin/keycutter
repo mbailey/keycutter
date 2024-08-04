@@ -10,6 +10,9 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 
 [ -t 0 ] || exec </dev/tty # reattach keyboard to STDIN
 
+# If run on ORIGIN (not connected by SSH), default KEYCUTTER_ORIGIN to local hostname.
+[[ -z $SSH_CONNECTION ]] && : ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
+
 # Set any undefined environment variables to default values
 : ${KEYCUTTER_CONFIG:="${HOME}/.ssh/keycutter/keycutter.conf"}
 : ${KEYCUTTER_CONFIG_DIR:="$(dirname "${KEYCUTTER_CONFIG}")"}
@@ -17,7 +20,6 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 
 : ${KEYCUTTER_SSH_KEY_TYPE_SK:="ed25519-sk"} # was ecdsa-sk
 : ${KEYCUTTER_SSH_KEY_TYPE_NON_SK:="ed25519"}
-: ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
 
 # Prerequisites:
 #
@@ -234,7 +236,7 @@ keycutter-update-git() {
 
 keycutter-update-ssh-config() {
 
-    local src_dir="${KEYCUTTER_ROOT}/ssh_config/keycutter"
+    local src_dir="${KEYCUTTER_ROOT}/ssh_config"
     local dest_dir="${KEYCUTTER_CONFIG_DIR}"
 
     # Create the destination directory structure
