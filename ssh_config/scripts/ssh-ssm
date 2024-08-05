@@ -38,6 +38,7 @@ ec2-instance-start() {
       --output text
   ) || die "error: instance not found"
   if [[ $instance_state == "stopped" ]]; then
+    echo 2>&1 "Starting ec2 instance $instances"
     aws ec2 start-instances --instance-ids "$instances"
     aws ec2 wait instance-running --instance-ids "$instances"
   fi
