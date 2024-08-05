@@ -130,12 +130,7 @@ tree ~/.keycutter
 
     ```shell
     $ tree ~/.keycutter
-    /home/alex/.keycutter
-    ├── git
-    │   ├── allowed_signers
-    │   ├── config.d
-    │   │   └── github.com_alex-work
-    │   └── config
+    /home/alex/.ssh/keycutter
     ├── scripts
     │   ├── git-default-key-command
     │   └── ssh-agent-ensure
