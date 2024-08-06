@@ -22,6 +22,8 @@ Keycutter came out of an attempt to solve this problem but evolved into a tool t
 - **Selective SSH Agent Forwarding:** Enforce security boundaries.
 - **Public SSH Key privacy:** Only offer relevant keys to remote host.
 - **SSH over SSM (AWS):** Public key removed from remote host after login.
+- **WSL**: Windows Subsystem for Linux
+- **VSCode:** Connect via Remote-SSH Extension
 
 *While initially created for use with YubiKeys and GitHub, Keycutter supports other devices and services.*
 
