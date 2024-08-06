@@ -8,7 +8,7 @@ socket="$1"
 agent_dir=$(dirname "$socket")
 
 debug() {
-    [[ -n ${DEBUG:-} ]] && echo "DEBUG: $*" >&2
+    [[ -z ${DEBUG:-} ]] || echo "DEBUG: $*" >&2
 }
 
 # Set KEYCUTTER_ORIGIN to local hostname when run on origin and unset.
