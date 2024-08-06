@@ -4,7 +4,9 @@
 
 set -o errexit -o nounset -o pipefail
 
-socket="$1"
+host="${1:-}"
+
+socket=$(ssh -G "$host" | awk '/^identityagent / {print $2}'); 
 agent_dir=$(dirname "$socket")
 
 debug() {
