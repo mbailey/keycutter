@@ -10,6 +10,10 @@ instance="${1:-}"
 ssh_user="${2:-}"
 remote_host="$instance"
 
+die () { echo "[${0##*/}] $*" >&2; exit 1; }
+make_ssh_keys () { ssh-keygen -t rsa -N '' -f ${SSH_TMP_KEY} -C ssh-over-ssm; }
+clean_ssh_keys () { rm -f ${SSH_TMP_KEY}{,.pub}; }
+
 [[ $# -lt 2 ]] && die "usage: ${0##*/} <instance-id> <ssh user> [<keyfile>]"
 [[ ! $instance =~ ^i-([0-9a-f]{8,})$ ]] && die "error: invalid instance-id"
 
@@ -19,10 +23,6 @@ SSH_TMP_KEY="${HOME}/.ssh/keycutter/keys/ssm-ssh-tmp-key"
 if [[ -n $KEYCUTTER_SSH_SSM_PUB_KEY && -f $KEYCUTTER_SSH_SSM_PUB_KEY ]]; then
   cp "${KEYCUTTER_SSH_SSM_PUB_KEY}" "${SSH_TMP_KEY}.pub"
 fi
-
-die () { echo "[${0##*/}] $*" >&2; exit 1; }
-make_ssh_keys () { ssh-keygen -t rsa -N '' -f ${SSH_TMP_KEY} -C ssh-over-ssm; }
-clean_ssh_keys () { rm -f ${SSH_TMP_KEY}{,.pub}; }
 
 [[ -f ${SSH_TMP_KEY}.pub ]] || make_ssh_keys
 trap clean_ssh_keys EXIT
