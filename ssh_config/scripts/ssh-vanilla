@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -o errexit -o nounset -o pipefail
+remote_host="${1:-}"
+remote_port="${2:-22}"
+
+# Ensure agent is running
+"$(dirname "$0")/ssh-agent-ensure" "$remote_host"
+
+exec nc "${remote_host/_*}" "$remote_port"

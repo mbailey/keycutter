@@ -1,48 +1,27 @@
 #!/usr/bin/env bash
 
-# ssh-agent-ensure - Ensure agent is started and symlinked keys are loaded
-
 set -o errexit -o nounset -o pipefail
 
 host="${1:-}"
 
-socket=$(ssh -G "$host" | awk '/^identityagent / {print $2}'); 
+socket=$(ssh -G "$host" 2>/dev/null | awk '/^identityagent / {print $2}')
+[[ -n $socket ]] || exit 0
+
 agent_dir=$(dirname "$socket")
 
-debug() {
-    [[ -z ${DEBUG:-} ]] || echo "DEBUG: $*" >&2
-}
-
-# Set KEYCUTTER_ORIGIN to local hostname when run on origin and unset.
-[[ -z ${SSH_CONNECTION:-} ]] && : ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
-
 export SSH_AUTH_SOCK="$socket"
-debug "SSH_AUTH_SOCK set to $SSH_AUTH_SOCK"
-
-debug "Socket: $socket"
-debug "Agent directory: $agent_dir"
 
 if [[ ! -S "$socket" ]] || ! ssh-add -l &>/dev/null; then
-    debug "Agent not running or not accessible. Starting new agent."
     rm -f "$socket"
-    debug "$(ssh-agent -a "$socket")"
-else
-    debug "Agent is already running."
+    ssh-agent -a "$socket" > /dev/null
 fi
 
-debug "Removing existing keys:"
-debug "$(ssh-add -D 2>&1)"
+ssh-add -D 2> /dev/null
 
-debug "Adding keys:"
 shopt -s nullglob
-for key in "$agent_dir"/keys/*@${KEYCUTTER_ORIGIN}; do
+for key in "$agent_dir"/keys/*@${KEYCUTTER_ORIGIN:-"$(hostname -s)"}; do
     if [[ -f "$key" && "$key" != *.pub ]]; then
-        if ssh-add "$key" &>/dev/null; then
-            debug "Added key: $key"
-        else
-            debug "Failed to add key: $key"
-        fi
+        ssh-add "$key" &>/dev/null
     fi
 done
 shopt -u nullglob
-debug "Key addition complete."
