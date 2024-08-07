@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -o errexit -o nounset -o pipefail
-set -x
 
 # ssh-agent-ensure - Ensure correct ssh-agent is started with correct keys.
 
