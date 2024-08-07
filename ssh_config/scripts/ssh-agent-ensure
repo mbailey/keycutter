@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-
 set -o errexit -o nounset -o pipefail
+set -x
+
+# ssh-agent-ensure - Ensure correct ssh-agent is started with correct keys.
 
 host="${1:-}"
 
-socket=$(ssh -G "$host" 2>/dev/null | awk '/^identityagent / {print $2}')
-[[ -n $socket ]] || exit 0
+export SSH_AUTH_SOCK=$(ssh -G "$host" 2>/dev/null | awk '/^identityagent / {print $2}')
+[[ -n $SSH_AUTH_SOCK ]] || exit 0
 
-agent_dir=$(dirname "$socket")
+agent_dir=$(dirname "$SSH_AUTH_SOCK")
 
-export SSH_AUTH_SOCK="$socket"
-
-if [[ ! -S "$socket" ]] || ! ssh-add -l &>/dev/null; then
-    rm -f "$socket"
-    ssh-agent -a "$socket" > /dev/null
+if [[ ! -S "$SSH_AUTH_SOCK" ]] || ! ssh-add -l &>/dev/null; then
+    rm -f "$SSH_AUTH_SOCK"
+    ssh-agent -a "$SSH_AUTH_SOCK" > /dev/null
 fi
 
 ssh-add -D 2> /dev/null
