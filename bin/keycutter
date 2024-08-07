@@ -78,7 +78,7 @@ keycutter-create() {
 
     # Set default values, override with command line options
     local ssh_key_resident=""
-    local ssh_key_type="$KEYCUTTER_SSH_KEY_TYPE"
+    local ssh_key_type="$KEYCUTTER_SSH_KEY_TYPE_SK"
     local ssh_keytag=""
 
     local KEYCUTTER_CONFIG_DIR="$(dirname "${KEYCUTTER_CONFIG}")"
