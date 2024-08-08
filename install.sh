@@ -15,7 +15,7 @@ if [[ -d "$INSTALL_DIR/.git" ]]; then
   git -C "$INSTALL_DIR" pull --quiet
 else
   echo "Cloning repository..."
-  git clone --depth 1 --quiet "$REPO_URL" "$INSTALL_DIR"
+  git clone --quiet "$REPO_URL" "$INSTALL_DIR"
 fi
 
 mkdir -p "$BIN_DIR"
