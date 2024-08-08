@@ -37,9 +37,13 @@ add-line-if-missing() {
 
     # Check if target file exists
     if [[ ! -f $target_file ]]; then
-      log "Error! File not found '$target_file'"
-      ls "$target_file"
-      return 1
+      log "File not found '$target_file'"
+      prompt "Create empty file we can add to? [y/N]"
+      read -n 1 -r
+      echo  # Move to a new line after user input
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+        file-ensure "$target_file"
+      fi
     fi
 
     # Check if the line is already in the file to avoid duplicates
@@ -47,10 +51,10 @@ add-line-if-missing() {
         log "Proposed change to $target_file in $mode mode:"
         case "$mode" in
             append)
-                diff --color=always -u "$target_file" <(cat "$target_file"; echo "$line_to_add") || true
+                command diff -u "$target_file" <(cat "$target_file"; echo "$line_to_add") || true
                 ;;
             prepend)
-                diff --color=always -u "$target_file" <(echo "$line_to_add"; cat "$target_file") || true
+                command diff -u "$target_file" <(echo "$line_to_add"; cat "$target_file") || true
                 ;;
             *)
                 echo "Error: Invalid mode specified. Use 'prepend' or 'append'."
@@ -153,8 +157,7 @@ apply-template() {
             log "Debug: File is identical: $target_path $template_path"
         else
             log "File is different: $target_path"
-            # command diff -u "$target_path" "$template_path" || true
-            command diff --color=always -u "$target_path" "$template_path" || true
+            command diff -u "$target_path" "$template_path" || true
             prompt "Overwrite? [y/N]"
             read -n 1 -r
             echo  # Move to a new line after user input
