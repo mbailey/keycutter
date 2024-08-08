@@ -33,6 +33,8 @@ Keycutter came out of an attempt to solve this problem but evolved into a tool t
 - [SSH Keytags](#SSH-Keytags)
 - [Installation](#Installation)
 - [Usage](#Usage)
+- [ISSUES](ISSUES.md)
+
 
 ## Quickstart
 
