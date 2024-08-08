@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# sync-file-to-remote - Sync a single file (with path) to remote host
+
+sync-file-to-remote() {
+    local file="$1" host="$2" realpath
+    if [ ! -f "$file" ] || [ -z "$host" ]; then
+        echo "Usage: sync-file-to-remote <file> <host>" >&2
+        return 1
+    fi
+    realpath="$(realpath "$file")" || {
+        echo "Error: Unable to resolve real path of '$file'" >&2
+        return 1
+    }
+    rsync -avz \
+        "${realpath}" \
+        --rsync-path="mkdir -p \"$(dirname "$realpath")\" && rsync" \
+        --chmod=D700,F600 \
+        --include="$(basename "$realpath")" --exclude="*" \
+        "$host:${realpath%/*}"
+}
+
+sync-file-to-remote "$@"
