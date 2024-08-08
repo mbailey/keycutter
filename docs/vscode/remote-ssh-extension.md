@@ -30,8 +30,7 @@ Develop on remote machines using Visual Studio Code and SSH.
 
 ## Configure
 
-
-**Update VS Code Settings:**
+**See also:** [Some working VS Code settings files](./settings/).
 
 ```json
 {
