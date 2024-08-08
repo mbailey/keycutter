@@ -30,18 +30,32 @@ Develop on remote machines using Visual Studio Code and SSH.
 
 ## Configure
 
-### Linux
 
-TBA: It works
+**Update VS Code Settings:**
 
 ```json
-  "remote.SSH.configFile": "~/.ssh/config",
-  "remote.SSH.remoteServerListenOnSocket": true,
+{
+    "remote.SSH.enableRemoteCommand": true,
+    "remote.SSH.showLoginTerminal": true,
+    "remote.SSH.logLevel": "trace",
+    "remote.SSH.useCurlAndWgetConfigurationFiles": true,
+    "remote.SSH.remotePlatform": {
+        "squid": "linux"
+    },
+    "remote.SSH.permitPtyAllocation": true,
+    "remote.SSH.enableDynamicForwarding": false,
+    "window.newWindowProfile": "Default",
+    "files.autoSave": "afterDelay"
+}
 ```
+
+### Linux
+
+Tested on Fedora.
 
 ### macOS
 
-TBA: It works
+Tested on ???
 
 ### Windows with WSL
 
@@ -56,8 +70,6 @@ We need to tell Windows to use WSL's SSH which means:
 
 - No need to sync config from `~/.ssh` to Windows
 - We can load our shell environment.
-
-*2024-08-08 Thu: [VS Code Insiders](https://code.visualstudio.com/insiders/) required due to bug in 1.91*
 
 #### Steps
 
