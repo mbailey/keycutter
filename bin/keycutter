@@ -227,7 +227,7 @@ keycutter-update-git() {
     fi
 
     # Pull the latest changes
-    if ! git pull --depth 1 origin "$current_branch"; then
+    if ! git pull origin "$current_branch"; then
         log "Error: Failed to pull updates from remote repository."
         return 1
     fi
