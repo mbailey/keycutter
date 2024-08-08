@@ -32,25 +32,37 @@ Develop on remote machines using Visual Studio Code and SSH.
 
 **See also:** [Some working VS Code settings files](./settings/).
 
+These settings worked for me on Fedora and WSL Ubuntu however each needed one or two extra settings.
+
 ```json
 {
     "remote.SSH.enableRemoteCommand": true,
-    "remote.SSH.showLoginTerminal": true,
     "remote.SSH.logLevel": "trace",
-    "remote.SSH.useCurlAndWgetConfigurationFiles": true,
-    "remote.SSH.remotePlatform": {
-        "squid": "linux"
-    },
     "remote.SSH.permitPtyAllocation": true,
-    "remote.SSH.enableDynamicForwarding": false,
-    "window.newWindowProfile": "Default",
-    "files.autoSave": "afterDelay"
+    "remote.SSH.useCurlAndWgetConfigurationFiles": true,
+
+    "remote.SSH.defaultExtensions": [
+        "vscodevim.vim",
+        "fosshaas.fontsize-shortcuts",
+        "eamodio.gitlens",
+        "ms-python.python",
+        "ms-python.pylint",
+        "ms-toolsai.jupyter"
+    ]
 }
 ```
 
 ### Linux
 
-Tested on Fedora.
+Fedora required addition of the following to the base settings above:
+
+```json
+{
+    "remote.SSH.enableDynamicForwarding": false,
+}
+```
+
+Full settings file: [settings.json-fedora](./settings/settings.json-fedora.)
 
 ### macOS
 
@@ -81,19 +93,15 @@ We need to tell Windows to use WSL's SSH which means:
     
 2. **Tell VS Code to use it by setting `remote.SSH.path`:**
 
+
     ```json
     {
         "remote.SSH.path": "%USERPROFILE%\\\\ssh.bat",
-        "remote.SSH.useCurlAndWgetConfigurationFiles": true,
-        "remote.SSH.enableRemoteCommand": true,
-        "remote.SSH.remotePlatform": {
-            "*": "linux"
-        },
-        "remote.SSH.permitPtyAllocation": true,
-        "workbench.sideBar.location": "right",
-        "remote.SSH.enableDynamicForwarding": false
+        "remote.SSH.useLocalServer": false,
     }
     ```
+
+Full settings file: [settings.json-wsl-ubuntu](./settings/settings.json-wsl-ubuntu).
 
 3. **Copy `scp.exe` to same location as `ssh.bat`**
 

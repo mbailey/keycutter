@@ -1,11 +1,12 @@
 {
+    "remote.SSH.enableDynamicForwarding": false,
+
+
     "remote.SSH.enableRemoteCommand": true,
-    "remote.SSH.showLoginTerminal": true,
     "remote.SSH.logLevel": "trace",
+    "remote.SSH.permitPtyAllocation": true,
     "remote.SSH.useCurlAndWgetConfigurationFiles": true,
-    "remote.SSH.remotePlatform": {
-        "squid": "linux"
-    },
+
     "remote.SSH.defaultExtensions": [
         "vscodevim.vim",
         "fosshaas.fontsize-shortcuts",
@@ -13,11 +14,5 @@
         "ms-python.python",
         "ms-python.pylint",
         "ms-toolsai.jupyter"
-    ],
-    "remote.SSH.permitPtyAllocation": true,
-    "remote.SSH.enableDynamicForwarding": false,
-    "window.newWindowProfile": "Default",
-    "files.autoSave": "afterDelay",
-    "workbench.sideBar.location": "right",
-    "diffEditor.experimental.showMoves": true
+    ]
 }

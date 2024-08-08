@@ -1,9 +1,12 @@
 {
     "remote.SSH.path": "%USERPROFILE%\\\\ssh.bat",
+    "remote.SSH.useLocalServer": false,
+
+    "remote.SSH.enableRemoteCommand": true,
+    "remote.SSH.logLevel": "trace",
+    "remote.SSH.permitPtyAllocation": true,
     "remote.SSH.useCurlAndWgetConfigurationFiles": true,
-    "files.autoSave": "afterDelay",
-    "workbench.startupEditor": "none",
-    "terminal.integrated.fontSize": 18,
+
     "remote.SSH.defaultExtensions": [
         "vscodevim.vim",
         "fosshaas.fontsize-shortcuts",
@@ -11,16 +14,5 @@
         "ms-python.python",
         "ms-python.pylint",
         "ms-toolsai.jupyter"
-    ],
-    "remote.SSH.logLevel": "trace",
-    "remote.SSH.enableRemoteCommand": true,
-    "remote.SSH.remotePlatform": {
-        "cloud9": "linux",
-        "c9": "linux"
-    },
-    "remote.SSH.permitPtyAllocation": true,
-    "workbench.sideBar.location": "right",
-    "git.confirmSync": false,
-    "remote.SSH.maxReconnectionAttempts": 0,
-    "remote.SSH.useLocalServer": false
+    ]
 }
