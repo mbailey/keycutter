@@ -62,7 +62,7 @@ Fedora required addition of the following to the base settings above:
 }
 ```
 
-Full settings file: [settings.json-fedora](./settings/settings.json-fedora.)
+Full settings file: [settings.json-fedora](./settings/settings.json-fedora)
 
 ### macOS
 
