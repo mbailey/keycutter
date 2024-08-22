@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -e
+
+# Usage:
+# git config [--global] gpg.format ssh
+# git config [--global] user.signingkey "/path/to/ssh/key"
+# [ git config [--global] gpg.ssh.program "/path/to/this/script" ]
+#
+# Now, when you commit:
+# - If commit.gpgsign is true: Every commit will be signed automatically
+# - Otherwise: Use 'git commit -S' to sign individual commits
+#
+
+# Function to get Git config value, trying local then global
+get_git_config() {
+    local value
+    value=$(git config --get "$1")
+    if [ -z "$value" ]; then
+        value=$(git config --global --get "$1")
+    fi
+    echo "$value"
+}
+
+# Check Git version
+git_version=$(git --version | awk '{print $3}')
+if [ "$(printf '%s\n' "2.34" "$git_version" | sort -V | head -n1)" = "2.34" ]; then
+    echo "Error: Git version 2.34 or higher is required for SSH signing."
+    exit 1
+fi
+
+# Check if SSH agent is running
+if [ -z "$SSH_AUTH_SOCK" ]; then
+    echo "Error: SSH agent is not running. Please start the SSH agent."
+    exit 1
+fi
+
+# Get the signing key
+signing_key=$(get_git_config user.signingkey)
+if [ -z "$signing_key" ]; then
+    echo "Error: No signing key found in Git config (local or global)."
+    exit 1
+fi
+
+# Handle relative paths and expand ~
+signing_key="${signing_key/#\~/$HOME}"
+signing_key=$(realpath -m "$signing_key")
+
+# Check if the key file exists
+if [ ! -f "$signing_key" ]; then
+    echo "Error: Signing key file does not exist: $signing_key"
+    exit 1
+fi
+
+# Check if ssh-keygen supports -Y option
+if ! ssh-keygen -Y sign 2>&1 | grep -q "ssh-keygen -Y sign"; then
+    echo "Error: Your version of ssh-keygen does not support the -Y option for signing."
+    exit 1
+fi
+
+# Get the key fingerprint
+key_info=$(ssh-keygen -lf "$signing_key" | awk '{gsub(/[()]/, "", $4); print $4 " " $2}')
+if [ -z "$key_info" ]; then
+    echo "Error: Could not retrieve key information."
+    exit 1
+fi
+
+echo "Confirm user presence for key $key_info"
+
+# Use quotation marks to handle spaces in paths
+if ! ssh-keygen -Y sign -n git -f "$signing_key" "$@"; then
+    echo "Error: Failed to sign with ssh-keygen."
+    exit 1
+fi
+
+echo "Signing successful."
