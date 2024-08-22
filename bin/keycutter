@@ -195,6 +195,21 @@ keycutter-list() {
     github-ssh-keys
 }
 
+keycutter-git-signing-config() {
+    git-ssh-signing-check "$@"
+}
+keycutter-set-git-commit-sign() {
+    git-ssh-signing-setup "$@"
+}
+
+keycutter-enable-commit-signing() {
+    git-commit-signing-enable "$@"
+}
+
+keycutter-disable-commit-signing() {
+    git-commit-signing-disable "$@"
+}
+
 keycutter-update() {
     keycutter-update-git
     check_requirements
