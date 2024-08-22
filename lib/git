@@ -37,8 +37,8 @@ command-exists() {
 git-version-check() {
     local git_version
     git_version=$(git --version | awk '{print $3}')
-    if [ "$(printf '%s\n' "2.34" "$git_version" | sort -V | head -n1)" = "2.34" ]; then
-        log "Error: Git version 2.34 or higher is required for SSH signing."
+    if [ "$(printf '%s\n' "2.34" "$git_version" | sort -V | head -n1)" != "2.34" ]; then
+        echo "Error: Git version 2.34 or higher is required for SSH signing."
         return 1
     fi
     return 0
