@@ -7,11 +7,11 @@ github-ssh-key-add() {
     local ssh_key_path="$1"
     local ssh_keytag="$2"
 
-    if [[ -z "$ssh_keytag" || -z "$ssh_key_path" ]]; then
+    if [[ -z "$ssh_keytag" || -z "$ssh_key_path" ]]; then 
         log "Error: ssh_keytag and ssh_key_path are required."
         return 1
     fi
-
+    
     prompt "Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) "
     read choice
     choice=${choice:-Y}
@@ -35,64 +35,28 @@ github-ssh-key-add() {
 }
 
 github-auth() {
-  # Check if user is logged in to GitHub
-  gh auth status > /dev/null 2>&1
-  auth_status=$?
 
-  if [[ $auth_status -eq 0 ]]; then
-    logged_in_user=$(gh auth status | grep 'account ' | awk '{print $7}')
-    log >&2 "GitHub CLI: Logged in as ${logged_in_user}."
-    
-    prompt " Do you want to switch to another GitHub account? (y/N)"
-    read -r choice
+    # Ensure user is logged in to GitHub with required scopes
 
-    choice=${choice:-N}
-
-    if [[ $choice =~ ^[Yy]$ ]]; then
-      gh auth logout
-      gh auth login \
-        --web \
-        --git-protocol https \
-        --scopes admin:public_key,admin:ssh_signing_key
-    fi
-
-    github-check-scopes
-
-  elif [[ $auth_status -eq 1 ]]; then
-    log >&2 "GitHub CLI: User is not logged in."
+    # Show GitHub login status
+    gh auth status 2>&1 | grep 'Logged in to github.com as' >&2
+    # Give user a chance to login or re-login as a different user
     gh auth login \
       --web \
       --git-protocol https \
       --scopes admin:public_key,admin:ssh_signing_key
 
-  else
-    log >&2 "GitHub CLI: Error: gh auth status returned $auth_status"
-    return 1
-  fi
+    local gh_auth_token_scopes
+    # If user is authenticated to GitHub
+    if gh_auth_token_scopes=$(gh auth status | grep scopes); then 
+      if [[ $gh_auth_token_scopes =~ 'admin:public_key' ]] && [[ $gh_auth_token_scopes =~ 'admin:ssh_signing_key' ]] ; then
+        log >&2 "GitHub CLI: Required scopes are available."
+      else
+        log >&2 "GitHub CLI: Necessary scopes are not available. Requesting additional scopes..."
+        gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key
+      fi
+    fi
 }
-
-
-github-check-scopes() {
-  # check scopes
-  if github-auth-required-scopes; then
-    log >&2 "GitHub CLI: Token scopes:$(gh auth status | grep 'scopes' | cut -d':' -f2-)"
-  else
-    log >&2 "GitHub CLI: Missing scopes (admin:public_key, admin:ssh_signing_key). Requesting permissions..."
-    gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key
-  fi
-
-}
-
-github-auth-required-scopes() {
-  local github_auth_scopes
-  github_auth_scopes=$(gh auth status | grep scopes)
-  if [[ $github_auth_scopes =~ 'admin:public_key' ]] && [[ $github_auth_scopes =~ 'admin:ssh_signing_key' ]]; then
-    return 0
-  else
-    return 1
-  fi
-}
-
 
 github-ssh-keys() {
   github-auth
