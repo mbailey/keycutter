@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 
+set -eo pipefail
+
 # Usage:
+#
 # git config [--global] gpg.format ssh
 # git config [--global] gpg.ssh.program "~/.ssh/keycutter/keys/scripts/git-commit-sign"
 # git config [--global] user.signingkey "~/.ssh/keycutter/keys/{service}_user@{host}"
-# Function to get Git config value, trying local then global
 
+# Function to get Git config value, trying local then global
 get_git_config() {
     local value
     value=$(git config --get "$1")
@@ -20,11 +23,23 @@ if [ -z "$signing_key" ]; then
     echo "Error: No signing key found in Git config (local or global)."
     exit 1
 fi
+
+# Check if the signing key file exists
+if [ ! -f "$signing_key" ]; then
+    log_error "Signing key file '$signing_key' does not exist."
+    exit 1
+fi
+
 # Get the key fingerprint
 key_info=$(ssh-keygen -lf "$signing_key" | awk '{gsub(/[()]/, "", $4); print $4 " " $2}')
 if [ -z "$key_info" ]; then
     echo "Error: Could not retrieve key information."
     exit 1
 fi
-echo "Confirm user presence for key $key_info"
-ssh-keygen -Y sign -n git -f "$signing_key" "$@"
+echo "Confirm user presence for key $key_info" >&2
+
+# Sign the commit
+if ! ssh-keygen -Y sign -n git -f "$signing_key" "$@"; then
+    log_error "Signing failed."
+    exit 1
+fi
