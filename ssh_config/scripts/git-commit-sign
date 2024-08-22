@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
+
 # Usage:
 # git config [--global] gpg.format ssh
 # git config [--global] gpg.ssh.program "~/.ssh/keycutter/keys/scripts/git-commit-sign"
 # git config [--global] user.signingkey "~/.ssh/keycutter/keys/{service}_user@{host}"
 # Function to get Git config value, trying local then global
+
 get_git_config() {
     local value
     value=$(git config --get "$1")
