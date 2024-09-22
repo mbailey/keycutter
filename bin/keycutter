@@ -136,11 +136,26 @@ keycutter-create() {
     dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700 
     dir-ensure "$(dirname "$ssh_key_path")" 0700
 
+    # Check if FIDO device is available
+    if ! ssh-keygen -t ed25519-sk -f /tmp/test_fido_key -N "" >/dev/null 2>&1; then
+        prompt "No FIDO device found. Would you like to create a non-FIDO SSH key instead? (y/N) "
+        read -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            prompt "Select non-FIDO key type (ed25519/ecdsa/rsa) [ed25519]: "
+            read non_fido_key_type
+            ssh_key_type=${non_fido_key_type:-ed25519}
+        else
+            log "Aborting key creation. Please insert a FIDO device and try again."
+            exit 1
+        fi
+    fi
+
     # Create SSH Key for $ssh_keytag
     log "Generating SSH key: $ssh_key_path"
     case "$ssh_key_type" in
         ecdsa-sk|ed25519-sk)
-            ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${resident:+-O resident}
+            ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${ssh_key_resident:+-O resident}
             ;;
         rsa)
             ssh-keygen -t "$ssh_key_type" -b 4096 -f "$ssh_key_path" -C "$ssh_keytag"
