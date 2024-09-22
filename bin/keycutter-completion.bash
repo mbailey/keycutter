@@ -17,7 +17,7 @@ _keycutter_completion() {
             return
             ;;
         --type)
-            COMPREPLY=($(compgen -W "ecdsa-sk ed25519-sk" -- "$cur"))
+            COMPREPLY=($(compgen -W "ecdsa-sk ed25519-sk rsa ecdsa ed25519" -- "$cur"))
             return
             ;;
     esac

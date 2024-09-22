@@ -20,6 +20,7 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 
 : ${KEYCUTTER_SSH_KEY_TYPE_SK:="ed25519-sk"} # was ecdsa-sk
 : ${KEYCUTTER_SSH_KEY_TYPE_NON_SK:="ed25519"}
+: ${KEYCUTTER_SSH_KEY_TYPES:="ecdsa-sk ed25519-sk rsa ecdsa ed25519"}
 
 # Prerequisites:
 #
@@ -60,7 +61,7 @@ usage() {
     log "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
     log
     log "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
-    log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk). Default is ed25519-sk."
+    log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk, rsa, ecdsa, ed25519). Default is ed25519-sk."
     log
     log "SSH Keytag format: service_user@device"
     log 
@@ -135,9 +136,23 @@ keycutter-create() {
     dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700 
     dir-ensure "$(dirname "$ssh_key_path")" 0700
 
-    # Create FIDO SSH Key for $ssh_keytag
-    log "Generating FIDO SSH key: $ssh_key_path"
-    ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag"  ${resident:+-O resident} # -N "" # Uncomment for no passphrase prompt
+    # Create SSH Key for $ssh_keytag
+    log "Generating SSH key: $ssh_key_path"
+    case "$ssh_key_type" in
+        ecdsa-sk|ed25519-sk)
+            ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${resident:+-O resident}
+            ;;
+        rsa)
+            ssh-keygen -t "$ssh_key_type" -b 4096 -f "$ssh_key_path" -C "$ssh_keytag"
+            ;;
+        ecdsa|ed25519)
+            ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag"
+            ;;
+        *)
+            log "Error: Unsupported key type: $ssh_key_type"
+            exit 1
+            ;;
+    esac
     chmod 0600 "${ssh_key_path}.pub"
 
     # If the SSH Keytag includes github.com 
