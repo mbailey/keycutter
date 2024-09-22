@@ -35,52 +35,61 @@ github-ssh-key-add() {
 }
 
 github-auth() {
-  # Check if user is logged in to GitHub
-  gh auth status > /dev/null 2>&1
-  auth_status=$?
-
-  if [[ $auth_status -eq 0 ]]; then
-    logged_in_user=$(gh auth status | grep 'account ' | awk '{print $7}')
-    log >&2 "GitHub CLI: Logged in as ${logged_in_user}."
-    
-    prompt " Do you want to switch to another GitHub account? (y/N)"
-    read -r choice
-
-    choice=${choice:-N}
-
-    if [[ $choice =~ ^[Yy]$ ]]; then
-      gh auth logout
-      gh auth login \
-        --web \
-        --git-protocol https \
-        --scopes admin:public_key,admin:ssh_signing_key
-    fi
-
-    github-check-scopes
-
-  elif [[ $auth_status -eq 1 ]]; then
-    log >&2 "GitHub CLI: User is not logged in."
-    gh auth login \
-      --web \
-      --git-protocol https \
-      --scopes admin:public_key,admin:ssh_signing_key
-
-  else
-    log >&2 "GitHub CLI: Error: gh auth status returned $auth_status"
+  # Check if GitHub CLI is installed
+  if ! command -v gh &> /dev/null; then
+    log >&2 "Error: GitHub CLI (gh) is not installed or not in PATH."
+    log >&2 "Please install it from: https://cli.github.com/"
     return 1
   fi
+
+  # Check if user is logged in to GitHub
+  if gh auth status -h github.com &> /dev/null; then
+    logged_in_user=$(gh auth status -h github.com | grep 'account ' | awk '{print $7}')
+    log >&2 "GitHub CLI: Logged in as ${logged_in_user} on github.com."
+    
+    if ! github-check-scopes; then
+      log >&2 "Missing required scopes. Refreshing token..."
+      if ! gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key; then
+        log >&2 "Error: Failed to refresh GitHub token with required scopes."
+        return 1
+      fi
+    fi
+  else
+    log >&2 "GitHub CLI: User is not logged in to github.com."
+    if ! github-auth-login; then
+      log >&2 "Error: Failed to log in to GitHub account."
+      return 1
+    fi
+  fi
+
+  return 0
+}
+
+github-auth-login() {
+  log >&2 "Logging in to GitHub..."
+  if ! gh auth login \
+    -h github.com \
+    --web \
+    --git-protocol https \
+    --scopes admin:public_key,admin:ssh_signing_key; then
+    log >&2 "Error: GitHub authentication failed."
+    return 1
+  fi
+  log >&2 "Successfully logged in to GitHub."
+  return 0
 }
 
 
 github-check-scopes() {
-  # check scopes
-  if github-auth-required-scopes; then
-    log >&2 "GitHub CLI: Token scopes:$(gh auth status | grep 'scopes' | cut -d':' -f2-)"
+  local scopes
+  scopes=$(gh auth status -h github.com | grep 'Token scopes:' | cut -d':' -f2-)
+  if [[ $scopes == *"admin:public_key"* ]] && [[ $scopes == *"admin:ssh_signing_key"* ]]; then
+    log >&2 "GitHub CLI: Token scopes:$scopes"
+    return 0
   else
-    log >&2 "GitHub CLI: Missing scopes (admin:public_key, admin:ssh_signing_key). Requesting permissions..."
-    gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key
+    log >&2 "GitHub CLI: Missing required scopes. Current scopes:$scopes"
+    return 1
   fi
-
 }
 
 github-auth-required-scopes() {
