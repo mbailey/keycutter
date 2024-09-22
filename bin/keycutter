@@ -151,6 +151,17 @@ keycutter-create() {
         fi
     fi
 
+    # Check if the key already exists
+    if [[ -f "$ssh_key_path" ]]; then
+        prompt "SSH key already exists. Overwrite? (y/N) "
+        read -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log "Aborting key creation. Existing key not overwritten."
+            return 1
+        fi
+    fi
+
     # Create SSH Key for $ssh_keytag
     log "Generating SSH key: $ssh_key_path"
     case "$ssh_key_type" in
@@ -165,7 +176,7 @@ keycutter-create() {
             ;;
         *)
             log "Error: Unsupported key type: $ssh_key_type"
-            exit 1
+            return 1
             ;;
     esac
     chmod 0600 "${ssh_key_path}.pub"
