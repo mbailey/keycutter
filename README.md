@@ -169,6 +169,39 @@ git commit -m "I signed this commit with my new SSH Key"
 
 You're ready for FIDO SSH access to anything you were using file based SSH keys for.
 
+## Updating Keycutter
+
+To update an existing installation of Keycutter, use the following command:
+
+```shell
+keycutter update
+```
+
+This command will:
+1. Pull the latest changes from the Keycutter git repository.
+2. Check and update any requirements.
+3. Update your SSH configuration with any new changes.
+
+Here's an example of what you might see when running the update command:
+
+```
+🔄 Updating Keycutter from git...
+Confirm user presence for key ECDSA-SK SHA256:bW8s2icYERtlbt9Y9jrzCDEcdgcmMbWRiBjxtroNLoI
+User presence confirmed
+Keycutter is already up to date.
+All requirements are met.
+Keycutter SSH update complete.
+```
+
+In this example:
+- The update process starts by checking for git updates.
+- It may require user presence confirmation for security keys.
+- It informs you if Keycutter is already up to date.
+- It checks that all requirements are met.
+- Finally, it updates the SSH configuration.
+
+It's recommended to run this command periodically to ensure you have the latest features and bug fixes.
+
 ## See also
 
 - **[Keycutter Documentation](docs/README.md)**
