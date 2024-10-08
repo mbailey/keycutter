@@ -4,56 +4,22 @@ Cool unadvertised tricks. Some may evolve into documented features.
 
 ## Using rsync or inline command
 
-A workaround is employed in `~/.keycutter/ssh/config` to avoid a conflict with `RemoteCommand` when using `rsync` or inline commands that resulted in the following error:
+A workaround is employed in `~/.keycutter/ssh/config` to avoid a conflict
+with `RemoteCommand` when using `rsync` or inline commands that would
+otherwise result in the following error:
 
 ```shell
 $ ssh git date
 Cannot execute command-line and remote command.
 ```
 
-**Current workaround:** Check number of command arguments.
+**Solution:** Don't use `RemoteCommand` unless the command is `ssh` with one argument.
 
-This is a bit of a hack, but it works. The following check in a Match condition will fail if the number of arguments is greater than 2. Passes for `ssh git` and fails for `ssh git date`.
-
-```shell
-[[ $(ps h o args p $PPID | wc -w) -eq 2 ]]
-```
-
-Issue: This will fail to run RemoteCommand is the user provides any arguments (e.g. `-p 443`).
-The result is that remote host won't be able to request keys from the origin host.
-
-**Alternative**: Unset `$KEYCUTTER_HOSTNAME` on command line.
-
-This works by making us appear to not be on an origin host.
+The following Match condition in keycutter.conf will allow `ssh` with one argument:
 
 ```shell
-KEYCUTTER_HOSTNAME="" rsync -avz ~/.keycutter/ git:.keycutter/
+Match final exec "bash -c '[[ $(ps -o args= -p $PPID) =~ ^ssh[[:space:]]+((-[^T ]+[[:space:]]+)*[^-][^ ]*)?$ ]]'"
 ```
 
-**Alternative**: Export env vars for things that need them:
-
-```
-RSYNC_RSH="ssh -o RemoteCommand=none" rsync -avz ~/.keycutter/ git:.keycutter/
-```
-
-## Recreate ssh configs for a key
-
-Keycutter is composed of simple bash functions which can be run independantly.
-
-1. Source keycutter functions:
-
-    ```shell
-    source "${KEYCUTTER_ROOT}/lib/functions"
-    ```
-
-2. Recreate ssh config files:
-
-    ```shell
-    $ keycuitter-ssh-config-create ~/.keycutter/ssh/keys/example.com_m\@keyring
-    File is identical: /home/alex/.keycutter/ssh/config
-    Line already present in /home/alex/.ssh/config
-    SSH configuration file exists (/home/alex/.keycutter/ssh/hosts/example.com_m)
-    Already in /home/alex/.keycutter/ssh/hosts/example.com_m:   IdentityFile ~/.keycutter/ssh/keys/example.com_m@keyring.pub
-    Add key to default keycutter ssh-agent? [y/N] y
-    Creating symlink: ln -sf /home/alex/.keycutter/ssh/keys/example.com_m@keyring /home/alex/.keycutter/ssh/agents/default/keys
-    ```
+- `ssh git` = Match
+- `ssh git date` = No Match
