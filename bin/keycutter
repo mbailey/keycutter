@@ -136,32 +136,6 @@ keycutter-create() {
     dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700 
     dir-ensure "$(dirname "$ssh_key_path")" 0700
 
-    # Check if FIDO device is available
-    if ! ssh-keygen -t ed25519-sk -f /tmp/test_fido_key -N "" >/dev/null 2>&1; then
-        prompt "No FIDO device found. Would you like to create a non-FIDO SSH key instead? (y/N) "
-        read -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            prompt "Select non-FIDO key type (ed25519/ecdsa/rsa) [ed25519]: "
-            read non_fido_key_type
-            ssh_key_type=${non_fido_key_type:-ed25519}
-        else
-            log "Aborting key creation. Please insert a FIDO device and try again."
-            exit 1
-        fi
-    fi
-
-    # Check if the key already exists
-    if [[ -f "$ssh_key_path" ]]; then
-        prompt "SSH key already exists. Overwrite? (y/N) "
-        read -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            log "Aborting key creation. Existing key not overwritten."
-            return 1
-        fi
-    fi
-
     # Create SSH Key for $ssh_keytag
     log "Generating SSH key: $ssh_key_path"
     case "$ssh_key_type" in
@@ -179,6 +153,12 @@ keycutter-create() {
             return 1
             ;;
     esac
+    local case_exit_code=$?
+    if [[ case_exit_code -ne 0 ]]; then
+      log "WARNING No key was created"
+      return $case_exit_code
+    fi
+
     chmod 0600 "${ssh_key_path}.pub"
 
     # If the SSH Keytag includes github.com 
