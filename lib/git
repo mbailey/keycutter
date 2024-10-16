@@ -45,7 +45,7 @@ git-version-check() {
 }
 
 # Function to set up Git SSH signing config
-git-ssh-signing-setup() {
+git-signing-setup() {
     local scope=""
     local ssh_key=""
 
@@ -158,7 +158,7 @@ git-ssh-signing-setup() {
 }
 
 # Function to enable commit signing
-git-commit-signing-enable() {
+enable-git-commit-signing() {
     local scope=""
 
     # Parse arguments
@@ -195,7 +195,7 @@ git-commit-signing-enable() {
 }
 
 # Function to disable commit signing
-git-commit-signing-disable() {
+disable-git-commit-signing() {
     local scope=""
 
     # Parse arguments
@@ -232,7 +232,7 @@ git-commit-signing-disable() {
 }
 
 # Function to check Git SSH signing configuration
-git-ssh-signing-check() {
+git-signing-config() {
     local scope="$1"
 
     if [ -z "$scope" ]; then
@@ -247,26 +247,15 @@ git-ssh-signing-check() {
 }
 
 # Function to print setup instructions
-git-ssh-signing-instructions() {
+git-signing-help() {
     local ssh_key="${1:-$KEYCUTTER_SSH_KEY_DIR}"
     log "Setup instructions:"
     log "1. Create a key via keycutter:"
-    log "   \`keycutter create\`"
+    log "   \`keycutter create github.com_me@pc\`"
     log "2. Make sure the Git SSH signing script is in place:"
     log "   \`keycutter update-ssh-config\`"
     log "3. Set up Git SSH signing:"
     log "   \`keycutter git-signing-setup\`"
-}
-
-# Example usage function
-git-ssh-signing-example() {
-    log "Example usage:"
-    log "source ./git_ssh_signing_functions.sh"
-    log "git-version-check"
-    log "git-ssh-signing-setup --global"
-    log "git-commit-signing-enable global"
-    log "git-ssh-signing-check global"
-    log "git-ssh-signing-instructions"
 }
 
 # If this script is run directly, print example usage
