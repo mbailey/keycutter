@@ -202,11 +202,11 @@ keycutter-git-signing-setup() {
     git-signing-setup "$@"
 }
 
-keycutter-enable-git-commit-signing() {
+keycutter-git-commit-signing-enable() {
     enable-git-commit-signing "$@"
 }
 
-keycutter-disable-git-commit-signing() {
+keycutter-git-commit-signing-disable() {
     disable-git-commit-signing "$@"
 }
 
