@@ -47,7 +47,48 @@ git-version-check() {
 # Function to set up Git SSH signing config
 git-ssh-signing-setup() {
     local scope=""
-    local ssh_key="$DEFAULT_SSH_KEY"
+    local ssh_key=""
+
+    # Function to display help
+    show_help() {
+        echo "Usage: git-ssh-signing-setup [OPTIONS] [SSH_KEY_PATH]"
+        echo
+        echo "Set up Git SSH signing configuration."
+        echo
+        echo "Options:"
+        echo "  --global    Set the configuration globally"
+        echo "  --local     Set the configuration locally (default if not specified)"
+        echo "  help        Display this help message"
+        echo
+        echo "If SSH_KEY_PATH is not provided, you'll be prompted to select a key from \$KEYCUTTER_SSH_KEY_DIR"
+    }
+
+    # Function to select SSH key
+    select_ssh_key() {
+        if command -v fzf &> /dev/null; then
+            ssh_key=$(find "$KEYCUTTER_SSH_KEY_DIR" -type f -not -name '*.pub' | fzf --prompt="Select SSH key: " --preview="ssh-keygen -lf {}")
+        else
+            echo "Select an SSH key:"
+            local keys=()
+            while IFS= read -r -d $'\0' file; do
+                keys+=("$file")
+            done < <(find "$KEYCUTTER_SSH_KEY_DIR" -type f -not -name '*.pub' -print0)
+            
+            select key in "${keys[@]}"; do
+                if [ -n "$key" ]; then
+                    ssh_key="$key"
+                    break
+                else
+                    echo "Invalid selection. Please try again."
+                fi
+            done
+        fi
+
+        if [ -z "$ssh_key" ]; then
+            log "No SSH key selected. Exiting."
+            return 1
+        fi
+    }
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -59,6 +100,10 @@ git-ssh-signing-setup() {
             --local)
                 scope="local"
                 shift
+                ;;
+            help)
+                show_help
+                return 0
                 ;;
             *)
                 # Assume it's the SSH key path
@@ -74,12 +119,17 @@ git-ssh-signing-setup() {
         scope="local"
     fi
 
+    # If no SSH key was provided, use select_ssh_key function to choose one
+    if [ -z "$ssh_key" ]; then
+        select_ssh_key || return 1
+    fi
+
     # Display proposed changes and ask for confirmation
     log "Proposed Git SSH signing configuration:"
-    log "  Scope: $scope"
-    log "  SSH Key: $ssh_key"
-    log "  gpg.format: ssh"
-    log "  gpg.ssh.program: $HOME/.ssh/keycutter/scripts/git-commit-sign"
+    log " Scope: $scope"
+    log " SSH Key: $ssh_key"
+    log " gpg.format: ssh"
+    log " gpg.ssh.program: $HOME/.ssh/keycutter/scripts/git-commit-sign"
     echo
     prompt "Do you want to apply these changes? (y/N) "
     read -n 1 -r
@@ -94,15 +144,14 @@ git-ssh-signing-setup() {
 
     # Apply the configurations
     git-config-set "$scope" "gpg.format" "ssh"
-    
     local script_path="$HOME/.ssh/keycutter/scripts/git-commit-sign"
     git-config-set "$scope" "gpg.ssh.program" "$script_path"
-    
+
     if [ ! -f "$ssh_key" ]; then
         log "Error: SSH key not found at $ssh_key"
         return 1
     fi
-    
+
     git-config-set "$scope" "user.signingkey" "$ssh_key"
     log "Git SSH signing basic setup complete for $scope config!"
     return 0
@@ -199,14 +248,14 @@ git-ssh-signing-check() {
 
 # Function to print setup instructions
 git-ssh-signing-instructions() {
-    local ssh_key="${1:-$DEFAULT_SSH_KEY}"
+    local ssh_key="${1:-$KEYCUTTER_SSH_KEY_DIR}"
     log "Setup instructions:"
-    log "1. Ensure your SSH key is added to the ssh-agent:"
-    log "   ssh-add $ssh_key"
-    log "2. Make sure the Git SSH signing script is in place and executable:"
-    log "   touch $HOME/.ssh/git-commit-sign"
-    log "   chmod u+x $HOME/.ssh/git-commit-sign"
-    log "3. Copy the Git SSH signing script content into $HOME/.ssh/git-commit-sign"
+    log "1. Create a key via keycutter:"
+    log "   \`keycutter create\`"
+    log "2. Make sure the Git SSH signing script is in place:"
+    log "   \`keycutter update-ssh-config\`"
+    log "3. Set up Git SSH signing:"
+    log "   \`keycutter git-signing-setup\`"
 }
 
 # Example usage function
