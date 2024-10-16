@@ -196,22 +196,22 @@ keycutter-list() {
 }
 
 keycutter-git-signing-config() {
-    git-ssh-signing-check "$@"
+    git-signing-config "$@"
 }
 keycutter-git-signing-setup() {
-    git-ssh-signing-setup "$@"
+    git-signing-setup "$@"
 }
 
-keycutter-enable-commit-signing() {
-    git-commit-signing-enable "$@"
+keycutter-enable-git-commit-signing() {
+    enable-git-commit-signing "$@"
 }
 
-keycutter-disable-commit-signing() {
-    git-commit-signing-disable "$@"
+keycutter-disable-git-commit-signing() {
+    disable-git-commit-signing "$@"
 }
 
-keycutter-signing-help() {
-    git-ssh-signing-instructions
+keycutter-git-signing-help() {
+    git-signing-help
 }
 
 keycutter-update() {
