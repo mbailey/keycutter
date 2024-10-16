@@ -177,7 +177,7 @@ keycutter-list() {
 keycutter-git-signing-config() {
     git-ssh-signing-check "$@"
 }
-keycutter-set-git-commit-sign() {
+keycutter-git-signing-setup() {
     git-ssh-signing-setup "$@"
 }
 
@@ -187,6 +187,10 @@ keycutter-enable-commit-signing() {
 
 keycutter-disable-commit-signing() {
     git-commit-signing-disable "$@"
+}
+
+keycutter-signing-help() {
+    git-ssh-signing-instructions
 }
 
 keycutter-update() {
