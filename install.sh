@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="https://github.com/bash-my-aws/keycutter.git"
+REPO_URL="https://github.com/mbailey/keycutter.git"
 COMMAND_NAME="keycutter"
 INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/$COMMAND_NAME"
 BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
