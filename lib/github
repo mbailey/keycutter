@@ -47,11 +47,24 @@ github-auth() {
     logged_in_user=$(gh auth status -h github.com | grep 'account ' | awk '{print $7}')
     log >&2 "GitHub CLI: Logged in as ${logged_in_user} on github.com."
     
-    if ! github-check-scopes; then
-      log >&2 "Missing required scopes. Refreshing token..."
-      if ! gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key; then
-        log >&2 "Error: Failed to refresh GitHub token with required scopes."
+    # Add the new confirmation prompt
+    prompt "Continue with current GitHub account (${logged_in_user})? [Y/n] "
+    read choice
+    choice=${choice:-Y}
+    if [[ ! $choice =~ ^[Yy]*$ ]]; then
+      # Log out if user wants to switch accounts
+      gh auth logout
+      if ! github-auth-login; then
+        log >&2 "Error: Failed to log in to GitHub account."
         return 1
+      fi
+    else
+      if ! github-check-scopes; then
+        log >&2 "Missing required scopes. Refreshing token..."
+        if ! gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key; then
+          log >&2 "Error: Failed to refresh GitHub token with required scopes."
+          return 1
+        fi
       fi
     fi
   else
