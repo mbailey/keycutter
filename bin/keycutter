@@ -54,13 +54,14 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 
 usage() {
     log "Usage:"
-    log "       $(basename "$0") <ssh-keytag> [--resident] [--type <value>]"
+    log "       $(basename "$0") <ssh-keytag> [--resident] [--verify] [--type <value>]"
     log
     log "Arguments:"
     log
     log "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
     log
     log "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
+    log "  --verify   Optional. Require user verification for each signature. Only supports ecdsa-sk & ed25519-sk currently."
     log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk, rsa, ecdsa, ed25519). Default is ed25519-sk."
     log
     log "SSH Keytag format: service_user@device"
@@ -79,6 +80,7 @@ keycutter-create() {
 
     # Set default values, override with command line options
     local ssh_key_resident=""
+    local ssh_key_verify=""
     local ssh_key_type="$KEYCUTTER_SSH_KEY_TYPE_SK"
     local ssh_keytag=""
 
@@ -88,6 +90,10 @@ keycutter-create() {
         case "$1" in
             --resident)
                 ssh_key_resident="yes"
+                shift
+                ;;
+            --verify)
+                ssh_key_verify="yes"
                 shift
                 ;;
             --type)
@@ -116,6 +122,12 @@ keycutter-create() {
         exit 1
     fi
 
+    # If verify arg is passed, check if the ssh_key_type supports verify-required: https://man.openbsd.org/ssh-keygen.1#verify-required
+    if [[ ! -z "$ssh_key_verify" && ! " ecdsa-sk ed25519-sk " =~ " ${ssh_key_type} " ]]; then
+        log "Error: verify required is not supported for type $ssh_key_type"
+        exit 1
+    fi
+
     # Check if the ssh_keytag ends with @$KEYCUTTER_ORIGIN
     if [[ ! "$ssh_keytag" =~ @${KEYCUTTER_ORIGIN}$ ]]; then
         local ssh_keytag_proposed="${ssh_keytag/@*}@${KEYCUTTER_ORIGIN}"
@@ -140,7 +152,7 @@ keycutter-create() {
     log "Generating SSH key: $ssh_key_path"
     case "$ssh_key_type" in
         ecdsa-sk|ed25519-sk)
-            ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${ssh_key_resident:+-O resident}
+            ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${ssh_key_resident:+-O resident} ${ssh_key_verify:+-O verify-required}
             ;;
         rsa)
             ssh-keygen -t "$ssh_key_type" -b 4096 -f "$ssh_key_path" -C "$ssh_keytag"
