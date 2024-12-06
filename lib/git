@@ -1,3 +1,20 @@
+# Define colors globally
+color_reset=$(tput sgr0)
+color_local=$(tput setaf 2)  # Green for local
+color_global=$(tput setaf 4) # Blue for global
+
+# Function to format the scope with appropriate color
+format_scope() {
+    local scope="$1"
+    if [[ "$scope" == "local" ]]; then
+        echo "${color_local}${scope}${color_reset}"
+    elif [[ "$scope" == "global" ]]; then
+        echo "${color_global}${scope}${color_reset}"
+    else
+        echo "$scope"  # Default to no color if not local or global
+    fi
+}
+
 # Git functions
 
 # Function to set Git config
@@ -9,7 +26,7 @@ git-config-set() {
     [[ "$scope" == "global" ]] && config_flag="--global"
     
     git config $config_flag "$key" "$value"
-    log "Set $key to $value ($scope config)"
+    log "Set $key to $value ($(format_scope $scope) config)"
 }
 
 # Function to get Git config
@@ -24,7 +41,7 @@ git-config-get() {
     if [ -n "$value" ]; then
         echo "$value"
     else
-        echo "Not set"
+        echo "Not set ($(format_scope $scope) config)"
     fi
 }
 
@@ -126,10 +143,11 @@ git-signing-setup() {
 
     # Display proposed changes and ask for confirmation
     log "Proposed Git SSH signing configuration:"
-    log " Scope: $scope"
+    log " Scope: $(format_scope $scope)"
     log " SSH Key: $ssh_key"
+    log " gpg.ssh.program: ~/.ssh/keycutter/scripts/git-commit-sign"
     log " gpg.format: ssh"
-    log " gpg.ssh.program: $HOME/.ssh/keycutter/scripts/git-commit-sign"
+
     echo
     prompt "Do you want to apply these changes? (y/N) "
     read -n 1 -r
@@ -140,7 +158,7 @@ git-signing-setup() {
         return 1
     fi
 
-    log "Setting up Git SSH signing ($scope config)..."
+    log "Setting up Git SSH signing ($(format_scope $scope) config)..."
 
     # Apply the configurations
     git-config-set "$scope" "gpg.format" "ssh"
@@ -153,15 +171,13 @@ git-signing-setup() {
     fi
 
     git-config-set "$scope" "user.signingkey" "$ssh_key"
-    log "Git SSH signing basic setup complete for $scope config!"
+    log "Git SSH signing basic setup complete for $(format_scope $scope) config!"
     return 0
 }
 
 # Function to enable commit signing
 enable-git-commit-signing() {
     local scope=""
-
-    # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             --global)
@@ -179,26 +195,20 @@ enable-git-commit-signing() {
         esac
     done
 
-    # If no scope was explicitly set, default to local
     if [ -z "$scope" ]; then
-        log "No scope specified. Defaulting to 'local' config."
+        log "No scope specified. Defaulting to $(format_scope local) config."
         scope="local"
     fi
 
     local config_flag=""
-    if [ "$scope" = "global" ]; then
-        config_flag="--global"
-    fi
-
+    [[ "$scope" == "global" ]] && config_flag="--global"
     git config $config_flag "commit.gpgsign" "true"
-    log "Enabled commit signing for $scope config"
+    log "Enabled commit signing for $(format_scope $scope) config"
 }
 
 # Function to disable commit signing
 disable-git-commit-signing() {
     local scope=""
-
-    # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             --global)
@@ -216,35 +226,45 @@ disable-git-commit-signing() {
         esac
     done
 
-    # If no scope was explicitly set, default to local
     if [ -z "$scope" ]; then
-        log "No scope specified. Defaulting to 'local' config."
+        log "No scope specified. Defaulting to $(format_scope local) config."
         scope="local"
     fi
 
     local config_flag=""
-    if [ "$scope" = "global" ]; then
-        config_flag="--global"
-    fi
-
+    [[ "$scope" == "global" ]] && config_flag="--global"
     git config $config_flag --unset "commit.gpgsign"
-    log "Disabled commit signing for $scope config"
+    log "Disabled commit signing for $(format_scope $scope) config"
 }
 
 # Function to check Git SSH signing configuration
 git-signing-config() {
     local scope="$1"
+    local git_dir=""
+
+    # Get the current Git directory, if available
+    if git rev-parse --show-toplevel &>/dev/null; then
+        git_dir=$(git rev-parse --show-toplevel)
+    else
+        git_dir="Not a Git repository"
+    fi
+
+    if [[ "$scope" != "global" && "$scope" != "local" && -n "$scope" ]]; then
+        log "Invalid scope provided. Scope must be either 'global' or 'local'."
+        return 1
+    fi
 
     if [ -z "$scope" ]; then
-        log "Checking Git SSH signing configuration (local config):"
-    else
-        log "Checking Git SSH signing configuration ($scope config):"
+        scope="local"
     fi
+
+    log "Checking $(format_scope $scope) Git SSH signing configuration for directory: $git_dir"
     log "gpg.format: $(git-config-get "$scope" gpg.format)"
     log "gpg.ssh.program: $(git-config-get "$scope" gpg.ssh.program)"
     log "user.signingkey: $(git-config-get "$scope" user.signingkey)"
     log "commit.gpgsign: $(git-config-get "$scope" commit.gpgsign)"
 }
+
 
 # Function to print setup instructions
 git-signing-help() {
