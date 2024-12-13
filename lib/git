@@ -222,9 +222,7 @@ git-commit-signing-enabled() {
         git-config-set "$scope" "commit.gpgsign" "true"
         log "Enabled commit signing for $(format_scope $scope) config"
     else
-        local config_flag=""
-        [[ "$scope" == "global" ]] && config_flag="--global"
-        git config $config_flag --unset "commit.gpgsign"
+        git-config-set "$scope" "commit.gpgsign" "false"
         log "Disabled commit signing for $(format_scope $scope) config"
     fi
 }
