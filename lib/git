@@ -2,6 +2,7 @@
 color_reset=$(tput sgr0)
 color_local=$(tput setaf 2)  # Green for local
 color_global=$(tput setaf 4) # Blue for global
+color_override=$(tput setaf 1) # Red for overridden values
 
 # Function to format the scope with appropriate color
 format_scope() {
@@ -46,7 +47,7 @@ git-config-get() {
     else
         if [[ -n "$local_value" ]]; then
             if [[ -n "$global_value" ]]; then
-                echo "$local_value (local, overrides global: $global_value)"
+                echo "$local_value (local, ${color_override}overrides global: $global_value${color_reset})"
             else
                 echo "$local_value (local)"
             fi
