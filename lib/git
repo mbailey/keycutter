@@ -40,19 +40,19 @@ git-config-get() {
     
     if [[ "$scope" == "global" ]]; then
         if [[ -n "$global_value" ]]; then
-            echo "${color_global}$key: $global_value (global)${color_reset}"
+            echo "${color_global}$global_value # global${color_reset}"
         else
             echo "$key: Not set"
         fi
     else
         if [[ -n "$local_value" ]]; then
             local override_info=""
-            [[ -n "$global_value" ]] && override_info=" # overrides global: $global_value"
-            echo "${color_local}$key: $local_value (local)${color_reset}${color_override}${override_info}${color_reset}"
+            [[ -n "$global_value" ]] && override_info=" overrides global: $global_value"
+            echo "${color_local}$local_value # local${color_reset}${color_override}${override_info}${color_reset}"
         elif [[ -n "$global_value" ]]; then
-            echo "${color_global}$key: $global_value (global)${color_reset}"
+            echo "${color_global}$global_value # global${color_reset}"
         else
-            echo "$key: Not set"
+            echo "Not set"
         fi
     fi
 }
