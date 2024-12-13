@@ -175,9 +175,13 @@ git-signing-setup() {
     return 0
 }
 
-# Function to enable commit signing
-enable-git-commit-signing() {
+
+# Function to get/set commit signing
+git-commit-signing-enabled() {
     local scope=""
+    local new_value=""
+    
+    # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             --global)
@@ -188,35 +192,8 @@ enable-git-commit-signing() {
                 scope="local"
                 shift
                 ;;
-            *)
-                log "Error: Unknown option $1"
-                return 1
-                ;;
-        esac
-    done
-
-    if [ -z "$scope" ]; then
-        log "No scope specified. Defaulting to $(format_scope local) config."
-        scope="local"
-    fi
-
-    local config_flag=""
-    [[ "$scope" == "global" ]] && config_flag="--global"
-    git config $config_flag "commit.gpgsign" "true"
-    log "Enabled commit signing for $(format_scope $scope) config"
-}
-
-# Function to disable commit signing
-disable-git-commit-signing() {
-    local scope=""
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --global)
-                scope="global"
-                shift
-                ;;
-            --local)
-                scope="local"
+            true|false)
+                new_value="$1"
                 shift
                 ;;
             *)
@@ -226,15 +203,30 @@ disable-git-commit-signing() {
         esac
     done
 
+    # Default to local scope if not specified
     if [ -z "$scope" ]; then
         log "No scope specified. Defaulting to $(format_scope local) config."
         scope="local"
     fi
 
-    local config_flag=""
-    [[ "$scope" == "global" ]] && config_flag="--global"
-    git config $config_flag --unset "commit.gpgsign"
-    log "Disabled commit signing for $(format_scope $scope) config"
+    # If no value provided, show current setting
+    if [ -z "$new_value" ]; then
+        local current_value
+        current_value=$(git-config-get "$scope" "commit.gpgsign")
+        log "Commit signing is: $current_value ($(format_scope $scope) config)"
+        return 0
+    fi
+
+    # Set new value
+    if [ "$new_value" = "true" ]; then
+        git-config-set "$scope" "commit.gpgsign" "true"
+        log "Enabled commit signing for $(format_scope $scope) config"
+    else
+        local config_flag=""
+        [[ "$scope" == "global" ]] && config_flag="--global"
+        git config $config_flag --unset "commit.gpgsign"
+        log "Disabled commit signing for $(format_scope $scope) config"
+    fi
 }
 
 # Function to check Git SSH signing configuration
