@@ -29,19 +29,32 @@ git-config-set() {
     log "Set $key to $value ($(format_scope $scope) config)"
 }
 
-# Function to get Git config
+# Function to get Git config with override information
 git-config-get() {
     local scope="$1"
     local key="$2"
-    local config_flag=""
-    [[ "$scope" == "global" ]] && config_flag="--global"
     
-    local value
-    value=$(git config $config_flag --get "$key")
-    if [ -n "$value" ]; then
-        echo "$value"
+    local global_value=$(git config --global --get "$key" 2>/dev/null)
+    local local_value=$(git config --local --get "$key" 2>/dev/null)
+    
+    if [[ "$scope" == "global" ]]; then
+        if [[ -n "$global_value" ]]; then
+            echo "$global_value (global)"
+        else
+            echo "Not set"
+        fi
     else
-        echo "Not set"
+        if [[ -n "$local_value" ]]; then
+            if [[ -n "$global_value" ]]; then
+                echo "$local_value (local, overrides global: $global_value)"
+            else
+                echo "$local_value (local)"
+            fi
+        elif [[ -n "$global_value" ]]; then
+            echo "$global_value (inherited from global)"
+        else
+            echo "Not set"
+        fi
     fi
 }
 
