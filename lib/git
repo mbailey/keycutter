@@ -175,9 +175,36 @@ git-signing-setup() {
     return 0
 }
 
+# Function to check Git SSH signing configuration
+git-signing() {
+    local scope="$1"
+    local git_dir=""
+
+    # Get the current Git directory, if available
+    if git rev-parse --show-toplevel &>/dev/null; then
+        git_dir=$(git rev-parse --show-toplevel)
+    else
+        git_dir="Not a Git repository"
+    fi
+
+    if [[ "$scope" != "global" && "$scope" != "local" && -n "$scope" ]]; then
+        log "Invalid scope provided. Scope must be either 'global' or 'local'."
+        return 1
+    fi
+
+    if [ -z "$scope" ]; then
+        scope="local"
+    fi
+
+    log "Checking $(format_scope $scope) Git SSH signing configuration for directory: $git_dir"
+    log "gpg.format: $(git-config-get "$scope" gpg.format)"
+    log "gpg.ssh.program: $(git-config-get "$scope" gpg.ssh.program)"
+    log "user.signingkey: $(git-config-get "$scope" user.signingkey)"
+    log "commit.gpgsign: $(git-config-get "$scope" commit.gpgsign)"
+}
 
 # Function to get/set commit signing
-git-commit-signing-enabled() {
+git-signing-enabled() {
     local scope=""
     local new_value=""
     
@@ -226,35 +253,6 @@ git-commit-signing-enabled() {
         log "Disabled commit signing for $(format_scope $scope) config"
     fi
 }
-
-# Function to check Git SSH signing configuration
-git-signing-config() {
-    local scope="$1"
-    local git_dir=""
-
-    # Get the current Git directory, if available
-    if git rev-parse --show-toplevel &>/dev/null; then
-        git_dir=$(git rev-parse --show-toplevel)
-    else
-        git_dir="Not a Git repository"
-    fi
-
-    if [[ "$scope" != "global" && "$scope" != "local" && -n "$scope" ]]; then
-        log "Invalid scope provided. Scope must be either 'global' or 'local'."
-        return 1
-    fi
-
-    if [ -z "$scope" ]; then
-        scope="local"
-    fi
-
-    log "Checking $(format_scope $scope) Git SSH signing configuration for directory: $git_dir"
-    log "gpg.format: $(git-config-get "$scope" gpg.format)"
-    log "gpg.ssh.program: $(git-config-get "$scope" gpg.ssh.program)"
-    log "user.signingkey: $(git-config-get "$scope" user.signingkey)"
-    log "commit.gpgsign: $(git-config-get "$scope" commit.gpgsign)"
-}
-
 
 # Function to print setup instructions
 git-signing-help() {
