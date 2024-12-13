@@ -232,7 +232,6 @@ git-signing-program() {
 
     # Default to local scope if not specified
     if [ -z "$scope" ]; then
-        log "No scope specified. Defaulting to $(format_scope local) config."
         scope="local"
     fi
 
