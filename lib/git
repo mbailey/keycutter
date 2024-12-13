@@ -45,8 +45,10 @@ git-config-get() {
             echo "Not set"
         fi
     else
-        if [[ -n "$global_value" ]]; then
-            echo "${color_override}# $key: $global_value (global)${color_reset}"
+        if [[ -n "$global_value" && -n "$local_value" ]]; then
+            echo "${color_override}# (overridden by local) $key: $global_value (global)${color_reset}"
+        elif [[ -n "$global_value" ]]; then
+            echo "${color_global}$key: $global_value (global)${color_reset}"
         fi
         if [[ -n "$local_value" ]]; then
             echo "${color_local}$key: $local_value (local)${color_reset}"
