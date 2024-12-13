@@ -206,6 +206,10 @@ keycutter-git-signing-enabled() {
     git-signing-enabled "$@"
 }
 
+keycutter-git-signing-program() {
+    git-signing-program "$@"
+}
+
 keycutter-git-signing-help() {
     git-signing-help
 }
