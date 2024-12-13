@@ -41,7 +41,7 @@ git-config-get() {
     if [ -n "$value" ]; then
         echo "$value"
     else
-        echo "Not set ($(format_scope $scope) config)"
+        echo "Not set"
     fi
 }
 
