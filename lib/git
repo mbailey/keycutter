@@ -203,6 +203,60 @@ git-signing() {
     log "commit.gpgsign: $(git-config-get "$scope" commit.gpgsign)"
 }
 
+# Function to get/set git signing program
+git-signing-program() {
+    local scope=""
+    local new_value=""
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --global)
+                scope="global"
+                shift
+                ;;
+            --local)
+                scope="local"
+                shift
+                ;;
+            none)
+                new_value="unset"
+                shift
+                ;;
+            *)
+                new_value="$1"
+                shift
+                ;;
+        esac
+    done
+
+    # Default to local scope if not specified
+    if [ -z "$scope" ]; then
+        log "No scope specified. Defaulting to $(format_scope local) config."
+        scope="local"
+    fi
+
+    # If no value provided, show current setting
+    if [ -z "$new_value" ]; then
+        local current_value
+        current_value=$(git-config-get "$scope" "gpg.ssh.program")
+        log "Git signing program is: $current_value ($(format_scope $scope) config)"
+        return 0
+    fi
+
+    # Handle setting/unsetting
+    local config_flag=""
+    [[ "$scope" == "global" ]] && config_flag="--global"
+
+    if [ "$new_value" = "unset" ]; then
+        git config $config_flag --unset "gpg.ssh.program"
+        log "Removed git signing program setting for $(format_scope $scope) config"
+    else
+        git-config-set "$scope" "gpg.ssh.program" "$new_value"
+        log "Set git signing program to $new_value for $(format_scope $scope) config"
+    fi
+}
+
 # Function to get/set commit signing
 git-signing-enabled() {
     local scope=""
