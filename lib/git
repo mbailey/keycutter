@@ -6,7 +6,7 @@ color_override=$(tput setaf 1) # Red for overridden values
 
 # Function to format the scope with appropriate color
 format_scope() {
-    local scope="$1"
+    local scope="${1:-combined}"
     if [[ "$scope" == "local" ]]; then
         echo "${color_local}${scope}${color_reset}"
     elif [[ "$scope" == "global" ]]; then
@@ -42,18 +42,17 @@ git-config-get() {
         if [[ -n "$global_value" ]]; then
             echo "${color_global}$key: $global_value (global)${color_reset}"
         else
-            echo "Not set"
+            echo "$key: Not set"
         fi
     else
-        if [[ -n "$global_value" && -n "$local_value" ]]; then
-            echo "${color_override}# (overridden by local) $key: $global_value (global)${color_reset}"
+        if [[ -n "$local_value" ]]; then
+            local override_info=""
+            [[ -n "$global_value" ]] && override_info=" # overrides global: $global_value"
+            echo "${color_local}$key: $local_value (local)${color_reset}${color_override}${override_info}${color_reset}"
         elif [[ -n "$global_value" ]]; then
             echo "${color_global}$key: $global_value (global)${color_reset}"
-        fi
-        if [[ -n "$local_value" ]]; then
-            echo "${color_local}$key: $local_value (local)${color_reset}"
-        elif [[ -z "$global_value" ]]; then
-            echo "Not set"
+        else
+            echo "$key: Not set"
         fi
     fi
 }
@@ -190,7 +189,7 @@ git-signing-setup() {
 
 # Function to check Git SSH signing configuration
 git-signing() {
-    local scope="$1"
+    local scope="${1:-}"
     local git_dir=""
 
     # Get the current Git directory, if available
@@ -206,7 +205,7 @@ git-signing() {
     fi
 
     if [ -z "$scope" ]; then
-        scope="local"
+        scope="combined"
     fi
 
     log "Checking $(format_scope $scope) Git SSH signing configuration for directory: $git_dir"
