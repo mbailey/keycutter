@@ -39,7 +39,7 @@ Keycutter came out of an attempt to solve this problem but evolved into a tool t
 ## Quickstart
 
 ```shell
-curl https://raw.githubusercontent.com/bash-my-aws/keycutter/master/install.sh | bash
+curl https://raw.githubusercontent.com/mbailey/keycutter/master/install.sh | bash
 ```
 
 ## Goals
