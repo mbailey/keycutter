@@ -195,6 +195,25 @@ keycutter-list() {
     github-ssh-keys
 }
 
+keycutter-git-signing() {
+    git-signing "$@"
+}
+keycutter-git-signing-setup() {
+    git-signing-setup "$@"
+}
+
+keycutter-git-signing-enabled() {
+    git-signing-enabled "$@"
+}
+
+keycutter-git-signing-program() {
+    git-signing-program "$@"
+}
+
+keycutter-git-signing-help() {
+    git-signing-help
+}
+
 keycutter-update() {
     keycutter-update-git
     check_requirements
