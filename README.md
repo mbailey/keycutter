@@ -79,7 +79,9 @@ FIDO SSH Keys across multiple devices and services.
   
 - **Bash >= 4.0**
 - **Git >= 2.34.0**
-- **OpenSSH >= 8.2p1** (WSL users need `ssh-sk-helper`([OpenSSH for Windows >= 8.9p1-1](https://github.com/PowerShell/Win32-OpenSSH/releases)))
+- **OpenSSH >= 8.2p1** 
+  - **WSL** Users need `ssh-sk-helper`([OpenSSH for Windows >= 8.9p1-1](https://github.com/PowerShell/Win32-OpenSSH/releases)))
+  - **macOS** Bundled OpenSSH is borked. Update with `brew install openssh` and reload terminal
 - **nc**
 
 **Recommended:**
