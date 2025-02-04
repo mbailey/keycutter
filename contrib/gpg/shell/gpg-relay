@@ -1,0 +1,131 @@
+  function gpg_relay() {
+
+    if systemctl --user -t socket | grep -q gpg; then
+        echo "WARNING: GPG Agent is started via Socket/Sytemd.  Please Disable to enable support for WSL/GPG Relay"
+    fi
+
+    # See https://codingnest.com/how-to-use-gpg-with-yubikey-wsl/
+    # Launches socat+npiperelay to relay the gpg-agent socket file for use in WSL
+    # See https://justyn.io/blog/using-a-yubikey-for-gpg-in-windows-10-wsl-windows-subsystem-for-linux/ for details
+
+    local USER_GPGDIR="${HOME}/.gnupg"
+    local XDGRUNTIME_GPGDIR="${XDG_RUNTIME_DIR}gnupg"
+    # Get Windows user profile path and convert to Windows format
+    local WIN_USERPROFILE=$(wslpath -w "$(wslpath -u "$WINDOWS_USER_PROFILE")")
+
+    local WIN_GPGDIR="${WIN_USERPROFILE}/AppData/Local/gnupg"
+    local NPIPERELAY="$(wslpath -u "$WINDOWS_USER_PROFILE")/WSL/npiperelay.exe"
+    local GPG_RELAY_PIDFILE="${USER_GPGDIR}/.gpg-agent-relay.pid"
+    local SSH_AGENT_GPG_RELAY_PIDFILE="${USER_GPGDIR}/.ssh-agent-relay.pid"
+    local LOCKFILE="${USER_GPGDIR}/.gpg-agent-relay.lock"
+
+    # Check if another instance is running using a lock file
+    if [ -f "${LOCKFILE}" ] && [ $(( $(date +%s) - $(stat -c %Y "${LOCKFILE}") )) -lt 10 ]; then
+      echo "gpg_relay has started within last 10 seconds"
+      return 0
+    else
+      local AGENT_CLEANUP="true"
+      rm -f "${LOCKFILE}"
+    fi
+
+    if [ -f "${GPG_RELAY_PIDFILE}" ]; then
+        all_pids_exist=true
+        while read pid; do
+            if ! kill -0 "$pid" 2>/dev/null; then
+                all_pids_exist=false
+                break
+            fi
+        done < "${GPG_RELAY_PIDFILE}"
+
+        if $all_pids_exist; then
+            echo "GPG relay processes already running"
+            return 0
+        else
+            local AGENT_CLEANUP="true"
+            rm -f "${GPG_RELAY_PIDFILE}"
+        fi
+    fi
+
+    # Create lock file
+    touch "${LOCKFILE}"
+
+    local SSH_ENABLED=
+
+    if [ ! -d "${XDGRUNTIME_GPGDIR}" ]; then
+      mkdir -p "${XDGRUNTIME_GPGDIR}"
+    fi
+
+    #echo "Checking for running Windows GPG Agent"
+    if ! check_windows_gpg_agent || [[ -n ${AGENT_CLEANUP:-} ]]; then
+      echo "Clearing up socket files to allow socat socket creation"
+      rm -fv "${USER_GPGDIR}/S.gpg-agent"
+      rm -fv "${XDGRUNTIME_GPGDIR}/S.gpg-agent"
+    fi
+
+    if [ ! -d "${XDGRUNTIME_GPGDIR}" ]; then
+      mkdir -p "${XDGRUNTIME_GPGDIR}"
+    fi
+
+    # Check for and clean up stale socket files
+    for socket in "${USER_GPGDIR}/S.gpg-agent" "${XDGRUNTIME_GPGDIR}/S.gpg-agent"; do
+      if [ -S "$socket" ]; then
+        if ! fuser "$socket" >/dev/null 2>&1; then
+          echo "Removing stale socket file: $socket"
+          rm -f "$socket"
+        fi
+      fi
+    done
+
+    # Relay the regular gpg-agent socket for gpg operations
+    # TODO: The -a flag may need to be removed depending on npiperelay version
+    # Original npiperelay (jstarks) doesn't support -a, but benpye fork does
+    socat UNIX-LISTEN:"${XDGRUNTIME_GPGDIR}/S.gpg-agent,fork" EXEC:"${NPIPERELAY} -ep -ei -s -a '${WIN_GPGDIR}/S.gpg-agent'",nofork &
+    GPGPID=$!
+    echo "$GPGPID" > $GPG_RELAY_PIDFILE
+    # TODO: The -a flag may need to be removed depending on npiperelay version
+    socat UNIX-LISTEN:"${USER_GPGDIR}/S.gpg-agent,fork" EXEC:"${NPIPERELAY} -ep -ei -s -a '${WIN_GPGDIR}/S.gpg-agent'",nofork &
+    GPGPID=$!
+    echo "$GPGPID" >> $GPG_RELAY_PIDFILE
+
+    # Ensure both socat processes successfully start, then remove LOCKFILE/PIDFILE
+
+    if [ -n "$SSH_ENABLED" ]; then
+      echo "Enabling SSH Agent..."
+
+      # Relay the gpg ssh-agent
+      socat UNIX-LISTEN:"${XDGRUNTIME_GPGDIR}/S.gpg-agent.ssh,fork" EXEC:"${NPIPERELAY} -ep -ei -s -a '${WIN_GPGDIR}/S.gpg-agent.ssh'",nofork &
+      SSHPID=$!
+      echo "$SSHPID" > $SSH_AGENT_GPG_RELAY_PIDFILE
+      socat UNIX-LISTEN:"${USER_GPGDIR}/S.gpg-agent.ssh,fork" EXEC:"${NPIPERELAY} -ep -ei -s -a '${WIN_GPGDIR}/S.gpg-agent.ssh'",nofork &
+      SSHPID=$!
+      echo "$SSHPID" >> $SSH_AGENT_GPG_RELAY_PIDFILE
+    fi
+  }
+
+
+  function restart_windows_gpg_agent() {
+    powershell.exe -command "$(wslpath -w "$(wslpath -u "$WINDOWS_USER_PROFILE")")\AppData\Local\Programs\GnuPG\bin\gpg-connect-agent.exe /bye"
+  }
+
+  function check_windows_gpg_agent() {
+    gpg_process="$(/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe Get-Process gpg-agent)"
+    windows_gpg_socket="$(wslpath -u "$WINDOWS_USER_PROFILE")/AppData/Local/gnupg/S.gpg-agent"
+
+    if [[ ! -f "$windows_gpg_socket" ]]; then
+      echo "Error: No GPG Socket, assuming agent isn't running.... restarting"
+      restart_windows_gpg_agent
+      return 1
+    elif echo "$gpg_process" | grep -q gpg-agent; then
+      echo "Found GPG Agent"
+      return 0
+    else
+      echo "Error: No Windows GPG Agent running, restarting"
+      restart_windows_gpg_agent
+      return 1
+    fi
+  }
+
+if grep -qi microsoft /proc/version; then
+    echo "Starting GPG Relay"
+    gpg_relay
+fi

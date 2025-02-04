@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -o nounset -o pipefail -o errexit
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+function test_gpg_setup() {
+    echo "Testing GPG setup..."
+    
+    # Test if npiperelay exists
+    if [ ! -f "$(wslpath -u "$WINDOWS_USER_PROFILE")/WSL/npiperelay.exe" ]; then
+        echo -e "${RED}ERROR: npiperelay.exe not found${NC}"
+        return 1
+    fi
+
+    # Test if socat is installed
+    if ! command -v socat &> /dev/null; then
+        echo -e "${RED}ERROR: socat not installed${NC}"
+        return 1
+    fi
+
+    # Test GPG agent connection
+    if ! gpg-connect-agent --homedir "${HOME}/.gnupg" /bye > /dev/null 2>&1; then
+        echo -e "${RED}ERROR: Cannot connect to GPG agent${NC}"
+        return 1
+    fi
+
+    # If all tests pass
+    echo -e "${GREEN}All setup tests passed successfully!${NC}"
+    return 0
+}
+
+echo "Setting up GPG for WSL..."
+
+# Check if running in WSL
+if ! grep -q microsoft /proc/version; then
+    echo -e "${RED}This script must be run in WSL${NC}"
+    exit 1
+fi
+
+# Install required packages
+echo "Installing required packages..."
+sudo apt update
+sudo apt install -y socat gpg gpg-agent
+
+# Create directories
+echo "Creating directories..."
+mkdir -p "${HOME}/.config/gpg"
+
+# Get Windows user profile path
+WINDOWS_USER_PROFILE=$(powershell.exe -command 'Write-Host -NoNewline $env:USERPROFILE' | tr -d '\r')
+if [ -z "$WINDOWS_USER_PROFILE" ]; then
+    echo -e "${RED}ERROR: Could not determine Windows user profile path${NC}"
+    exit 1
+fi
+
+# Create WSL directory in Windows user profile
+mkdir -p "$(wslpath -u "$WINDOWS_USER_PROFILE")/WSL"
+
+# Download and setup npiperelay
+echo "Setting up npiperelay..."
+NPIPERELAY_URL="https://github.com/benpye/wsl-ssh-pageant/releases/latest/download/wsl-ssh-pageant-amd64-gui.exe"
+NPIPERELAY_PATH="$(wslpath -u "$WINDOWS_USER_PROFILE")/WSL/npiperelay.exe"
+if [ ! -f "$NPIPERELAY_PATH" ]; then
+    curl -L -o "$NPIPERELAY_PATH" "$NPIPERELAY_URL"
+fi
+
+# Install GPG4Win on Windows if not present
+if ! command -v "/mnt/c/Program Files (x86)/GnuPG/bin/gpg.exe" &> /dev/null; then
+    echo "Installing GPG4Win..."
+    powershell.exe -Command "winget install Gpg4win" || true
+fi
+
+# Copy gpg-relay script to config directory
+echo "Installing GPG relay script..."
+cp "$(dirname "$0")/../shell/gpg-relay" "${HOME}/.config/gpg/"
+# Source it immediately so we can use it
+source "${HOME}/.config/gpg/gpg-relay"
+
+# Disable systemd GPG agent sockets
+echo "Disabling systemd GPG agent sockets..."
+systemctl --user mask --now gpg-agent-browser.socket || true
+systemctl --user mask --now gpg-agent-extra.socket || true
+systemctl --user mask --now gpg-agent-ssh.socket || true
+systemctl --user mask --now gpg-agent.socket || true
+
+# Add source line to shell config if not already present
+for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
+    if [ -f "$rc" ]; then
+        if ! grep -q "source.*gpg-relay" "$rc"; then
+            echo "Adding GPG relay to $rc..."
+            echo -e "\n# GPG Relay for WSL\nsource ~/.config/gpg/gpg-relay" >> "$rc"
+        fi
+    fi
+done
+
+# Test the setup
+echo "Testing the setup..."
+if test_gpg_setup; then
+    echo -e "${GREEN}Setup completed and verified successfully!${NC}"
+else
+    echo -e "${RED}Setup completed but some tests failed. Please check the errors above.${NC}"
+    echo "You may need to:"
+    echo "1. Restart your terminal"
+    echo "2. Make sure your YubiKey is inserted"
+    echo "3. Run 'gpg --card-status' manually to verify"
+    exit 1
+fi
