@@ -49,314 +49,274 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 #      with that account without crossing security boundaries.
 #
 #   2. Only use GitHub CLI from a device you trust with that GitHub account.
-#      E.g. Don't login to your personal GitHub account from a managed laptop. 
+#      E.g. Don't login to your personal GitHub account from a managed laptop.
 #
 
 usage() {
-    echo "Usage:"
-    echo "       $(basename "$0") <command> [arguments]"
-    echo
-    echo "Commands:"
-    echo "       create <ssh-keytag> [--resident] [--type <value>]  Create a new SSH key"
-    echo "       list                                               List SSH keys on GitHub"
-    echo "       authorized-keys <hostname>                         Show public keys that would be offered to host"
-    echo "       update                                            Update keycutter from git and refresh config"
-    echo "       update-git                                        Update keycutter from git repository"
-    echo "       update-ssh-config                                 Update SSH configuration files"
-    echo "       check-requirements                                Check if all required software is installed"
-    echo "       smoke                                             Run connection tests"
-    echo
-    echo "For create command:"
-    echo "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
-    echo "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
-    echo "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk, rsa, ecdsa, ed25519)"
-    echo "                       Default is ed25519-sk"
-    echo
-    echo "SSH Keytag format: service_user@device"
-    echo "  - service : Service this key is used with (e.g. 'github.com', 'aws', 'digitalocean')"
-    echo "  - user    : Service User this SSH Key authenticates as (e.g. 'alex')"
-    echo "  - device  : Device this ssh key resides on (e.g. 'yubikey1', 'work-laptop', 'zfold5')"
+  echo "Usage:"
+  echo "       $(basename "$0") <command> [arguments]"
+  echo
+  echo "Commands:"
+  echo "       create <ssh-keytag> [--resident] [--type <value>]  Create a new SSH key"
+  echo "       list                                               List SSH keys on GitHub"
+  echo "       authorized-keys <hostname>                         Show public keys that would be offered to host"
+  echo "       update                                            Update keycutter from git and refresh config"
+  echo "       update-git                                        Update keycutter from git repository"
+  echo "       update-ssh-config                                 Update SSH configuration files"
+  echo "       check-requirements                                Check if all required software is installed"
+  echo "       smoke                                             Run connection tests"
+  echo
+  echo "For create command:"
+  echo "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
+  echo "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
+  echo "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk, rsa, ecdsa, ed25519)"
+  echo "                       Default is ed25519-sk"
+  echo
+  echo "SSH Keytag format: service_user@device"
+  echo "  - service : Service this key is used with (e.g. 'github.com', 'aws', 'digitalocean')"
+  echo "  - user    : Service User this SSH Key authenticates as (e.g. 'alex')"
+  echo "  - device  : Device this ssh key resides on (e.g. 'yubikey1', 'work-laptop', 'zfold5')"
 }
 
 keycutter-create() {
 
-    if [[ $# -lt 1 ]]; then
+  if [[ $# -lt 1 ]]; then
+    usage
+    exit 1
+  fi
+
+  # Set default values, override with command line options
+  local ssh_key_resident=""
+  local ssh_key_type="$KEYCUTTER_SSH_KEY_TYPE_SK"
+  local ssh_keytag=""
+
+  local KEYCUTTER_CONFIG_DIR="$(dirname "${KEYCUTTER_CONFIG}")"
+
+  while (("$#")); do
+    case "$1" in
+    --resident)
+      ssh_key_resident="yes"
+      shift
+      ;;
+    --type)
+      ssh_key_type="$2"
+      shift 2
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      if [[ -z $ssh_keytag ]]; then
+        ssh_keytag="$1"
+      else
+        log "Error: Invalid option $1"
         usage
         exit 1
-    fi
-
-    # Set default values, override with command line options
-    local ssh_key_resident=""
-    local ssh_key_type="$KEYCUTTER_SSH_KEY_TYPE_SK"
-    local ssh_keytag=""
-
-    local KEYCUTTER_CONFIG_DIR="$(dirname "${KEYCUTTER_CONFIG}")"
-
-    while (( "$#" )); do
-        case "$1" in
-            --resident)
-                ssh_key_resident="yes"
-                shift
-                ;;
-            --type)
-                ssh_key_type="$2"
-                shift 2
-                ;;
-            -h|--help)
-                usage
-                exit 0
-                ;;
-            *)
-                if [[ -z $ssh_keytag ]]; then
-                    ssh_keytag="$1"
-                else
-                    log "Error: Invalid option $1"
-                    usage
-                    exit 1
-                fi
-                shift
-                ;;
-        esac
-    done
-
-    if [[ -z "$ssh_keytag" ]]; then
-        usage
-        exit 1
-    fi
-
-    # Check if the ssh_keytag ends with @$KEYCUTTER_ORIGIN
-    if [[ ! "$ssh_keytag" =~ @${KEYCUTTER_ORIGIN}$ ]]; then
-        local ssh_keytag_proposed="${ssh_keytag/@*}@${KEYCUTTER_ORIGIN}"
-        prompt "Append the current device to the SSH Keytag? (${ssh_keytag_proposed}). (Y/n) "
-        read -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Nn]$ ]]; then
-            log "Proceeding with original ssh_keytag: $ssh_keytag"
-        else
-            ssh_keytag="${ssh_keytag_proposed}"
-            log "Updated ssh_keytag to: $ssh_keytag"
-        fi
-    fi
-
-    local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/keys/${ssh_keytag}" # Path SSH key will be written to
-
-    # Ensure config dirs exists wth correct perms
-    dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700 
-    dir-ensure "$(dirname "$ssh_key_path")" 0700
-
-    # Create SSH Key for $ssh_keytag
-    log "Generating SSH key: $ssh_key_path"
-    case "$ssh_key_type" in
-        ecdsa-sk|ed25519-sk)
-            ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${ssh_key_resident:+-O resident}
-            ;;
-        rsa)
-            ssh-keygen -t "$ssh_key_type" -b 4096 -f "$ssh_key_path" -C "$ssh_keytag"
-            ;;
-        ecdsa|ed25519)
-            ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag"
-            ;;
-        *)
-            log "Error: Unsupported key type: $ssh_key_type"
-            return 1
-            ;;
+      fi
+      shift
+      ;;
     esac
-    local case_exit_code=$?
-    if [[ case_exit_code -ne 0 ]]; then
-      log "WARNING No key was created"
-      return $case_exit_code
+  done
+
+  if [[ -z "$ssh_keytag" ]]; then
+    usage
+    exit 1
+  fi
+
+  # Check if the ssh_keytag ends with @$KEYCUTTER_ORIGIN
+  if [[ ! "$ssh_keytag" =~ @${KEYCUTTER_ORIGIN}$ ]]; then
+    local ssh_keytag_proposed="${ssh_keytag/@*/}@${KEYCUTTER_ORIGIN}"
+    prompt "Append the current device to the SSH Keytag? (${ssh_keytag_proposed}). (Y/n) "
+    read -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+      log "Proceeding with original ssh_keytag: $ssh_keytag"
+    else
+      ssh_keytag="${ssh_keytag_proposed}"
+      log "Updated ssh_keytag to: $ssh_keytag"
     fi
+  fi
 
-    chmod 0600 "${ssh_key_path}.pub"
+  local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/keys/${ssh_keytag}" # Path SSH key will be written to
 
-    # If the SSH Keytag includes github.com 
-    local service="$(_ssh-keytag-service "$ssh_keytag")"
-    if [[ $service =~ github.com ]]; then
-        # Optionally add SSH key to GitHub for auth and commit/tag signing: $ssh_key_path
-        github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
-        local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
-        # Option to access GitHub when firewall blocks outbound port 22
-        prompt "Symlink key to enable ssh.github.com:443? [Y/n] "
-        read -n 1 -r
-        echo
-        if ! [[ $REPLY =~ ^[Nn]$ ]]; then
-            log "Creating symlink: ln -sf $ssh_key_path ${ssh_key_path/github.com/ssh.github.com}"
-            ln -sf "$ssh_key_path" "${ssh_key_path/github.com/ssh.github.com}"
-        fi
-    else 
-        log "DEBUG Skipping GitHub specific setup - SSH Keytag identity part doesn't contain 'github.com'."
+  # Ensure config dirs exists wth correct perms
+  dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700
+  dir-ensure "$(dirname "$ssh_key_path")" 0700
+
+  # Create SSH Key for $ssh_keytag
+  log "Generating SSH key: $ssh_key_path"
+  case "$ssh_key_type" in
+  ecdsa-sk | ed25519-sk)
+    ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${ssh_key_resident:+-O resident}
+    ;;
+  rsa)
+    ssh-keygen -t "$ssh_key_type" -b 4096 -f "$ssh_key_path" -C "$ssh_keytag"
+    ;;
+  ecdsa | ed25519)
+    ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag"
+    ;;
+  *)
+    log "Error: Unsupported key type: $ssh_key_type"
+    return 1
+    ;;
+  esac
+  local case_exit_code=$?
+  if [[ case_exit_code -ne 0 ]]; then
+    log "WARNING No key was created"
+    return $case_exit_code
+  fi
+
+  chmod 0600 "${ssh_key_path}.pub"
+
+  # If the SSH Keytag includes github.com
+  local service="$(_ssh-keytag-service "$ssh_keytag")"
+  if [[ $service =~ github.com ]]; then
+    # Optionally add SSH key to GitHub for auth and commit/tag signing: $ssh_key_path
+    github-ssh-key-add "$ssh_key_path" "$ssh_keytag"
+    local demo_message="\nYou can SSH to GitHub by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
+    # Option to access GitHub when firewall blocks outbound port 22
+    prompt "Symlink key to enable ssh.github.com:443? [Y/n] "
+    read -n 1 -r
+    echo
+    if ! [[ $REPLY =~ ^[Nn]$ ]]; then
+      log "Creating symlink: ln -sf $ssh_key_path ${ssh_key_path/github.com/ssh.github.com}"
+      ln -sf "$ssh_key_path" "${ssh_key_path/github.com/ssh.github.com}"
     fi
+  else
+    log "DEBUG Skipping GitHub specific setup - SSH Keytag identity part doesn't contain 'github.com'."
+  fi
 
-    log "Success! Setup complete for key: $ssh_keytag"
+  log "Success! Setup complete for key: $ssh_keytag"
 
-    if [[ -n ${demo_message:-} ]]; then
-      echo -e "$demo_message" # Only for GitHub keys
-    fi
+  if [[ -n ${demo_message:-} ]]; then
+    echo -e "$demo_message" # Only for GitHub keys
+  fi
 }
 
 keycutter-authorized-keys() {
-    ssh-authorized-keys "$@"
+  ssh-authorized-keys "$@"
 }
 
 keycutter-list() {
-    # ssh-keys-fido
-    github-ssh-keys
+  # ssh-keys-fido
+  github-ssh-keys
 }
 
 keycutter-update() {
-    keycutter-update-git
-    check_requirements
-    keycutter-update-ssh-config
+  keycutter-update-git
+  check_requirements
+  keycutter-update-ssh-config
 }
 
 keycutter-update-git() {
-    log "Updating Keycutter from git..."
+  log "Updating Keycutter from git..."
 
-    # Check if we're in a git repository
-    if ! git -C "${KEYCUTTER_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        log "Error: ${KEYCUTTER_ROOT} is not a git repository."
-        return 1
-    fi
+  # Check if we're in a git repository
+  if ! git -C "${KEYCUTTER_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log "Error: ${KEYCUTTER_ROOT} is not a git repository."
+    return 1
+  fi
 
-    # Change to the KEYCUTTER_ROOT directory
-    cd "${KEYCUTTER_ROOT}" || {
-        log "Error: Unable to change to directory ${KEYCUTTER_ROOT}"
-        return 1
-    }
+  # Change to the KEYCUTTER_ROOT directory
+  cd "${KEYCUTTER_ROOT}" || {
+    log "Error: Unable to change to directory ${KEYCUTTER_ROOT}"
+    return 1
+  }
 
-    # Get the current branch name
-    local current_branch=$(git symbolic-ref --short HEAD)
-    if [ -z "$current_branch" ]; then
-        log "Error: Unable to determine current branch."
-        return 1
-    fi
+  # Get the current branch name
+  local current_branch=$(git symbolic-ref --short HEAD)
+  if [ -z "$current_branch" ]; then
+    log "Error: Unable to determine current branch."
+    return 1
+  fi
 
-    # Check if we're on the master branch
-    if [[ "$current_branch" != "master" ]]; then
-        log "Not on master branch. Current branch is $current_branch. Skipping update."
-        return 0
-    fi
+  # Check if we're on the master branch
+  if [[ "$current_branch" != "master" ]]; then
+    log "Not on master branch. Current branch is $current_branch. Skipping update."
+    return 0
+  fi
 
-    # Fetch the latest changes
-    if ! git fetch origin; then
-        log "Error: Failed to fetch updates from remote repository."
-        return 1
-    fi
+  # Fetch the latest changes
+  if ! git fetch origin; then
+    log "Error: Failed to fetch updates from remote repository."
+    return 1
+  fi
 
-    # Check if there are any changes to pull
-    local behind_by=$(git rev-list HEAD..origin/"$current_branch" --count 2>/dev/null)
-    if [ $? -ne 0 ]; then
-        log "Error: Unable to determine if there are updates available."
-        return 1
-    fi
+  # Check if there are any changes to pull
+  local behind_by=$(git rev-list HEAD..origin/"$current_branch" --count 2>/dev/null)
+  if [ $? -ne 0 ]; then
+    log "Error: Unable to determine if there are updates available."
+    return 1
+  fi
 
-    if [ -z "$behind_by" ] || [ "$behind_by" -eq 0 ]; then
-        log "Keycutter is already up to date."
-        return 0
-    fi
+  if [ -z "$behind_by" ] || [ "$behind_by" -eq 0 ]; then
+    log "Keycutter is already up to date."
+    return 0
+  fi
 
-    # Pull the latest changes
-    if ! git pull origin "$current_branch"; then
-        log "Error: Failed to pull updates from remote repository."
-        return 1
-    fi
+  # Pull the latest changes
+  if ! git pull origin "$current_branch"; then
+    log "Error: Failed to pull updates from remote repository."
+    return 1
+  fi
 
-    log "Keycutter git update complete."
+  log "Keycutter git update complete."
 }
 
 keycutter-update-ssh-config() {
 
-    local src_dir="${KEYCUTTER_ROOT}/ssh_config"
-    local dest_dir="${KEYCUTTER_CONFIG_DIR}"
+  local src_dir="${KEYCUTTER_ROOT}/ssh_config"
+  local dest_dir="${KEYCUTTER_CONFIG_DIR}"
 
-    # Create the destination directory structure
-    dir-ensure "$dest_dir"
-    dir-ensure "$dest_dir/agents"
-    dir-ensure "$dest_dir/hosts"
-    dir-ensure "$dest_dir/keys"
-    dir-ensure "$dest_dir/scripts"
+  # Create the destination directory structure
+  dir-ensure "$dest_dir"
+  dir-ensure "$dest_dir/agents"
+  dir-ensure "$dest_dir/hosts"
+  dir-ensure "$dest_dir/keys"
+  dir-ensure "$dest_dir/scripts"
 
-    # Apply the template for the main config file
-    apply-template "$src_dir/keycutter.conf" "$dest_dir/keycutter.conf"
+  # Apply the template for the main config file
+  apply-template "$src_dir/keycutter.conf" "$dest_dir/keycutter.conf"
 
-    # Apply template for each script in the scripts directory
-    for script in "$src_dir/scripts"/*; do
-        if [[ -f "$script" ]]; then
-            apply-template "$script" "$dest_dir/scripts/$(basename "$script")"
-        fi
-    done
+  # Apply template for each script in the scripts directory
+  for script in "$src_dir/scripts"/*; do
+    if [[ -f "$script" ]]; then
+      apply-template "$script" "$dest_dir/scripts/$(basename "$script")"
+    fi
+  done
 
-    # Add Include directive to the main SSH config file
-    prepend-line-if-missing "${HOME}/.ssh/config" "Include ${KEYCUTTER_CONFIG#${HOME}/.ssh/}"
+  # Add Include directive to the main SSH config file
+  prepend-line-if-missing "${HOME}/.ssh/config" "Include ${KEYCUTTER_CONFIG#${HOME}/.ssh/}"
 
-    log "Keycutter SSH update complete."
+  log "Keycutter SSH update complete."
 }
 
 keycutter-check-requirements() {
-    check_requirements
+  check_requirements
 }
 
 keycutter-smoke() {
-    smoke
-}
-
-keycutter-generate-completion() {
-    local completion_file="${KEYCUTTER_ROOT}/bin/keycutter-completion.bash"
-    local commands=$(declare -F | cut -d' ' -f3 | grep '^keycutter-' | sed 's/^keycutter-//' | tr '\n' ' ')
-
-    cat > "$completion_file" <<EOL
-#!/usr/bin/env bash
-
-_keycutter_completion() {
-    local cur prev words cword
-    _init_completion || return
-
-    local commands="$commands"
-
-    case \$prev in
-        keycutter)
-            COMPREPLY=(\$(compgen -W "\$commands" -- "\$cur"))
-            return
-            ;;
-        create)
-            # Add completion for create subcommand options
-            COMPREPLY=(\$(compgen -W "--resident --type" -- "\$cur"))
-            return
-            ;;
-        --type)
-            COMPREPLY=(\$(compgen -W "ecdsa-sk ed25519-sk" -- "\$cur"))
-            return
-            ;;
-    esac
-
-    # Default to filename completion
-    COMPREPLY=(\$(compgen -f -- "\$cur"))
-}
-
-complete -F _keycutter_completion keycutter
-EOL
-
-    chmod +x "$completion_file"
-    echo "Completion script generated at $completion_file"
+  smoke
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
-        usage
-        exit 1
-    fi
+  if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
+    usage
+    exit 1
+  fi
 
-    cmd="$1"
-    shift
+  cmd="$1"
+  shift
 
-    case "$cmd" in
-        create|list|authorized-keys|update|update-git|update-ssh-config|check-requirements|smoke|generate-completion)
-            "keycutter-$cmd" "$@"
-            ;;
-        *)
-            log "Error: Unknown command: $cmd"
-            usage
-            exit 1
-            ;;
-    esac
+  case "$cmd" in
+  create | list | authorized-keys | update | update-git | update-ssh-config | check-requirements | smoke | generate-completion)
+    "keycutter-$cmd" "$@"
+    ;;
+  *)
+    log "Error: Unknown command: $cmd"
+    usage
+    exit 1
+    ;;
+  esac
 fi
