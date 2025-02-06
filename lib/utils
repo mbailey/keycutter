@@ -259,24 +259,6 @@ check_version() {
     fi
 }
 
-smoke() {
-    echo "Running status check on remote"
-    echo
-    echo "# AWS Credentials"
-    aws --no-cli-pager sts get-caller-identity
-    echo
-    echo "# SSH Agent Forwarding"
-    env | grep KEYCUTTER_ORIGIN
-    echo
-    ssh-add -l
-    echo
-    env | grep SSH
-    echo
-    keytag_from_ssh_agent="$((ssh-add -l | grep git || ssh-add -l) | head -1 | awk '{print $3}' | sed 's/@.*//')"
-    echo "SSH to ${keytag_from_ssh_agent}"
-    ssh -T "$keytag_from_ssh_agent"
-}
-
 check_requirements() {
     local errors=0
 

@@ -31,7 +31,6 @@ ssh-authorized-keys() {
             id_file="${id_file/\%L/$KEYCUTTER_ORIGIN}"
         fi
         pub_file="${id_file}.pub"
-        echo $KEYCUTTER_ORIGIN
         
         if [[ -f "$pub_file" ]]; then
             # Use the existing .pub file
