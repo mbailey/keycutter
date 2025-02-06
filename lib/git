@@ -1,0 +1,337 @@
+# Define colors globally
+color_reset=$(tput sgr0)
+color_local=$(tput setaf 2)  # Green for local
+color_global=$(tput setaf 4) # Blue for global
+color_override=$(tput setaf 1) # Red for overridden values
+
+# Function to format the scope with appropriate color
+format_scope() {
+    local scope="${1:-combined}"
+    if [[ "$scope" == "local" ]]; then
+        echo "${color_local}${scope}${color_reset}"
+    elif [[ "$scope" == "global" ]]; then
+        echo "${color_global}${scope}${color_reset}"
+    else
+        echo "$scope"  # Default to no color if not local or global
+    fi
+}
+
+# Git functions
+
+# Function to set Git config
+git-config-set() {
+    local scope="$1"
+    local key="$2"
+    local value="$3"
+    local config_flag=""
+    [[ "$scope" == "global" ]] && config_flag="--global"
+    
+    git config $config_flag "$key" "$value"
+    log "Set $key to $value ($(format_scope $scope) config)"
+}
+
+# Function to get Git config with override information
+git-config-get() {
+    local scope="$1"
+    local key="$2"
+    
+    local global_value=$(git config --global --get "$key" 2>/dev/null)
+    local local_value=$(git config --local --get "$key" 2>/dev/null)
+    
+    if [[ "$scope" == "global" ]]; then
+        if [[ -n "$global_value" ]]; then
+            echo "${color_global}$global_value # global${color_reset}"
+        else
+            echo "$key: Not set"
+        fi
+    else
+        if [[ -n "$local_value" ]]; then
+            local override_info=""
+            [[ -n "$global_value" ]] && override_info=" overrides global: $global_value"
+            echo "${color_local}$local_value # local${color_reset}${color_override}${override_info}${color_reset}"
+        elif [[ -n "$global_value" ]]; then
+            echo "${color_global}$global_value # global${color_reset}"
+        else
+            echo "Not set"
+        fi
+    fi
+}
+
+# Function to check if a command exists
+command-exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Check Git version
+git-version-check() {
+    local git_version
+    git_version=$(git --version | awk '{print $3}')
+    if [ "$(printf '%s\n' "2.34" "$git_version" | sort -V | head -n1)" != "2.34" ]; then
+        echo "Error: Git version 2.34 or higher is required for SSH signing."
+        return 1
+    fi
+    return 0
+}
+
+# Function to set up Git SSH signing config
+git-signing-setup() {
+    local scope=""
+    local ssh_key=""
+
+    # Function to display help
+    show_help() {
+        echo "Usage: git-ssh-signing-setup [OPTIONS] [SSH_KEY_PATH]"
+        echo
+        echo "Set up Git SSH signing configuration."
+        echo
+        echo "Options:"
+        echo "  --global    Set the configuration globally"
+        echo "  --local     Set the configuration locally (default if not specified)"
+        echo "  help        Display this help message"
+        echo
+        echo "If SSH_KEY_PATH is not provided, you'll be prompted to select a key from \$KEYCUTTER_SSH_KEY_DIR"
+    }
+
+    # Function to select SSH key
+    select_ssh_key() {
+        if command -v fzf &> /dev/null; then
+            ssh_key=$(find "$KEYCUTTER_SSH_KEY_DIR" -type f -not -name '*.pub' | fzf --prompt="Select SSH key: " --preview="ssh-keygen -lf {}")
+        else
+            echo "Select an SSH key:"
+            local keys=()
+            while IFS= read -r -d $'\0' file; do
+                keys+=("$file")
+            done < <(find "$KEYCUTTER_SSH_KEY_DIR" -type f -not -name '*.pub' -print0)
+            
+            select key in "${keys[@]}"; do
+                if [ -n "$key" ]; then
+                    ssh_key="$key"
+                    break
+                else
+                    echo "Invalid selection. Please try again."
+                fi
+            done
+        fi
+
+        if [ -z "$ssh_key" ]; then
+            log "No SSH key selected. Exiting."
+            return 1
+        fi
+    }
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --global)
+                scope="global"
+                shift
+                ;;
+            --local)
+                scope="local"
+                shift
+                ;;
+            help)
+                show_help
+                return 0
+                ;;
+            *)
+                # Assume it's the SSH key path
+                ssh_key="$1"
+                shift
+                ;;
+        esac
+    done
+
+    # If no scope was explicitly set, default to local
+    if [ -z "$scope" ]; then
+        log "No scope specified. Defaulting to 'local' config."
+        scope="local"
+    fi
+
+    # If no SSH key was provided, use select_ssh_key function to choose one
+    if [ -z "$ssh_key" ]; then
+        select_ssh_key || return 1
+    fi
+
+    # Display proposed changes and ask for confirmation
+    log "Proposed Git SSH signing configuration:"
+    log " Scope: $(format_scope $scope)"
+    log " SSH Key: $ssh_key"
+    log " gpg.ssh.program: ~/.ssh/keycutter/scripts/git-commit-sign"
+    log " gpg.format: ssh"
+
+    echo
+    prompt "Do you want to apply these changes? (y/N) "
+    read -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]
+    then
+        log "Operation cancelled."
+        return 1
+    fi
+
+    log "Setting up Git SSH signing ($(format_scope $scope) config)..."
+
+    # Apply the configurations
+    git-config-set "$scope" "gpg.format" "ssh"
+    local script_path="$HOME/.ssh/keycutter/scripts/git-commit-sign"
+    git-config-set "$scope" "gpg.ssh.program" "$script_path"
+
+    if [ ! -f "$ssh_key" ]; then
+        log "Error: SSH key not found at $ssh_key"
+        return 1
+    fi
+
+    git-config-set "$scope" "user.signingkey" "$ssh_key"
+    log "Git SSH signing basic setup complete for $(format_scope $scope) config!"
+    return 0
+}
+
+# Function to check Git SSH signing configuration
+git-signing() {
+    local scope="${1:-}"
+    local git_dir=""
+
+    # Get the current Git directory, if available
+    if git rev-parse --show-toplevel &>/dev/null; then
+        git_dir=$(git rev-parse --show-toplevel)
+    else
+        git_dir="Not a Git repository"
+    fi
+
+    if [[ "$scope" != "global" && "$scope" != "local" && -n "$scope" ]]; then
+        log "Invalid scope provided. Scope must be either 'global' or 'local'."
+        return 1
+    fi
+
+    if [ -z "$scope" ]; then
+        scope="combined"
+    fi
+
+    log "Checking $(format_scope $scope) Git SSH signing configuration for directory: $git_dir"
+    log "gpg.format: $(git-config-get "$scope" gpg.format)"
+    log "gpg.ssh.program: $(git-config-get "$scope" gpg.ssh.program)"
+    log "user.signingkey: $(git-config-get "$scope" user.signingkey)"
+    log "commit.gpgsign: $(git-config-get "$scope" commit.gpgsign)"
+}
+
+# Function to get/set git signing program
+git-signing-program() {
+    local scope=""
+    local new_value=""
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --global)
+                scope="global"
+                shift
+                ;;
+            --local)
+                scope="local"
+                shift
+                ;;
+            none)
+                new_value="unset"
+                shift
+                ;;
+            *)
+                new_value="$1"
+                shift
+                ;;
+        esac
+    done
+
+    # Default to local scope if not specified
+    if [ -z "$scope" ]; then
+        scope="local"
+    fi
+
+    # If no value provided, show current setting
+    if [ -z "$new_value" ]; then
+        local current_value
+        current_value=$(git-config-get "$scope" "gpg.ssh.program")
+        log "Git signing program is: $current_value ($(format_scope $scope) config)"
+        return 0
+    fi
+
+    # Handle setting/unsetting
+    local config_flag=""
+    [[ "$scope" == "global" ]] && config_flag="--global"
+
+    if [ "$new_value" = "unset" ]; then
+        git config $config_flag --unset "gpg.ssh.program"
+        log "Removed git signing program setting for $(format_scope $scope) config"
+    else
+        git-config-set "$scope" "gpg.ssh.program" "$new_value"
+        log "Set git signing program to $new_value for $(format_scope $scope) config"
+    fi
+}
+
+# Function to get/set commit signing
+git-signing-enabled() {
+    local scope=""
+    local new_value=""
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --global)
+                scope="global"
+                shift
+                ;;
+            --local)
+                scope="local"
+                shift
+                ;;
+            true|false)
+                new_value="$1"
+                shift
+                ;;
+            *)
+                log "Error: Unknown option $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Default to local scope if not specified
+    if [ -z "$scope" ]; then
+        log "No scope specified. Defaulting to $(format_scope local) config."
+        scope="local"
+    fi
+
+    # If no value provided, show current setting
+    if [ -z "$new_value" ]; then
+        local current_value
+        current_value=$(git-config-get "$scope" "commit.gpgsign")
+        log "Commit signing is: $current_value ($(format_scope $scope) config)"
+        return 0
+    fi
+
+    # Set new value
+    if [ "$new_value" = "true" ]; then
+        git-config-set "$scope" "commit.gpgsign" "true"
+        log "Enabled commit signing for $(format_scope $scope) config"
+    else
+        git-config-set "$scope" "commit.gpgsign" "false"
+        log "Disabled commit signing for $(format_scope $scope) config"
+    fi
+}
+
+# Function to print setup instructions
+git-signing-help() {
+    local ssh_key="${1:-$KEYCUTTER_SSH_KEY_DIR}"
+    log "Setup instructions:"
+    log "1. Create a key via keycutter:"
+    log "   \`keycutter create github.com_me@pc\`"
+    log "2. Make sure the Git SSH signing script is in place:"
+    log "   \`keycutter update-ssh-config\`"
+    log "3. Set up Git SSH signing:"
+    log "   \`keycutter git-signing-setup\`"
+}
+
+# If this script is run directly, print example usage
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    example_usage
+fi
