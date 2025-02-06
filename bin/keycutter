@@ -333,11 +333,8 @@ EOL
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    if [[ $# -eq 0 ]]; then
-        # Show help if no arguments
-        echo "Usage: $0 <function> [arguments]"
-        echo "Available functions:"
-        declare -F | cut -d' ' -f3 | grep '^keycutter-' | sed 's/^keycutter-//'
+    if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
+        usage
         exit 1
     elif [[ "$1" == "generate-completion" ]]; then
         keycutter-generate-completion
