@@ -42,6 +42,17 @@ github-auth() {
     return 1
   fi
 
+  # Check for problematic version on Ubuntu
+  if [[ -f /etc/os-release ]] && grep -q "Ubuntu" /etc/os-release; then
+    gh_version=$(gh --version | head -n1 | awk '{print $3}')
+    if [[ "$gh_version" == "2.4.0+dfsg1-2" ]]; then
+      log >&2 "Warning: You are using GitHub CLI version $gh_version on Ubuntu"
+      log >&2 "This version has known issues. Please follow the official installation instructions to install a newer version:"
+      log >&2 "https://github.com/cli/cli/blob/trunk/docs/install_linux.md#debian-ubuntu-linux-raspberry-pi-os-apt"
+      return 1
+    fi
+  fi
+
   # Check if user is logged in to GitHub
   if gh auth status -h github.com &> /dev/null; then
     logged_in_user=$(gh auth status -h github.com | grep 'account ' | awk '{print $7}')
