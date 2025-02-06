@@ -54,20 +54,28 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 
 usage() {
     log "Usage:"
-    log "       $(basename "$0") <ssh-keytag> [--resident] [--type <value>]"
+    log "       $(basename "$0") <command> [arguments]"
     log
-    log "Arguments:"
+    log "Commands:"
+    log "       create <ssh-keytag> [--resident] [--type <value>]  Create a new SSH key"
+    log "       list                                               List SSH keys on GitHub"
+    log "       authorized-keys <hostname>                         Show public keys that would be offered to host"
+    log "       update                                            Update keycutter from git and refresh config"
+    log "       update-git                                        Update keycutter from git repository"
+    log "       update-ssh-config                                 Update SSH configuration files"
+    log "       check-requirements                                Check if all required software is installed"
+    log "       smoke                                             Run connection tests"
     log
+    log "For create command:"
     log "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
-    log
     log "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
-    log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk, rsa, ecdsa, ed25519). Default is ed25519-sk."
+    log "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk, rsa, ecdsa, ed25519)"
+    log "                       Default is ed25519-sk"
     log
     log "SSH Keytag format: service_user@device"
-    log 
     log "  - service : Service this key is used with (e.g. 'github.com', 'aws', 'digitalocean')"
     log "  - user    : Service User this SSH Key authenticates as (e.g. 'alex')"
-    log "  - device  : Device this ssh key resides on ( e.g. 'yubikey1', 'work-laptop', 'zfold5')"
+    log "  - device  : Device this ssh key resides on (e.g. 'yubikey1', 'work-laptop', 'zfold5')"
 }
 
 keycutter-create() {
@@ -336,17 +344,19 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
         usage
         exit 1
-    elif [[ "$1" == "generate-completion" ]]; then
-        keycutter-generate-completion
-    elif declare -f "keycutter-${1}" > /dev/null; then
-        # Remove the first argument (the function name) and pass the rest to the function
-        func="keycutter-$1"
-        shift
-        "$func" "$@"
-    else
-        echo "Unknown function: $1"
-        echo "Available functions:"
-        declare -F | cut -d' ' -f3 | grep '^keycutter-' | sed 's/^keycutter-//'
-        exit 1
     fi
+
+    cmd="$1"
+    shift
+
+    case "$cmd" in
+        create|list|authorized-keys|update|update-git|update-ssh-config|check-requirements|smoke|generate-completion)
+            "keycutter-$cmd" "$@"
+            ;;
+        *)
+            log "Error: Unknown command: $cmd"
+            usage
+            exit 1
+            ;;
+    esac
 fi
