@@ -111,29 +111,48 @@ fi
 
 ## Usage
 
-### Create a FIDO SSH Key
+Keycutter provides several commands to manage your SSH keys and configuration:
 
-**Provide an SSH Keytag (`<service>_<identity>@<device>`) to the create command:**
+### Core Commands
 
 ```shell
-keycutter create github.com_alex@workpc
+keycutter create <ssh-keytag> [--resident] [--type <key-type>]  # Create a new SSH key
+keycutter list                                                   # List SSH keys on GitHub
+keycutter authorized-keys <hostname>                            # Show public keys that would be offered to host
+keycutter update                                                # Update keycutter from git and refresh config
 ```
 
-For a particular service and identity on a device:
+### Additional Commands
 
-- Separate the domain name and user name with an underscore.
-- Append the device name after the `@` symbol.
+```shell
+keycutter update-git                                            # Update keycutter from git repository
+keycutter update-ssh-config                                     # Update SSH configuration files
+keycutter check-requirements                                    # Check if all required software is installed
+keycutter smoke                                                 # Run connection tests
+```
 
+### Examples
 
-## Using the keys
+#### 1. Create a FIDO SSH Key
 
-### 1. Clone a GitHub repo using your new key
+```shell
+# Create a key for your personal GitHub account on your work laptop
+keycutter create github.com_alex@workpc
+
+# Create a resident key (stored on security key) for your work GitHub account
+keycutter create github.com_alexwork@yubikey5 --resident
+
+# Create a specific type of key for GitLab
+keycutter create gitlab.com_alex@laptop --type ed25519-sk
+```
+
+#### 2. Clone a GitHub repo using your new key
 
 ```shell
 git clone git@github.com_alex:bash-my-aws/keycutter
 ```
 
-### 2. Commit a change signed with your new SSH Key
+#### 3. Commit a change signed with your new SSH Key
 
 ```shell
 cd keycutter
@@ -141,7 +160,19 @@ date >> README.md
 git commit -m "I signed this commit with my new SSH Key"
 ```
 
-### 3. Explore your new config
+#### 4. List your GitHub SSH keys
+
+```shell
+keycutter list
+```
+
+#### 5. Check what keys would be offered to a host
+
+```shell
+keycutter authorized-keys github.com
+```
+
+### Explore your new config
 
 You're ready for FIDO SSH access to anything you were using file based SSH keys for.
 
