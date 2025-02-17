@@ -27,7 +27,8 @@ github-ssh-key-add() {
         log
         # echo "Log out of GitHub"
         # gh auth logout # XXX Only if we logged in or requested additional scopes
-        log "Note:  GitHub Organisations that enable or enforce SAML SSO will require additional setup."
+        log "Note: You will need to authorise this key for any GitHub Orgs that enforce SAML SSO."
+        log "      This requires visiting https://github.com/settings/keys"
     else
         log "Error: Not uploading to key to GitHub (not authenticated)"
         return 1
