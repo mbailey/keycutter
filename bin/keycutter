@@ -123,6 +123,10 @@ keycutter-create() {
   # Check if the ssh_keytag ends with @$KEYCUTTER_ORIGIN
   if [[ ! "$ssh_keytag" =~ @${KEYCUTTER_ORIGIN}$ ]]; then
     local ssh_keytag_proposed="${ssh_keytag/@*/}@${KEYCUTTER_ORIGIN}"
+    log "Info: Using the SSH Keytag convention allows the magic to happen"
+    log "Tip: Use an alias instead of hostname by setting KEYCUTTER_ORIGIN env var."
+    log "See also: https://github.com/mbailey/keycutter/blob/master/docs/design/ssh-keytags.md"
+    log ""
     prompt "Append the current device to the SSH Keytag? (${ssh_keytag_proposed}). (Y/n) "
     read -n 1 -r
     echo
