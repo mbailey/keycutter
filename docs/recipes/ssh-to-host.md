@@ -22,10 +22,19 @@ keycutter create remote.example.com_alex@yubikey
 
 ### 2. Copy Public Key to Remote Host
 
+Use `ssh-copy-id` with `keycutter authorized-keys` to install your public keys on the remote host. You'll likely need to authenticate with a password for this initial setup:
+
 ```shell
-# Use traditional ssh-copy-id with your new key
-ssh-copy-id -o RemoteCommand=none -i ~/.ssh/keycutter/keys/remote.example.com_alex@yubikey remote.example.com
+# Copy the appropriate public keys to the remote host (will prompt for password)
+keycutter authorized-keys remote.example.com | sort -u | ssh-copy-id -o PreferredAuthentications=password -o RemoteCommand=none -i - remote.example.com
 ```
+
+This combines:
+- `keycutter authorized-keys`: Outputs the public keys that should be authorized
+- `sort -u`: Removes any duplicate keys from the output  
+- `-i -`: Reads the public keys from stdin
+- `-o PreferredAuthentications=password`: Forces password authentication
+- `-o RemoteCommand=none`: Disables Keycutter's remote setup command which would fail before keys are installed
 
 ### 3. Connect to Remote Host
 
