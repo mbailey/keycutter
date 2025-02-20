@@ -71,3 +71,20 @@ A collection of practical recipes for common SSH tasks using Keycutter.
 - Audit your SSH key usage
 
 *Note: This is a work in progress. Each recipe will be filled out with detailed instructions.*
+
+## Planned Future Features: GPG Operations
+
+*Note: The following GPG-related features are planned for future releases but are not yet implemented.*
+
+- Set up GPG on YubiKey
+- Configure GPG agent forwarding
+- Sign Git commits with GPG
+- Manage multiple GPG keys across devices
+- GPG encryption for files and messages
+- WSL-specific GPG configuration
+- GPG SSH authentication
+- Backup and restore GPG keys
+- GPG smartcard operations
+- Cross-platform GPG setup (Linux, macOS, Windows/WSL)
+
+*These features are under development. See the [GPG documentation](gpg/README.md) for current thoughts and planning.*
