@@ -64,12 +64,17 @@ You can set it:
 
    ```bash
    # Add to ~/.bashrc or ~/.zshrc
-   export KEYCUTTER_ORIGIN="work-laptop"
+   [[ -z $SSH_CONNECTION ]] && export KEYCUTTER_ORIGIN="work-laptop"
    ```
+
+   This ensures KEYCUTTER_ORIGIN is:
+   - Only set when physically present at the device
+   - Exported so it's available to subprocesses
+   - Not set when connecting via SSH
 
 3. **Per Directory** in a .env file:
 
    ```bash
    # Add to .env in your project
-   KEYCUTTER_ORIGIN=project-keys
+   [[ -z $SSH_CONNECTION ]] && export KEYCUTTER_ORIGIN="project-keys"
    ```
