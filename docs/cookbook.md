@@ -24,7 +24,7 @@ A collection of practical recipes for common SSH tasks using Keycutter.
 
 ## Remote Access
 
-- SSH to a remote host
+- [SSH to a remote host](recipes/ssh-to-host.md)
 - [Managing SSH agents](./ssh-agent.md)
 - Copy files securely using scp/rsync
 - Set up jump hosts
