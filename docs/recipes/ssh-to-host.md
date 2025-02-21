@@ -10,6 +10,7 @@ This recipe shows how to SSH to a remote host using Keycutter.
 - Keycutter installed and configured
 - A FIDO SSH key created with Keycutter
 - Remote host accessible via SSH
+- (Optional) KEYCUTTER_ORIGIN - Alternative to hostname in keytag
 
 ## Steps
 
