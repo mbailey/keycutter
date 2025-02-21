@@ -10,7 +10,7 @@ This recipe shows how to SSH to a remote host using Keycutter.
 - Keycutter installed and configured
 - A FIDO SSH key created with Keycutter
 - Remote host accessible via SSH
-- (Optional) KEYCUTTER_ORIGIN - Alternative to hostname in keytag
+- (Optional) KEYCUTTER_ORIGIN env var - Alternative to hostname in keytag
 
 ## Steps
 
@@ -36,9 +36,10 @@ keycutter authorized-keys remote.example.com | \
 ```
 
 This combines:
+
 - `keycutter authorized-keys`: Outputs the public keys that should be authorized
 - `-i -`: Reads the public keys from stdin
-- `-o PreferredAuthentications=password`: Forces password authentication 
+- `-o PreferredAuthentications=password`: Forces password authentication
 - `-o RemoteCommand=none`: Disables Keycutter's remote setup command which would fail before keys are installed
 
 ### 3. Connect to Remote Host
@@ -49,6 +50,7 @@ ssh remote.example.com
 ```
 
 Keycutter will automatically:
+
 - Use the correct SSH key
 - Handle YubiKey touch requests
 - Forward SSH agent if configured for the host
