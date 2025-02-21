@@ -19,43 +19,45 @@ ssh-authorized-keys() {
     local identity_files
     identity_files=$(ssh -G "$hostname" | grep '^identityfile ' | awk '{print $2}')
 
-    # Loop through each identity file and output the public key to stdout
-    for id_file in $identity_files; do
-        # Expand ~ to the home directory
-        id_file="${id_file/#\~/$HOME}"
-        # Expand %n to the hostname
-        id_file="${id_file//%n/$hostname}"
-        # Expand ${KEYCUTTER_ORIGIN} if it's set
-        if [[ -n "${KEYCUTTER_ORIGIN:-}" ]]; then
-            id_file="${id_file/\$\{KEYCUTTER_ORIGIN\}/$KEYCUTTER_ORIGIN}"
-            id_file="${id_file/\%L/$KEYCUTTER_ORIGIN}"
-        fi
-        pub_file="${id_file}.pub"
-        
-        if [[ -f "$pub_file" ]]; then
-            # Use the existing .pub file
-            cat "$pub_file"
-        else
-            echo >&2 "Warning: Public key $pub_file not found." 
-            if [[ -f "$id_file" ]]; then
-                # Try extracting the public key without a passphrase
-                if ssh-keygen -y -P '' -f "$id_file" > /dev/null 2>&1; then
-                    ssh-keygen -y -P '' -f "$id_file"
-                else
-                    # Prompt the user for a passphrase if required
-                    prompt "The private key $id_file requires a passphrase. Do you want to enter it? (yes/no)"
-                    read -r answer
-                    if [[ "$answer" == "yes" ]]; then
-                        ssh-keygen -y -f "$id_file"
-                    else
-                        echo "Skipping key $id_file due to missing passphrase."
-                    fi
-                fi
-            else
-                echo "Warning: Private key $id_file not found." >&2
+    # Loop through each identity file and output the public key, then sort and deduplicate
+    {
+        for id_file in $identity_files; do
+            # Expand ~ to the home directory
+            id_file="${id_file/#\~/$HOME}"
+            # Expand %n to the hostname
+            id_file="${id_file//%n/$hostname}"
+            # Expand ${KEYCUTTER_ORIGIN} if it's set
+            if [[ -n "${KEYCUTTER_ORIGIN:-}" ]]; then
+                id_file="${id_file/\$\{KEYCUTTER_ORIGIN\}/$KEYCUTTER_ORIGIN}"
+                id_file="${id_file/\%L/$KEYCUTTER_ORIGIN}"
             fi
-        fi
-    done
+            pub_file="${id_file}.pub"
+            
+            if [[ -f "$pub_file" ]]; then
+                # Use the existing .pub file
+                cat "$pub_file"
+            else
+                echo >&2 "Warning: Public key $pub_file not found." 
+                if [[ -f "$id_file" ]]; then
+                    # Try extracting the public key without a passphrase
+                    if ssh-keygen -y -P '' -f "$id_file" > /dev/null 2>&1; then
+                        ssh-keygen -y -P '' -f "$id_file"
+                    else
+                        # Prompt the user for a passphrase if required
+                        prompt "The private key $id_file requires a passphrase. Do you want to enter it? (yes/no)"
+                        read -r answer
+                        if [[ "$answer" == "yes" ]]; then
+                            ssh-keygen -y -f "$id_file"
+                        else
+                            echo "Skipping key $id_file due to missing passphrase."
+                        fi
+                    fi
+                else
+                    echo "Warning: Private key $id_file not found." >&2
+                fi
+            fi
+        done
+    } | sort -u
 }
 
 ## SSH Keytags - Manipulate SSH Keytags (strings) used by Keycutter
