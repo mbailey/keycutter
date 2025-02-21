@@ -26,13 +26,18 @@ Use `ssh-copy-id` with `keycutter authorized-keys` to install your public keys o
 
 ```shell
 # Copy the appropriate public keys to the remote host (will prompt for password)
-keycutter authorized-keys remote.example.com | ssh-copy-id -o PreferredAuthentications=password -o RemoteCommand=none -i - remote.example.com
+keycutter authorized-keys remote.example.com | \
+    ssh-copy-id \
+        -o PreferredAuthentications=password \
+        -o RemoteCommand=none \
+        -i - \
+        remote.example.com
 ```
 
 This combines:
 - `keycutter authorized-keys`: Outputs the public keys that should be authorized
 - `-i -`: Reads the public keys from stdin
-- `-o PreferredAuthentications=password`: Forces password authentication
+- `-o PreferredAuthentications=password`: Forces password authentication 
 - `-o RemoteCommand=none`: Disables Keycutter's remote setup command which would fail before keys are installed
 
 ### 3. Connect to Remote Host
