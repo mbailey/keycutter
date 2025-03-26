@@ -4,7 +4,7 @@ _keycutter_completion() {
   local cur prev words cword
   _init_completion || return
 
-  local commands="create authorized-keys update"
+  local commands="create authorized-keys update config check-requirements"
 
   case $prev in
   keycutter)

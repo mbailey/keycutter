@@ -61,13 +61,16 @@ usage() {
   echo "       check-requirements                                Check if all required software is installed"
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
   echo "       update                                            Update keycutter from git and refresh config"
-  echo "       config <hostname>                                 Show which SSH config files affect settings for hostname"
+  echo "       config <hostname>                                 Show which SSH config files and settings affect a hostname"
   echo
   echo "For create command:"
   echo "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
   echo "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
   echo "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk, rsa, ecdsa, ed25519)"
   echo "                       Default is ed25519-sk"
+  echo
+  echo "For config command:"
+  echo "  hostname   Required. The SSH hostname to analyze (e.g. github.com, server.example.com)"
   echo
   echo "SSH Keytag format: service_user@device"
   echo "  - service : Service this key is used with (e.g. 'github.com', 'aws', 'digitalocean')"

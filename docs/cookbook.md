@@ -55,6 +55,7 @@ A collection of practical recipes for common SSH tasks using Keycutter.
 ## Troubleshooting
 
 - [Common issues and solutions](troubleshooting.md)
+- [Analyze SSH configuration for a host](recipes/ssh-config-impact.md)
 - Debug SSH key offerings to hosts
 - Recover from lost/damaged security key
 - Reset FIDO PIN after failed attempts
