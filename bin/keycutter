@@ -61,6 +61,7 @@ usage() {
   echo "       check-requirements                                Check if all required software is installed"
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
   echo "       update                                            Update keycutter from git and refresh config"
+  echo "       config <hostname>                                 Show which SSH config files affect settings for hostname"
   echo
   echo "For create command:"
   echo "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
@@ -296,6 +297,24 @@ keycutter-check-requirements() {
   check_requirements
 }
 
+keycutter-config() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Hostname is required for config command"
+    usage
+    return 1
+  fi
+  
+  local hostname="$1"
+  local libexec_path="${KEYCUTTER_ROOT}/libexec/keycutter/ssh-config-impact"
+  
+  if [[ ! -x "$libexec_path" ]]; then
+    log "Error: Required script not found or not executable: $libexec_path"
+    return 1
+  fi
+  
+  "$libexec_path" "$hostname"
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
     usage
@@ -306,7 +325,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   shift
 
   case "$cmd" in
-  create | authorized-keys | update | check-requirements)
+  create | authorized-keys | update | check-requirements | config)
     "keycutter-$cmd" "$@"
     ;;
   *)

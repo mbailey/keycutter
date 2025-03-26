@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# ssh-config-impact - Show which SSH config files affect specific settings for a hostname
+#
+# This script analyzes SSH configuration to determine which files and lines
+# are responsible for each setting when connecting to a specific host.
+
+set -o nounset -o pipefail -o errexit
+
+# Get the list of files and line numbers that applied options for a hostname
+# Returns tab-separated values: filename<tab>line_number
+get_applied_files_and_lines() {
+  local hostname="$1"
+  
+  # Extract the files and line numbers from SSH verbose output
+  ssh -v -G "$hostname" 2>&1 | 
+    grep -i "Applying options" |
+    sed -E 's/^debug1: ([^ ]+) line ([0-9]+):.*/\1\t\2/' |
+    sort | uniq
+}
+
+# Get the impact of a specific config file on SSH configuration
+ssh-config-file-impact() {
+  local host="${1:-}"
+  local file="${2:-}" # Optional
+
+  if [[ -z "$host" ]]; then
+    echo "Error: Hostname is required." >&2
+    return 1
+  fi
+
+  if [[ -n $file && ! -f "$file" ]]; then
+    echo "Error: Config file '$file' not found." >&2
+    return 1
+  fi
+
+  # Get configuration with specified file or default
+  if [[ -n "$file" ]]; then
+    # Create a temporary file without Include directives
+    local file_no_includes=$(mktemp)
+    grep -v "^[[:space:]]*Include" "$file" >"$file_no_includes" 2>/dev/null
+    
+    # Compare configurations
+    comm -13 <(ssh -G -F /dev/null "$host" 2>/dev/null | sort) \
+             <(ssh -G -F "$file_no_includes" "$host" 2>/dev/null | sort)
+    
+    # Clean up
+    rm -f "$file_no_includes"
+  else
+    # If no file specified, compare with system defaults
+    comm -13 <(ssh -G -F /dev/null "$host" 2>/dev/null | sort) \
+             <(ssh -G "$host" 2>/dev/null | sort)
+  fi
+}
+
+# Analyze which config files affect SSH settings for a hostname
+analyze_config_impact() {
+  local hostname="$1"
+  
+  # Get all files that affected the configuration
+  local applied_files
+  applied_files=$(get_applied_files_and_lines "$hostname")
+  
+  if [[ -z "$applied_files" ]]; then
+    echo "No configuration files found affecting this host."
+    return 0
+  fi
+  
+  # Extract unique config files in reverse order (last applied first)
+  # Preserve original order as the last file to set a value has precedence
+  local config_files
+  config_files=$(echo "$applied_files" | cut -f1 | uniq | tac)
+  
+  # Create a temporary file to store our settings map
+  local settings_map_file
+  settings_map_file=$(mktemp)
+  
+  # Process each config file to determine its impact
+  for config_file in $config_files; do
+    # Get the impact of this specific file
+    local file_impact
+    file_impact=$(ssh-config-file-impact "$hostname" "$config_file" 2>/dev/null)
+    
+    # Get line numbers for this file
+    local line_numbers
+    line_numbers=$(echo "$applied_files" | grep -E "^$config_file"$'\t' | cut -f2)
+    
+    # For each setting affected by this file
+    while IFS= read -r setting; do
+      if [[ -n "$setting" ]]; then
+        # Extract the key from the setting
+        local key
+        key=$(echo "$setting" | awk '{print $1}')
+        
+        # Only add to map if this key hasn't been seen yet
+        if ! grep -q "^$key	" "$settings_map_file" 2>/dev/null; then
+          # Find the line number that likely set this option
+          local line_num
+          line_num=$(echo "$line_numbers" | head -1)
+          
+          # Add to our settings map with filename:line_number format (Vim-friendly)
+          echo -e "$config_file:$line_num\t$setting" >>"$settings_map_file"
+        fi
+      fi
+    done <<<"$file_impact"
+  done
+  
+  # Output the results in TSV format (file:line_number, setting)
+  # If output is to a terminal, columnize it for better readability
+  if [[ -t 1 ]]; then
+    cat "$settings_map_file" | grep -v '^$' | column -t -s $'\t'
+  else
+    cat "$settings_map_file" | grep -v '^$'
+  fi
+  
+  # Clean up
+  rm -f "$settings_map_file"
+}
+
+# Main function
+main() {
+  local hostname="${1:-}"
+  
+  if [[ -z "$hostname" ]]; then
+    echo "Error: Hostname is required." >&2
+    echo "Usage: $(basename "$0") <hostname>" >&2
+    return 1
+  fi
+  
+  # Analyze and output the impact of config files
+  analyze_config_impact "$hostname"
+}
+
+# Run function if not sourced (enables Busybox style symlinking)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  [[ -n $DEBUG ]] && set -x
+  main "$@"
+fi
