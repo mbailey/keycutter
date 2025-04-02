@@ -130,8 +130,7 @@ main() {
   analyze_config_impact "$hostname"
 }
 
-# Run function if not sourced (enables Busybox style symlinking)
+# Execute the main function if the script is run directly (not sourced)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  [[ -n $DEBUG ]] && set -x
   main "$@"
 fi
