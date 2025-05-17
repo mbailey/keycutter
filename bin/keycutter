@@ -61,7 +61,7 @@ usage() {
   echo "       check-requirements                                Check if all required software is installed"
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
   echo "       update                                            Update keycutter from git and refresh config"
-  echo "       config <hostname>                                 Show which SSH config files and settings affect a hostname"
+  echo "       config <hostname>                                 Show config relevant to host"
   echo
   echo "For create command:"
   echo "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
@@ -306,15 +306,15 @@ keycutter-config() {
     usage
     return 1
   fi
-  
+
   local hostname="$1"
   local libexec_path="${KEYCUTTER_ROOT}/libexec/keycutter/ssh-config-impact"
-  
+
   if [[ ! -x "$libexec_path" ]]; then
     log "Error: Required script not found or not executable: $libexec_path"
     return 1
   fi
-  
+
   "$libexec_path" "$hostname"
 }
 
