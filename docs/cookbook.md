@@ -3,89 +3,19 @@ alias: Keycutter Cookbook
 ---
 # Keycutter Cookbook
 
-A collection of practical recipes for common SSH tasks using Keycutter.
+The Keycutter documentation has been reorganized for clarity:
 
-## Getting Started
+## 📖 [How-To Guide](guide.md)
+The main guide for using Keycutter - contains all practical instructions for common tasks, organized by category.
 
-- Create your first FIDO SSH key
-- [Set up a YubiKey with PIN protection](yubikeys/fido2-on-yubikeys.md)
-- [Understand SSH key naming conventions](design/ssh-keytags.md)
-- Add a key to GitHub
-- Clone your first repository using the new key
-
-## Git Operations
-
-- [Why use FIDO SSH keys with Git](design/why-fido-ssh-keys-are-good-for-git-access-on-managed-devices.md)
-- Clone a repository using SSH
-- Push commits signed with your SSH key
-- Use different keys for different GitHub accounts
-- Work with multiple GitHub organizations
-- [Using rsync and inline commands](tips-and-tricks.md)
-
-## Remote Access
-
-- SSH to a remote host
-- [Managing SSH agents](./ssh-agent.md)
-- Copy files securely using scp/rsync
-- Set up jump hosts
-- Connect through firewalls (port 443)
-- [Using VSCode Remote-SSH](vscode/remote-ssh-extension.md)
-
-## Device Management
-
-- [Set up and manage YubiKeys with ykman](yubikeys/ykman-yubikey-manager.md)
-- Work with multiple YubiKeys
-- Manage multiple SSH agents
-- Move keys between devices
-- [Get notified when YubiKey needs touch](yubikeys/yubikey-touch-detector.md)
-
-## Platform Specific
-
-- Set up WSL for FIDO SSH keys
-- Configure macOS for FIDO SSH keys
-- [Configure VSCode Remote-SSH](vscode/remote-ssh-extension.md)
-- [Example VSCode settings](vscode/settings/)
-
-## AWS Integration
-
-- Use SSH over AWS Systems Manager (SSM)
-- Access EC2 instances securely
-- Temporary access to cloud resources
-
-## Troubleshooting
-
-- [Common issues and solutions](troubleshooting.md)
+## 🧩 [Recipes](recipes/)
+Step-by-step instructions for specific tasks. Currently includes:
+- [SSH to a remote host](recipes/ssh-to-host.md)
 - [Analyze SSH configuration for a host](recipes/ssh-config-impact.md)
-- Debug SSH key offerings to hosts
-- Recover from lost/damaged security key
-- Reset FIDO PIN after failed attempts
-- Fix common VSCode connection issues
-- [Understanding security layers](design/defense-layers-to-protect-against-key-misuse.md)
 
-## Security Best Practices
+## 🚀 [Planned Features](planned-features.md)
+Features and functionality planned for future releases, including GPG operations and other enhancements.
 
-- [Project design goals and philosophy](design/design-goals.md)
-- [Defense in depth approach](design/defense-layers-to-protect-against-key-misuse.md)
-- Enforce security boundaries between accounts
-- Manage keys for different trust levels
-- Regular security maintenance tasks
-- Audit your SSH key usage
+---
 
-*Note: This is a work in progress. Each recipe will be filled out with detailed instructions.*
-
-## Planned Future Features: GPG Operations
-
-*Note: The following GPG-related features are planned for future releases but are not yet implemented.*
-
-- Set up GPG on YubiKey
-- Configure GPG agent forwarding
-- Sign Git commits with GPG
-- Manage multiple GPG keys across devices
-- GPG encryption for files and messages
-- WSL-specific GPG configuration
-- GPG SSH authentication
-- Backup and restore GPG keys
-- GPG smartcard operations
-- Cross-platform GPG setup (Linux, macOS, Windows/WSL)
-
-*These features are under development. See the [GPG documentation](gpg/README.md) for current thoughts and planning.*
+For new users, start with the [How-To Guide](guide.md). For specific tasks, check the [Recipes](recipes/) directory.
