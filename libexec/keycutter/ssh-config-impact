@@ -36,7 +36,8 @@ ssh-config-file-impact() {
   # Get configuration with specified file or default
   if [[ -n "$file" ]]; then
     # Create a temporary file without Include directives
-    local file_no_includes=$(mktemp)
+    local file_no_includes
+    file_no_includes=$(mktemp)
     grep -v "^[[:space:]]*Include" "$file" >"$file_no_includes" 2>/dev/null
     
     # Compare configurations
@@ -104,13 +105,34 @@ analyze_config_impact() {
     done <<<"$file_impact"
   done
   
-  # Output the results in TSV format (file:line_number, setting)
-  # If output is to a terminal, columnize it for better readability
+  # Group settings by file:line and format output
+  # Use color for file references if outputting to terminal
+  local last_file_line=""
+  local cyan=""
+  local reset=""
+  local first_group=true
+  
   if [[ -t 1 ]]; then
-    cat "$settings_map_file" | grep -v '^$' | column -t -s $'\t'
-  else
-    cat "$settings_map_file" | grep -v '^$'
+    cyan=$'\033[1;36m'
+    reset=$'\033[0m'
   fi
+  
+  while IFS=$'\t' read -r file_line setting; do
+    if [[ "$file_line" != "$last_file_line" ]]; then
+      # Add blank line between groups (except before first)
+      if [[ "$first_group" == false ]]; then
+        echo
+      fi
+      first_group=false
+      
+      # Print the file:line header with optional color
+      echo "${cyan}${file_line}${reset}"
+      last_file_line="$file_line"
+    fi
+    
+    # Print the setting with 2-space indentation
+    echo "  $setting"
+  done < <(grep -v '^$' "$settings_map_file" | sort -t$'\t' -k1,1)
   
   # Clean up
   rm -f "$settings_map_file"
