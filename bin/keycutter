@@ -69,7 +69,7 @@ usage() {
   echo "       keys                                              List all keys"
   echo "       devices                                           List available security devices"
   echo "       yubikeys                                          List YubiKeys and FIDO tokens (TSV format)"
-  echo "       yubikey alias <serial> <alias>                    Set alias for a YubiKey"
+  echo "       yubikey name <serial> <name>                      Set name for a YubiKey"
   echo
   echo "Agent commands:"
   echo "       agent show <agent>                                Show agent details"
@@ -489,7 +489,7 @@ keycutter-yubikeys() {
   # Process each FIDO device and include header
   (
     # Print header with a marker for skim-stdin to filter
-    echo -e "#SERIAL\tALIAS\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID"
+    echo -e "#SERIAL\tNAME\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID"
     
     fido2-token -L | while read -r device_line; do
       # Extract the device path from the line (split on colon)
@@ -600,7 +600,7 @@ keycutter-yubikeys() {
       
       # Default values
       serial=${serial:-"NO_SERIAL"}
-      local alias="NO_ALIAS_SET"
+      local name="NO_NAME_SET"
       local make="Unknown"
       local model="Unknown"
       
@@ -608,13 +608,13 @@ keycutter-yubikeys() {
       if command -v ykman &>/dev/null && [[ "$serial" =~ ^[0-9]+$ ]]; then
         local ykman_name=$(ykman -d "$serial" config get-name 2>/dev/null)
         if [[ -n "$ykman_name" && "$ykman_name" != "None" ]]; then
-          alias="$ykman_name"
+          name="$ykman_name"
         fi
       fi
       
       # Fall back to local alias file if no name from ykman
-      if [[ "$alias" == "NO_ALIAS_SET" ]]; then
-        alias="${device_aliases[$serial]:-NO_ALIAS_SET}"
+      if [[ "$name" == "NO_NAME_SET" ]]; then
+        name="${device_aliases[$serial]:-NO_NAME_SET}"
       fi
 
       # Lookup make/model from USB IDs
@@ -634,7 +634,7 @@ keycutter-yubikeys() {
       caps=${caps:0:20}
 
       # Output TSV line
-      echo -e "${serial}\t${alias}\t${device}\t${make}\t${model}\t${version}\t${caps}\t${aaguid:-"N/A"}"
+      echo -e "${serial}\t${name}\t${device}\t${make}\t${model}\t${version}\t${caps}\t${aaguid:-"N/A"}"
     done
   ) | columnise
 }
@@ -1018,8 +1018,8 @@ keycutter-yubikey() {
   shift
 
   case "$subcmd" in
-  alias)
-    keycutter-yubikey-alias "$@"
+  alias|name)
+    keycutter-yubikey-name "$@"
     ;;
   *)
     log "Error: Unknown yubikey subcommand: $subcmd"
@@ -1029,22 +1029,22 @@ keycutter-yubikey() {
   esac
 }
 
-keycutter-yubikey-alias() {
+keycutter-yubikey-name() {
   if [[ $# -lt 2 ]]; then
-    log "Error: Serial number and alias required"
-    echo "Usage: keycutter yubikey alias <serial> <alias>"
+    log "Error: Serial number and name required"
+    echo "Usage: keycutter yubikey name <serial> <name>"
     return 1
   fi
 
   local serial="$1"
-  local alias="$2"
+  local name="$2"
   local alias_file="${KEYCUTTER_CONFIG_DIR}/device-aliases"
 
   # Check if ykman is available
   if command -v ykman &>/dev/null; then
     # Try to set the name using ykman
-    if ykman -d "$serial" config set-name "$alias" 2>/dev/null; then
-      log "Set YubiKey $serial name to '$alias' using ykman"
+    if ykman -d "$serial" config set-name "$name" 2>/dev/null; then
+      log "Set YubiKey $serial name to '$name' using ykman"
       return 0
     else
       log "Warning: Could not set YubiKey name using ykman, falling back to local alias file"
@@ -1057,21 +1057,21 @@ keycutter-yubikey-alias() {
   # Create the config directory if it doesn't exist
   dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700
 
-  # Check if the serial already has an alias
+  # Check if the serial already has a name in the alias file
   if [[ -f "$alias_file" ]]; then
     if grep -q "^$serial" "$alias_file"; then
-      # Update existing alias
-      sed -i "s/^$serial\t.*/$serial\t$alias/" "$alias_file"
-      log "Updated alias for YubiKey $serial to '$alias' in local file"
+      # Update existing name
+      sed -i "s/^$serial\t.*/$serial\t$name/" "$alias_file"
+      log "Updated name for YubiKey $serial to '$name' in local file"
     else
-      # Add new alias
-      echo -e "$serial\t$alias" >> "$alias_file"
-      log "Added alias '$alias' for YubiKey $serial to local file"
+      # Add new name
+      echo -e "$serial\t$name" >> "$alias_file"
+      log "Added name '$name' for YubiKey $serial to local file"
     fi
   else
-    # Create new file with the alias
-    echo -e "$serial\t$alias" > "$alias_file"
-    log "Created device aliases file and added alias '$alias' for YubiKey $serial"
+    # Create new file with the name
+    echo -e "$serial\t$name" > "$alias_file"
+    log "Created device aliases file and added name '$name' for YubiKey $serial"
   fi
 }
 
