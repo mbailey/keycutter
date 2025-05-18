@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-
 # Create a temporary directory for the example SSH configuration
 TEMP_SSH_DIR=$(mktemp -d)
 

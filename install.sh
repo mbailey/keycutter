@@ -21,6 +21,20 @@ fi
 mkdir -p "$BIN_DIR"
 ln -sf "${INSTALL_DIR}/bin/${COMMAND_NAME}" "$BIN_DIR/$COMMAND_NAME"
 
+# Install bash completion if the user has a completions directory
+if [[ -d "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions" ]]; then
+  ln -sf "${INSTALL_DIR}/shell/completions/${COMMAND_NAME}.bash" \
+         "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/$COMMAND_NAME"
+  echo "Bash completion installed. You may need to restart your shell or source your profile."
+elif [[ -d "/etc/bash_completion.d" && -w "/etc/bash_completion.d" ]]; then
+  sudo ln -sf "${INSTALL_DIR}/shell/completions/${COMMAND_NAME}.bash" \
+              "/etc/bash_completion.d/$COMMAND_NAME"
+  echo "Bash completion installed system-wide."
+else
+  echo "To enable bash completion, source the completion file in your shell profile:"
+  echo "  echo 'source ${INSTALL_DIR}/shell/completions/${COMMAND_NAME}.bash' >> ~/.bashrc"
+fi
+
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
   echo "Warning: $BIN_DIR is not in your PATH. Add it to your shell configuration:" >&2
   echo "  echo 'export PATH=\"\$PATH:$BIN_DIR\"' >> ~/.bashrc  # or your shell's config" >&2
