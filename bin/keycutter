@@ -489,9 +489,10 @@ keycutter-tokens() {
   echo -e "SERIAL\tALIAS\tMAKE\tMODEL\tVERSION\tCAPABILITIES"
 
   # Process each FIDO device
-  fido2-token -L | while read -r device; do
+  fido2-token -L | while read -r device_line; do
+    # Extract the device path from the line
+    local device=$(echo "$device_line" | awk '{print $1}')
     # Get device info
-    echo $device
     local info=$(fido2-token -I "$device" 2>/dev/null)
     if [[ $? -ne 0 ]]; then
       continue
