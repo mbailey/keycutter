@@ -486,7 +486,7 @@ keycutter-tokens() {
   fi
 
   # Print header
-  echo -e "SERIAL\tALIAS\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID"
+  echo -e "SERIAL\tALIAS\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID"
 
   # Process each FIDO device
   fido2-token -L | while read -r device_line; do
@@ -515,7 +515,16 @@ keycutter-tokens() {
     local vendor_product=$(echo "$device_line" | grep -o "vendor=[^,)]*" | cut -d= -f2)
     local product_id=$(echo "$device_line" | grep -o "product=[^,)]*" | cut -d= -f2)
     
-    # Create a device identifier using multiple pieces of information
+    # Try to get YubiKey serial number using ykman if available
+    if command -v ykman &>/dev/null && [[ "$device_line" == *"Yubico"* ]]; then
+      # Get the serial number from ykman
+      local ykman_serial=$(ykman info 2>/dev/null | grep "Serial number:" | awk '{print $3}')
+      if [[ -n "$ykman_serial" ]]; then
+        serial="$ykman_serial"
+      fi
+    fi
+    
+    # If still no serial, create a device identifier using multiple pieces of information
     if [[ -z "$serial" ]]; then
       if [[ -n "$aaguid" ]]; then
         # Use AAGUID + device path as a more specific identifier
@@ -552,7 +561,7 @@ keycutter-tokens() {
     caps=${caps:0:20}
 
     # Output TSV line
-    echo -e "${serial}\t${alias}\t${make}\t${model}\t${version}\t${caps}\t${aaguid:-"N/A"}"
+    echo -e "${serial}\t${alias}\t${device}\t${make}\t${model}\t${version}\t${caps}\t${aaguid:-"N/A"}"
   done
 }
 
