@@ -1053,8 +1053,27 @@ keycutter-yubikeys2() {
     return 1
   fi
 
+  # Debug output
+  if [[ -n "$DEBUG" ]]; then
+    log "DEBUG: Running command: ykman list"
+  fi
+
   # Get list of YubiKeys
   local ykman_list=$(ykman list 2>/dev/null)
+  local ykman_exit=$?
+  
+  # Debug output for command result
+  if [[ -n "$DEBUG" ]]; then
+    log "DEBUG: ykman list exit code: $ykman_exit"
+    log "DEBUG: ykman list output:"
+    if [[ -n "$ykman_list" ]]; then
+      echo "$ykman_list" | while read -r line; do
+        log "DEBUG:   $line"
+      done
+    else
+      log "DEBUG:   (no output)"
+    fi
+  fi
   
   if [[ -z "$ykman_list" ]]; then
     log "No YubiKeys detected."
@@ -1090,10 +1109,31 @@ keycutter-yubikeys2() {
     # Get YubiKey name if available
     local name="NO_NAME_SET"
     if [[ "$serial" != "N/A" ]]; then
+      if [[ -n "$DEBUG" ]]; then
+        log "DEBUG: Running command: ykman -d $serial config get-name"
+      fi
+      
       local ykman_name=$(ykman -d "$serial" config get-name 2>/dev/null)
+      local name_exit=$?
+      
+      if [[ -n "$DEBUG" ]]; then
+        log "DEBUG: ykman get-name exit code: $name_exit"
+        log "DEBUG: ykman get-name output: $ykman_name"
+      fi
+      
       if [[ -n "$ykman_name" && "$ykman_name" != "None" ]]; then
         name="$ykman_name"
       fi
+    fi
+    
+    # Debug output for extracted data
+    if [[ -n "$DEBUG" ]]; then
+      log "DEBUG: Extracted data for YubiKey:"
+      log "DEBUG:   Serial: $serial"
+      log "DEBUG:   Name: $name"
+      log "DEBUG:   Type: $yk_type"
+      log "DEBUG:   Firmware: $firmware"
+      log "DEBUG:   Apps: $apps"
     fi
     
     # Output TSV line
