@@ -69,6 +69,7 @@ usage() {
   echo "       keys                                              List all keys"
   echo "       devices                                           List available security devices"
   echo "       yubikeys                                          List YubiKeys and FIDO tokens (TSV format)"
+  echo "       yubikeys2                                         List YubiKeys using ykman (simpler format)"
   echo "       yubikey name <serial> <name>                      Set name for a YubiKey"
   echo
   echo "Agent commands:"
@@ -1044,6 +1045,62 @@ keycutter-key-hosts() {
     done
 }
 
+# Simple YubiKey listing function using ykman
+keycutter-yubikeys2() {
+  # Check if ykman is available
+  if ! command -v ykman &>/dev/null; then
+    log "Error: ykman not found. Install YubiKey Manager."
+    return 1
+  fi
+
+  # Get list of YubiKeys
+  local ykman_list=$(ykman list 2>/dev/null)
+  
+  if [[ -z "$ykman_list" ]]; then
+    log "No YubiKeys detected."
+    return 0
+  fi
+  
+  # Print header
+  echo -e "#SERIAL\tNAME\tTYPE\tFIRMWARE\tENABLED_APPS"
+  
+  # Process each YubiKey
+  echo "$ykman_list" | while read -r yk_line; do
+    # Extract serial number if present
+    local serial="N/A"
+    if [[ "$yk_line" =~ Serial:\ ([0-9]+) ]]; then
+      serial="${BASH_REMATCH[1]}"
+    fi
+    
+    # Extract YubiKey type
+    local yk_type=$(echo "$yk_line" | cut -d' ' -f1-3)
+    
+    # Extract firmware version
+    local firmware="N/A"
+    if [[ "$yk_line" =~ \(([0-9]+\.[0-9]+\.[0-9]+)\) ]]; then
+      firmware="${BASH_REMATCH[1]}"
+    fi
+    
+    # Extract enabled applications
+    local apps="N/A"
+    if [[ "$yk_line" =~ \[([^\]]+)\] ]]; then
+      apps="${BASH_REMATCH[1]}"
+    fi
+    
+    # Get YubiKey name if available
+    local name="NO_NAME_SET"
+    if [[ "$serial" != "N/A" ]]; then
+      local ykman_name=$(ykman -d "$serial" config get-name 2>/dev/null)
+      if [[ -n "$ykman_name" && "$ykman_name" != "None" ]]; then
+        name="$ykman_name"
+      fi
+    fi
+    
+    # Output TSV line
+    echo -e "${serial}\t${name}\t${yk_type}\t${firmware}\t${apps}"
+  done | columnise
+}
+
 # YubiKey subcommands
 keycutter-yubikey() {
   local subcmd="$1"
@@ -1117,7 +1174,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   shift
 
   case "$cmd" in
-  create | authorized-keys | update | check-requirements | config | agents | hosts | keys | devices | yubikeys)
+  create | authorized-keys | update | check-requirements | config | agents | hosts | keys | devices | yubikeys | yubikeys2)
     "keycutter-$cmd" "$@"
     ;;
   agent | host | key | yubikey)
