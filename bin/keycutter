@@ -11,6 +11,8 @@ source "${KEYCUTTER_ROOT}/lib/functions"
 [ -t 0 ] || exec </dev/tty # reattach keyboard to STDIN
 
 # If run on ORIGIN (not connected by SSH), default KEYCUTTER_ORIGIN to local hostname.
+# Track whether KEYCUTTER_ORIGIN was explicitly set
+KEYCUTTER_ORIGIN_EXPLICIT=${KEYCUTTER_ORIGIN:+true}
 [[ -z $SSH_CONNECTION ]] && : ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
 
 # Set any undefined environment variables to default values
@@ -62,6 +64,29 @@ usage() {
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
   echo "       update                                            Update keycutter from git and refresh config"
   echo "       config <hostname>                                 Show config relevant to host"
+  echo "       agents                                            List all agents"
+  echo "       hosts                                             List all hosts"
+  echo "       keys                                              List all keys"
+  echo "       devices                                           List available security devices"
+  echo "       tokens                                            List hardware tokens (TSV format)"
+  echo
+  echo "Agent commands:"
+  echo "       agent show <agent>                                Show agent details"
+  echo "       agent keys <agent>                                List keys in agent"
+  echo "       agent hosts <agent>                               List hosts using agent"
+  echo "       agent add-key <agent> <key>                       Add key to agent"
+  echo "       agent remove-key <agent> <key>                    Remove key from agent"
+  echo
+  echo "Host commands:"
+  echo "       host show <host>                                  Show host config"
+  echo "       host agent <host> [agent]                         Get/set agent for host"
+  echo "       host key <host> [key]                             Get/set key for host"
+  echo "       host config <host>                                Show SSH config for host"
+  echo
+  echo "Key commands:"
+  echo "       key show <key>                                    Show key details"
+  echo "       key agents <key>                                  List agents containing key"
+  echo "       key hosts <key>                                   List hosts using key"
   echo
   echo "For create command:"
   echo "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
@@ -128,8 +153,10 @@ keycutter-create() {
   if [[ ! "$ssh_keytag" =~ @${KEYCUTTER_ORIGIN}$ ]]; then
     local ssh_keytag_proposed="${ssh_keytag/@*/}@${KEYCUTTER_ORIGIN}"
     log "Info: Using the SSH Keytag convention allows the magic to happen"
-    log "Tip: Use an alias instead of hostname by setting KEYCUTTER_ORIGIN env var."
-    log "See also: https://github.com/mbailey/keycutter/blob/master/docs/design/ssh-keytags.md"
+    if [[ -z $KEYCUTTER_ORIGIN_EXPLICIT ]]; then
+      log "Tip: Use an alias instead of hostname by setting KEYCUTTER_ORIGIN env var."
+    fi
+    log "See also: https://github.com/mbailey/keycutter/blob/master/docs/ssh-keytags.md"
     log ""
     prompt "Append the current device to the SSH Keytag? (${ssh_keytag_proposed}). (Y/n) "
     read -n 1 -r
@@ -318,6 +345,565 @@ keycutter-config() {
   "$libexec_path" "$hostname"
 }
 
+keycutter-agents() {
+  local agents_dir="${KEYCUTTER_CONFIG_DIR}/agents"
+
+  if [[ ! -d "$agents_dir" ]]; then
+    log "No agents directory found at $agents_dir"
+    return 1
+  fi
+
+  log "SSH Agent Profiles:"
+  for agent_path in "$agents_dir"/*/; do
+    if [[ -d "$agent_path" ]]; then
+      local agent_name=$(basename "$agent_path")
+      echo "  $agent_name"
+    fi
+  done
+}
+
+keycutter-hosts() {
+  local ssh_config="${HOME}/.ssh/config"
+  local hosts_dir="${KEYCUTTER_CONFIG_DIR}/hosts"
+
+  log "Configured hosts:"
+
+  # Extract Host patterns from SSH config
+  if [[ -f "$ssh_config" ]]; then
+    grep -h "^Host " "$ssh_config" "$KEYCUTTER_CONFIG" "$hosts_dir"/* 2>/dev/null |
+      awk '{for(i=2;i<=NF;i++) print $i}' |
+      grep -v "\*" |
+      sort -u |
+      while read -r host; do
+        echo "  $host"
+      done
+  fi
+}
+
+keycutter-keys() {
+  local keys_dir="${KEYCUTTER_SSH_KEY_DIR}"
+
+  if [[ ! -d "$keys_dir" ]]; then
+    log "No keys directory found at $keys_dir"
+    return 1
+  fi
+
+  log "SSH Keys:"
+  for key_file in "$keys_dir"/*; do
+    if [[ -f "$key_file" && ! "$key_file" =~ \.pub$ && ! $(basename "$key_file") =~ ^\. ]]; then
+      local key_name=$(basename "$key_file")
+      echo "  $key_name"
+    fi
+  done
+}
+
+keycutter-devices() {
+  log "Available security devices:"
+
+  # Check for YubiKey Manager
+  if command -v ykman &>/dev/null; then
+    log ""
+    log "YubiKeys (via ykman):"
+    ykman list | while read -r device; do
+      echo "  $device"
+    done
+  fi
+
+  # Check for SSH FIDO devices
+  #  if command -v ssh-keygen &>/dev/null; then
+  #    log ""
+  #    log "FIDO devices available to SSH:"
+  #    # Try to probe for FIDO devices by attempting to generate a temporary key
+  #    local temp_key=$(mktemp)
+  #    if ssh-keygen -t ecdsa-sk -f "$temp_key" -N "" -C "probe" >/dev/null 2>&1; then
+  #      echo "  FIDO device detected (accessible via SSH)"
+  #      rm -f "$temp_key" "$temp_key.pub"
+  #    else
+  #      echo "  No FIDO devices detected or accessible"
+  #    fi
+  #  fi
+
+  # Check for fido2-token
+  if command -v fido2-token &>/dev/null; then
+    log ""
+    log "FIDO2 devices (via fido2-token):"
+    fido2-token -L | while read -r device; do
+      echo "  $device"
+    done
+  fi
+
+  # Check USB devices
+  if command -v lsusb &>/dev/null; then
+    log ""
+    log "USB security devices:"
+    lsusb | grep -iE "(yubico|yubikey|fido|security key|titan)" | while read -r device; do
+      echo "  $device"
+    done
+  fi
+
+  # Check for hidraw devices (FIDO devices use HID)
+  if [[ -d /dev ]]; then
+    local hidraw_count=$(ls /dev/hidraw* 2>/dev/null | wc -l)
+    if [[ $hidraw_count -gt 0 ]]; then
+      log ""
+      log "HID devices (potential FIDO devices): $hidraw_count found"
+      ls -la /dev/hidraw* | while read -r device; do
+        echo "  $device"
+      done
+    fi
+  fi
+}
+
+keycutter-tokens() {
+  # Check for fido2-token
+  if ! command -v fido2-token &>/dev/null; then
+    log "Error: fido2-token not found. Install libfido2 package."
+    return 1
+  fi
+
+  # USB vendor/product ID to make/model mapping
+  declare -A vendor_map=(
+    ["1050:0402"]="Yubico|YubiKey 4"
+    ["1050:0406"]="Yubico|YubiKey 4 Nano"
+    ["1050:0407"]="Yubico|YubiKey 5 NFC"
+    ["1050:0410"]="Yubico|YubiKey 5 Nano"
+    ["1050:0421"]="Yubico|YubiKey 5C NFC"
+    ["1050:0422"]="Yubico|YubiKey 5C Nano"
+    ["1050:0423"]="Yubico|YubiKey 5Ci"
+    ["18d1:5026"]="Google|Titan Security Key"
+    ["096e:0858"]="Feitian|ePass FIDO"
+    ["1ea8:c003"]="Thetis|FIDO2 Key"
+    ["0483:a2ca"]="SoloKeys|Solo 2"
+  )
+
+  # Load device aliases if config exists
+  local alias_file="${KEYCUTTER_CONFIG_DIR}/device-aliases"
+  declare -A device_aliases
+  if [[ -f "$alias_file" ]]; then
+    while IFS=$'\t' read -r serial alias; do
+      device_aliases["$serial"]="$alias"
+    done <"$alias_file"
+  fi
+
+  # Print header
+  echo -e "SERIAL\tALIAS\tMAKE\tMODEL\tVERSION\tCAPABILITIES"
+
+  # Process each FIDO device
+  fido2-token -L | while read -r device; do
+    # Get device info
+    echo $device
+    local info=$(fido2-token -I "$device" 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+      continue
+    fi
+
+    # Extract fields
+    local serial=$(echo "$info" | grep "^serial:" | awk '{print $2}')
+    local version=$(echo "$info" | grep "^version strings:" | cut -d: -f2- | tr -d ' ' | tr ',' '|')
+    local caps=$(echo "$info" | grep "^caps:" | cut -d: -f2- | sed 's/0x[0-9a-f]* (//' | sed 's/)//')
+    local vendorid=$(echo "$info" | grep "^vendorId:" | awk '{print $2}')
+    local productid=$(echo "$info" | grep "^productId:" | awk '{print $2}')
+
+    # Default values
+    serial=${serial:-"NO_SERIAL"}
+    local alias="${device_aliases[$serial]:-NO_ALIAS_SET}"
+    local make="Unknown"
+    local model="Unknown"
+
+    # Lookup make/model from USB IDs
+    if [[ -n "$vendorid" && -n "$productid" ]]; then
+      # Remove 0x prefix and convert to lowercase
+      vendorid=$(printf "%04x" "$vendorid")
+      productid=$(printf "%04x" "$productid")
+      local usb_id="${vendorid}:${productid}"
+
+      if [[ -n "${vendor_map[$usb_id]}" ]]; then
+        IFS='|' read -r make model <<<"${vendor_map[$usb_id]}"
+      fi
+    fi
+
+    # Truncate fields to keep under 80 chars
+    version=${version:0:20}
+    caps=${caps:0:20}
+
+    # Output TSV line
+    echo -e "${serial}\t${alias}\t${make}\t${model}\t${version}\t${caps}"
+  done
+}
+
+# Agent subcommands
+keycutter-agent() {
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+  show)
+    keycutter-agent-show "$@"
+    ;;
+  keys)
+    keycutter-agent-keys "$@"
+    ;;
+  hosts)
+    keycutter-agent-hosts "$@"
+    ;;
+  add-key)
+    keycutter-agent-add-key "$@"
+    ;;
+  remove-key)
+    keycutter-agent-remove-key "$@"
+    ;;
+  *)
+    log "Error: Unknown agent subcommand: $subcmd"
+    usage
+    exit 1
+    ;;
+  esac
+}
+
+keycutter-agent-show() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Agent name required"
+    return 1
+  fi
+
+  local agent="$1"
+  local agent_dir="${KEYCUTTER_CONFIG_DIR}/agents/$agent"
+  local keys_dir="${agent_dir}/keys"
+
+  if [[ ! -d "$agent_dir" ]]; then
+    log "Error: Agent '$agent' not found"
+    return 1
+  fi
+
+  log "Agent: $agent"
+
+  # Show keys in agent
+  log "Keys:"
+  if [[ -d "$keys_dir" ]]; then
+    for key_link in "$keys_dir"/*; do
+      if [[ -L "$key_link" && ! $(basename "$key_link") =~ ^\. ]]; then
+        local key_name=$(basename "$key_link")
+        echo "  $key_name"
+      fi
+    done
+  fi
+
+  # Also check for keys directly in agent directory for compatibility
+  for key_link in "$agent_dir"/*; do
+    if [[ -L "$key_link" && ! $(basename "$key_link") =~ ^\. && "$key_link" != */keys ]]; then
+      local key_name=$(basename "$key_link")
+      echo "  $key_name"
+    fi
+  done
+
+  # Show hosts using this agent
+  log ""
+  log "Hosts using this agent:"
+  grep -h "IdentityAgent.*agents/$agent" "${HOME}/.ssh/config" "$KEYCUTTER_CONFIG" "${KEYCUTTER_CONFIG_DIR}/hosts"/* 2>/dev/null |
+    grep -B5 "IdentityAgent" | grep "^Host " |
+    awk '{for(i=2;i<=NF;i++) print $i}' |
+    sort -u |
+    while read -r host; do
+      echo "  $host"
+    done
+}
+
+keycutter-agent-keys() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Agent name required"
+    return 1
+  fi
+
+  local agent="$1"
+  local agent_dir="${KEYCUTTER_CONFIG_DIR}/agents/$agent"
+  local keys_dir="${agent_dir}/keys"
+
+  if [[ ! -d "$agent_dir" ]]; then
+    log "Error: Agent '$agent' not found"
+    return 1
+  fi
+
+  log "Keys in agent '$agent':"
+  # Check keys subdirectory first
+  if [[ -d "$keys_dir" ]]; then
+    for key_link in "$keys_dir"/*; do
+      if [[ -L "$key_link" && ! $(basename "$key_link") =~ ^\. ]]; then
+        local key_name=$(basename "$key_link")
+        echo "  $key_name"
+      fi
+    done
+  fi
+
+  # Also check for keys directly in agent directory for compatibility
+  for key_link in "$agent_dir"/*; do
+    if [[ -L "$key_link" && ! $(basename "$key_link") =~ ^\. && "$key_link" != */keys ]]; then
+      local key_name=$(basename "$key_link")
+      echo "  $key_name"
+    fi
+  done
+}
+
+keycutter-agent-hosts() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Agent name required"
+    return 1
+  fi
+
+  local agent="$1"
+
+  log "Hosts using agent '$agent':"
+  grep -h "IdentityAgent.*agents/$agent" "${HOME}/.ssh/config" "$KEYCUTTER_CONFIG" "${KEYCUTTER_CONFIG_DIR}/hosts"/* 2>/dev/null |
+    grep -B5 "IdentityAgent" | grep "^Host " |
+    awk '{for(i=2;i<=NF;i++) print $i}' |
+    sort -u |
+    while read -r host; do
+      echo "  $host"
+    done
+}
+
+keycutter-agent-add-key() {
+  if [[ $# -lt 2 ]]; then
+    log "Error: Agent name and key name required"
+    return 1
+  fi
+
+  local agent="$1"
+  local key="$2"
+  local agent_dir="${KEYCUTTER_CONFIG_DIR}/agents/$agent"
+  local keys_dir="${agent_dir}/keys"
+  local key_path="${KEYCUTTER_SSH_KEY_DIR}/$key"
+
+  if [[ ! -d "$agent_dir" ]]; then
+    log "Error: Agent '$agent' not found"
+    return 1
+  fi
+
+  if [[ ! -f "$key_path" ]]; then
+    log "Error: Key '$key' not found"
+    return 1
+  fi
+
+  # Create keys subdirectory if it doesn't exist
+  [[ ! -d "$keys_dir" ]] && mkdir -p "$keys_dir"
+
+  # Create symlink in keys subdirectory
+  ln -sf "../../../keys/$key" "$keys_dir/$key"
+  log "Added key '$key' to agent '$agent'"
+}
+
+keycutter-agent-remove-key() {
+  if [[ $# -lt 2 ]]; then
+    log "Error: Agent name and key name required"
+    return 1
+  fi
+
+  local agent="$1"
+  local key="$2"
+  local keys_dir="${KEYCUTTER_CONFIG_DIR}/agents/$agent/keys"
+  local link_path="${keys_dir}/$key"
+  local alt_link_path="${KEYCUTTER_CONFIG_DIR}/agents/$agent/$key"
+
+  # Check both locations for the key
+  if [[ -L "$link_path" ]]; then
+    rm "$link_path"
+    log "Removed key '$key' from agent '$agent'"
+  elif [[ -L "$alt_link_path" ]]; then
+    rm "$alt_link_path"
+    log "Removed key '$key' from agent '$agent'"
+  else
+    log "Error: Key '$key' not found in agent '$agent'"
+    return 1
+  fi
+}
+
+# Host subcommands
+keycutter-host() {
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+  show)
+    keycutter-host-show "$@"
+    ;;
+  agent)
+    keycutter-host-agent "$@"
+    ;;
+  key)
+    keycutter-host-key "$@"
+    ;;
+  config)
+    keycutter-host-config "$@"
+    ;;
+  *)
+    log "Error: Unknown host subcommand: $subcmd"
+    usage
+    exit 1
+    ;;
+  esac
+}
+
+keycutter-host-show() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Host name required"
+    return 1
+  fi
+
+  local host="$1"
+  log "Host: $host"
+
+  # Extract SSH config for this host
+  ssh -G "$host" | grep -E '^(hostname|user|port|identityfile|identityagent|forwardagent)' | while read -r line; do
+    echo "  $line"
+  done
+}
+
+keycutter-host-agent() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Host name required"
+    return 1
+  fi
+
+  local host="$1"
+  local agent="$2"
+
+  if [[ -z "$agent" ]]; then
+    # Get current agent
+    local current_agent=$(ssh -G "$host" | grep '^identityagent' | awk '{print $2}')
+    if [[ -n "$current_agent" ]]; then
+      echo "Agent for $host: $(basename $(dirname "$current_agent"))"
+    else
+      echo "No agent configured for $host"
+    fi
+  else
+    # Set agent - would need to modify SSH config
+    log "Setting agent for hosts is not yet implemented"
+    return 1
+  fi
+}
+
+keycutter-host-key() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Host name required"
+    return 1
+  fi
+
+  local host="$1"
+  local key="$2"
+
+  if [[ -z "$key" ]]; then
+    # Get current keys
+    log "Identity files for $host:"
+    ssh -G "$host" | grep '^identityfile' | awk '{print $2}' | while read -r keyfile; do
+      echo "  $(basename "$keyfile")"
+    done
+  else
+    # Set key - would need to modify SSH config
+    log "Setting keys for hosts is not yet implemented"
+    return 1
+  fi
+}
+
+keycutter-host-config() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Host name required"
+    return 1
+  fi
+
+  local host="$1"
+  keycutter-config "$host"
+}
+
+# Key subcommands
+keycutter-key() {
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+  show)
+    keycutter-key-show "$@"
+    ;;
+  agents)
+    keycutter-key-agents "$@"
+    ;;
+  hosts)
+    keycutter-key-hosts "$@"
+    ;;
+  *)
+    log "Error: Unknown key subcommand: $subcmd"
+    usage
+    exit 1
+    ;;
+  esac
+}
+
+keycutter-key-show() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Key name required"
+    return 1
+  fi
+
+  local key="$1"
+  local key_path="${KEYCUTTER_SSH_KEY_DIR}/$key"
+
+  if [[ ! -f "$key_path" ]]; then
+    log "Error: Key '$key' not found"
+    return 1
+  fi
+
+  log "Key: $key"
+
+  # Show key fingerprint
+  if command -v ssh-keygen &>/dev/null; then
+    log "Fingerprint:"
+    ssh-keygen -lf "$key_path"
+  fi
+
+  # Show which agents contain this key
+  keycutter-key-agents "$key"
+
+  # Show which hosts use this key
+  keycutter-key-hosts "$key"
+}
+
+keycutter-key-agents() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Key name required"
+    return 1
+  fi
+
+  local key="$1"
+
+  log "Agents containing key '$key':"
+  for agent_dir in "${KEYCUTTER_CONFIG_DIR}/agents"/*/; do
+    # Check in keys subdirectory first
+    if [[ -L "$agent_dir/keys/$key" ]]; then
+      echo "  $(basename "$agent_dir")"
+    # Also check in agent directory directly
+    elif [[ -L "$agent_dir/$key" ]]; then
+      echo "  $(basename "$agent_dir")"
+    fi
+  done
+}
+
+keycutter-key-hosts() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Key name required"
+    return 1
+  fi
+
+  local key="$1"
+
+  log "Hosts using key '$key':"
+  # Search for hosts that have this key in their identity files
+  grep -h "IdentityFile.*$key" "${HOME}/.ssh/config" "$KEYCUTTER_CONFIG" "${KEYCUTTER_CONFIG_DIR}/hosts"/* 2>/dev/null |
+    grep -B5 "IdentityFile.*$key" | grep "^Host " |
+    awk '{for(i=2;i<=NF;i++) print $i}' |
+    sort -u |
+    while read -r host; do
+      echo "  $host"
+    done
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
     usage
@@ -328,7 +914,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   shift
 
   case "$cmd" in
-  create | authorized-keys | update | check-requirements | config)
+  create | authorized-keys | update | check-requirements | config | agents | hosts | keys | devices | tokens)
+    "keycutter-$cmd" "$@"
+    ;;
+  agent | host | key)
     "keycutter-$cmd" "$@"
     ;;
   *)
