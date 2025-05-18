@@ -521,6 +521,15 @@ keycutter-tokens() {
         # Get list of connected YubiKeys with their device paths
         local ykman_list=$(ykman list 2>/dev/null)
         
+        # Debug output when DEBUG is set
+        if [[ -n "$DEBUG" ]]; then
+          log "DEBUG: device_path = $device_path"
+          log "DEBUG: ykman list output:"
+          echo "$ykman_list" | while read -r line; do
+            log "DEBUG:   $line"
+          done
+        fi
+        
         # Find the serial number for this specific device by matching the device path
         if [[ -n "$ykman_list" ]]; then
           # Look for exact device path match
@@ -531,6 +540,11 @@ keycutter-tokens() {
             # Format vendor:product ID for matching
             local vid_pid=$(printf "%04x:%04x" "$vendorid" "$productid")
             ykman_line=$(echo "$ykman_list" | grep -i "$vid_pid")
+            
+            if [[ -n "$DEBUG" ]]; then
+              log "DEBUG: No exact device path match, trying VID:PID = $vid_pid"
+              log "DEBUG: Matched line: $ykman_line"
+            fi
           fi
           
           # Extract serial number if we found a matching line
@@ -538,8 +552,15 @@ keycutter-tokens() {
             local ykman_serial=$(echo "$ykman_line" | grep -o "Serial: [0-9]*" | awk '{print $2}')
             if [[ -n "$ykman_serial" ]]; then
               serial="$ykman_serial"
+              [[ -n "$DEBUG" ]] && log "DEBUG: Found YubiKey serial: $ykman_serial"
+            else
+              [[ -n "$DEBUG" ]] && log "DEBUG: Could not extract serial from line: $ykman_line"
             fi
+          else
+            [[ -n "$DEBUG" ]] && log "DEBUG: No matching YubiKey found"
           fi
+        else
+          [[ -n "$DEBUG" ]] && log "DEBUG: No YubiKeys found with ykman list"
         fi
       fi
       
