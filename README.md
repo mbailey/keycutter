@@ -2,7 +2,7 @@
 alias: Keycutter
 ---
 
-# Keycutter: Strengthen your SSH key privacy and security.
+# Keycutter: Strengthen your SSH key privacy and security
 
 Keycutter simplifies using multiple private SSH keys on multiple devices.
 
