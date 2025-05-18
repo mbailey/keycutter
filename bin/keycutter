@@ -515,10 +515,21 @@ keycutter-tokens() {
       
       # Try to get YubiKey serial number using ykman if available
       if command -v ykman &>/dev/null && [[ "$device_line" == *"Yubico"* ]]; then
-        # Get the serial number from ykman
-        local ykman_serial=$(ykman info 2>/dev/null | grep "Serial number:" | awk '{print $3}')
-        if [[ -n "$ykman_serial" ]]; then
-          serial="$ykman_serial"
+        # Extract the device path to identify the specific YubiKey
+        local device_path="${device##*/}"
+        
+        # Get list of connected YubiKeys with their device paths
+        local ykman_list=$(ykman list 2>/dev/null)
+        
+        # Find the serial number for this specific device
+        if [[ -n "$ykman_list" && "$ykman_list" == *"$device_path"* ]]; then
+          # Extract the serial number from the matching line
+          local ykman_line=$(echo "$ykman_list" | grep "$device_path")
+          local ykman_serial=$(echo "$ykman_line" | grep -o "Serial: [0-9]*" | awk '{print $2}')
+          
+          if [[ -n "$ykman_serial" ]]; then
+            serial="$ykman_serial"
+          fi
         fi
       fi
       
