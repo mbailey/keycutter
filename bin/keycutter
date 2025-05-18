@@ -487,82 +487,81 @@ keycutter-tokens() {
 
   # Print header with a marker for skim-stdin to filter
   echo -e "#SERIAL\tALIAS\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID"
-  (
-
+  
   # Process each FIDO device
-  fido2-token -L | while read -r device_line; do
-    # Extract the device path from the line (split on colon)
-    local device=$(echo "$device_line" | cut -d':' -f1)
-    # Get device info
-    local info=$(fido2-token -I "$device" 2>/dev/null)
-    if [[ $? -ne 0 ]]; then
-      continue
-    fi
-
-    # Debug output is disabled for clean TSV output
-
-    # Extract fields
-    local serial=$(echo "$info" | grep "^serial:" | awk '{print $2}')
-    local aaguid=$(echo "$info" | grep "^aaguid:" | awk '{print $2}')
-    local version=$(echo "$info" | grep "^version strings:" | cut -d: -f2- | tr -d ' ' | tr ',' '|')
-    local caps=$(echo "$info" | grep "^caps:" | cut -d: -f2- | sed 's/0x[0-9a-f]* (//' | sed 's/)//')
-    local vendorid=$(echo "$info" | grep "^vendorId:" | awk '{print $2}')
-    local productid=$(echo "$info" | grep "^productId:" | awk '{print $2}')
-
-    # Extract device path and vendor/product info from the original line
-    local vendor_product=$(echo "$device_line" | grep -o "vendor=[^,)]*" | cut -d= -f2)
-    local product_id=$(echo "$device_line" | grep -o "product=[^,)]*" | cut -d= -f2)
-    
-    # Try to get YubiKey serial number using ykman if available
-    if command -v ykman &>/dev/null && [[ "$device_line" == *"Yubico"* ]]; then
-      # Get the serial number from ykman
-      local ykman_serial=$(ykman info 2>/dev/null | grep "Serial number:" | awk '{print $3}')
-      if [[ -n "$ykman_serial" ]]; then
-        serial="$ykman_serial"
+  (
+    fido2-token -L | while read -r device_line; do
+      # Extract the device path from the line (split on colon)
+      local device=$(echo "$device_line" | cut -d':' -f1)
+      # Get device info
+      local info=$(fido2-token -I "$device" 2>/dev/null)
+      if [[ $? -ne 0 ]]; then
+        continue
       fi
-    fi
-    
-    # If still no serial, create a device identifier using multiple pieces of information
-    if [[ -z "$serial" ]]; then
-      if [[ -n "$aaguid" ]]; then
-        # Use AAGUID + device path as a more specific identifier
-        serial="aaguid:${aaguid}:${device##*/}"
-      elif [[ -n "$vendor_product" && -n "$product_id" ]]; then
-        # Use vendor:product + device path if no AAGUID
-        serial="usb:${vendor_product}:${product_id}:${device##*/}"
-      else
-        # Last resort - just use device path
-        serial="dev:${device##*/}"
+
+      # Debug output is disabled for clean TSV output
+
+      # Extract fields
+      local serial=$(echo "$info" | grep "^serial:" | awk '{print $2}')
+      local aaguid=$(echo "$info" | grep "^aaguid:" | awk '{print $2}')
+      local version=$(echo "$info" | grep "^version strings:" | cut -d: -f2- | tr -d ' ' | tr ',' '|')
+      local caps=$(echo "$info" | grep "^caps:" | cut -d: -f2- | sed 's/0x[0-9a-f]* (//' | sed 's/)//')
+      local vendorid=$(echo "$info" | grep "^vendorId:" | awk '{print $2}')
+      local productid=$(echo "$info" | grep "^productId:" | awk '{print $2}')
+
+      # Extract device path and vendor/product info from the original line
+      local vendor_product=$(echo "$device_line" | grep -o "vendor=[^,)]*" | cut -d= -f2)
+      local product_id=$(echo "$device_line" | grep -o "product=[^,)]*" | cut -d= -f2)
+      
+      # Try to get YubiKey serial number using ykman if available
+      if command -v ykman &>/dev/null && [[ "$device_line" == *"Yubico"* ]]; then
+        # Get the serial number from ykman
+        local ykman_serial=$(ykman info 2>/dev/null | grep "Serial number:" | awk '{print $3}')
+        if [[ -n "$ykman_serial" ]]; then
+          serial="$ykman_serial"
+        fi
       fi
-    fi
-    
-    # Default values
-    serial=${serial:-"NO_SERIAL"}
-    local alias="${device_aliases[$serial]:-NO_ALIAS_SET}"
-    local make="Unknown"
-    local model="Unknown"
-
-    # Lookup make/model from USB IDs
-    if [[ -n "$vendorid" && -n "$productid" ]]; then
-      # Remove 0x prefix and convert to lowercase
-      vendorid=$(printf "%04x" "$vendorid")
-      productid=$(printf "%04x" "$productid")
-      local usb_id="${vendorid}:${productid}"
-
-      if [[ -n "${vendor_map[$usb_id]}" ]]; then
-        IFS='|' read -r make model <<<"${vendor_map[$usb_id]}"
+      
+      # If still no serial, create a device identifier using multiple pieces of information
+      if [[ -z "$serial" ]]; then
+        if [[ -n "$aaguid" ]]; then
+          # Use AAGUID + device path as a more specific identifier
+          serial="aaguid:${aaguid}:${device##*/}"
+        elif [[ -n "$vendor_product" && -n "$product_id" ]]; then
+          # Use vendor:product + device path if no AAGUID
+          serial="usb:${vendor_product}:${product_id}:${device##*/}"
+        else
+          # Last resort - just use device path
+          serial="dev:${device##*/}"
+        fi
       fi
-    fi
+      
+      # Default values
+      serial=${serial:-"NO_SERIAL"}
+      local alias="${device_aliases[$serial]:-NO_ALIAS_SET}"
+      local make="Unknown"
+      local model="Unknown"
 
-    # Truncate fields to keep under 80 chars
-    version=${version:0:20}
-    caps=${caps:0:20}
+      # Lookup make/model from USB IDs
+      if [[ -n "$vendorid" && -n "$productid" ]]; then
+        # Remove 0x prefix and convert to lowercase
+        vendorid=$(printf "%04x" "$vendorid")
+        productid=$(printf "%04x" "$productid")
+        local usb_id="${vendorid}:${productid}"
 
-    # Output TSV line
-    echo -e "${serial}\t${alias}\t${device}\t${make}\t${model}\t${version}\t${caps}\t${aaguid:-"N/A"}"
-  done
-  )
-} | columnise
+        if [[ -n "${vendor_map[$usb_id]}" ]]; then
+          IFS='|' read -r make model <<<"${vendor_map[$usb_id]}"
+        fi
+      fi
+
+      # Truncate fields to keep under 80 chars
+      version=${version:0:20}
+      caps=${caps:0:20}
+
+      # Output TSV line
+      echo -e "${serial}\t${alias}\t${device}\t${make}\t${model}\t${version}\t${caps}\t${aaguid:-"N/A"}"
+    done
+  ) | columnise
 }
 
 # Agent subcommands
