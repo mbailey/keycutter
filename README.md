@@ -49,7 +49,7 @@ While initially created for use with YubiKeys and GitHub, Keycutter supports oth
 
 ```bash
 git clone git@github.com_alex:mbailey/keycutter.git     # Github user @alex
-ssh clone git@github.com_alexwork:mbailey/keycutter.git # Github user @alexwork
+git clone git@github.com_alexwork:mbailey/keycutter.git # Github user @alexwork
 ```
 
 No Host entries needed - keycutter automatically routes to the correct host and uses the appropriate key.
