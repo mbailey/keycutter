@@ -600,9 +600,22 @@ keycutter-yubikeys() {
       
       # Default values
       serial=${serial:-"NO_SERIAL"}
-      local alias="${device_aliases[$serial]:-NO_ALIAS_SET}"
+      local alias="NO_ALIAS_SET"
       local make="Unknown"
       local model="Unknown"
+      
+      # Try to get the YubiKey name from ykman if it's a YubiKey with a serial number
+      if command -v ykman &>/dev/null && [[ "$serial" =~ ^[0-9]+$ ]]; then
+        local ykman_name=$(ykman -d "$serial" config get-name 2>/dev/null)
+        if [[ -n "$ykman_name" && "$ykman_name" != "None" ]]; then
+          alias="$ykman_name"
+        fi
+      fi
+      
+      # Fall back to local alias file if no name from ykman
+      if [[ "$alias" == "NO_ALIAS_SET" ]]; then
+        alias="${device_aliases[$serial]:-NO_ALIAS_SET}"
+      fi
 
       # Lookup make/model from USB IDs
       if [[ -n "$vendorid" && -n "$productid" ]]; then
@@ -1027,6 +1040,20 @@ keycutter-yubikey-alias() {
   local alias="$2"
   local alias_file="${KEYCUTTER_CONFIG_DIR}/device-aliases"
 
+  # Check if ykman is available
+  if command -v ykman &>/dev/null; then
+    # Try to set the name using ykman
+    if ykman -d "$serial" config set-name "$alias" 2>/dev/null; then
+      log "Set YubiKey $serial name to '$alias' using ykman"
+      return 0
+    else
+      log "Warning: Could not set YubiKey name using ykman, falling back to local alias file"
+    fi
+  else
+    log "Warning: ykman not available, using local alias file instead"
+  fi
+
+  # Fallback to local alias file
   # Create the config directory if it doesn't exist
   dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700
 
@@ -1035,11 +1062,11 @@ keycutter-yubikey-alias() {
     if grep -q "^$serial" "$alias_file"; then
       # Update existing alias
       sed -i "s/^$serial\t.*/$serial\t$alias/" "$alias_file"
-      log "Updated alias for YubiKey $serial to '$alias'"
+      log "Updated alias for YubiKey $serial to '$alias' in local file"
     else
       # Add new alias
       echo -e "$serial\t$alias" >> "$alias_file"
-      log "Added alias '$alias' for YubiKey $serial"
+      log "Added alias '$alias' for YubiKey $serial to local file"
     fi
   else
     # Create new file with the alias
