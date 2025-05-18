@@ -68,7 +68,8 @@ usage() {
   echo "       hosts                                             List all hosts"
   echo "       keys                                              List all keys"
   echo "       devices                                           List available security devices"
-  echo "       tokens                                            List hardware tokens (TSV format)"
+  echo "       yubikeys                                          List YubiKeys and FIDO tokens (TSV format)"
+  echo "       yubikey alias <serial> <alias>                    Set alias for a YubiKey"
   echo
   echo "Agent commands:"
   echo "       agent show <agent>                                Show agent details"
@@ -454,7 +455,7 @@ keycutter-devices() {
   fi
 }
 
-keycutter-tokens() {
+keycutter-yubikeys() {
   # Check for fido2-token
   if ! command -v fido2-token &>/dev/null; then
     log "Error: fido2-token not found. Install libfido2 package."
@@ -998,6 +999,55 @@ keycutter-key-hosts() {
     done
 }
 
+# YubiKey subcommands
+keycutter-yubikey() {
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+  alias)
+    keycutter-yubikey-alias "$@"
+    ;;
+  *)
+    log "Error: Unknown yubikey subcommand: $subcmd"
+    usage
+    exit 1
+    ;;
+  esac
+}
+
+keycutter-yubikey-alias() {
+  if [[ $# -lt 2 ]]; then
+    log "Error: Serial number and alias required"
+    echo "Usage: keycutter yubikey alias <serial> <alias>"
+    return 1
+  fi
+
+  local serial="$1"
+  local alias="$2"
+  local alias_file="${KEYCUTTER_CONFIG_DIR}/device-aliases"
+
+  # Create the config directory if it doesn't exist
+  dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700
+
+  # Check if the serial already has an alias
+  if [[ -f "$alias_file" ]]; then
+    if grep -q "^$serial" "$alias_file"; then
+      # Update existing alias
+      sed -i "s/^$serial\t.*/$serial\t$alias/" "$alias_file"
+      log "Updated alias for YubiKey $serial to '$alias'"
+    else
+      # Add new alias
+      echo -e "$serial\t$alias" >> "$alias_file"
+      log "Added alias '$alias' for YubiKey $serial"
+    fi
+  else
+    # Create new file with the alias
+    echo -e "$serial\t$alias" > "$alias_file"
+    log "Created device aliases file and added alias '$alias' for YubiKey $serial"
+  fi
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
     usage
@@ -1008,10 +1058,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   shift
 
   case "$cmd" in
-  create | authorized-keys | update | check-requirements | config | agents | hosts | keys | devices | tokens)
+  create | authorized-keys | update | check-requirements | config | agents | hosts | keys | devices | yubikeys)
     "keycutter-$cmd" "$@"
     ;;
-  agent | host | key)
+  agent | host | key | yubikey)
     "keycutter-$cmd" "$@"
     ;;
   *)
