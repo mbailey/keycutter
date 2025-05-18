@@ -518,7 +518,7 @@ keycutter-tokens() {
         # Extract the device path to identify the specific YubiKey
         local device_path="${device##*/}"
         
-        # Get list of connected YubiKeys with their device paths
+        # Get list of connected YubiKeys
         local ykman_list=$(ykman list 2>/dev/null)
         
         # Debug output when DEBUG is set
@@ -530,37 +530,56 @@ keycutter-tokens() {
           done
         fi
         
-        # Find the serial number for this specific device by matching the device path
-        if [[ -n "$ykman_list" ]]; then
-          # Look for exact device path match
-          local ykman_line=$(echo "$ykman_list" | grep -F "$device_path")
-          
-          # If no exact match, try to match by vendor/product ID
-          if [[ -z "$ykman_line" && -n "$vendorid" && -n "$productid" ]]; then
-            # Format vendor:product ID for matching
-            local vid_pid=$(printf "%04x:%04x" "$vendorid" "$productid")
-            ykman_line=$(echo "$ykman_list" | grep -i "$vid_pid")
-            
-            if [[ -n "$DEBUG" ]]; then
-              log "DEBUG: No exact device path match, trying VID:PID = $vid_pid"
-              log "DEBUG: Matched line: $ykman_line"
-            fi
-          fi
-          
-          # Extract serial number if we found a matching line
-          if [[ -n "$ykman_line" ]]; then
-            local ykman_serial=$(echo "$ykman_line" | grep -o "Serial: [0-9]*" | awk '{print $2}')
-            if [[ -n "$ykman_serial" ]]; then
-              serial="$ykman_serial"
-              [[ -n "$DEBUG" ]] && log "DEBUG: Found YubiKey serial: $ykman_serial"
-            else
-              [[ -n "$DEBUG" ]] && log "DEBUG: Could not extract serial from line: $ykman_line"
-            fi
-          else
-            [[ -n "$DEBUG" ]] && log "DEBUG: No matching YubiKey found"
+        # Since we can't directly match the hidraw device with ykman output,
+        # we'll use a different approach:
+        
+        # 1. For YubiKeys, if there's only one YubiKey connected, use its serial
+        local yk_count=$(echo "$ykman_list" | grep -c "YubiKey")
+        
+        if [[ $yk_count -eq 1 ]]; then
+          # Only one YubiKey, safe to use its serial
+          local ykman_serial=$(echo "$ykman_list" | grep "YubiKey" | grep -o "Serial: [0-9]*" | awk '{print $2}')
+          if [[ -n "$ykman_serial" ]]; then
+            serial="$ykman_serial"
+            [[ -n "$DEBUG" ]] && log "DEBUG: Found single YubiKey with serial: $ykman_serial"
           fi
         else
-          [[ -n "$DEBUG" ]] && log "DEBUG: No YubiKeys found with ykman list"
+          # Multiple YubiKeys or none - try to match by AAGUID if available
+          if [[ -n "$aaguid" ]]; then
+            # Try to use info command on each YubiKey to find matching AAGUID
+            echo "$ykman_list" | grep "YubiKey" | while read -r yk_line; do
+              if [[ "$yk_line" =~ Serial:\ ([0-9]+) ]]; then
+                local this_serial="${BASH_REMATCH[1]}"
+                [[ -n "$DEBUG" ]] && log "DEBUG: Checking YubiKey with serial: $this_serial"
+                
+                # Try to get FIDO info for this YubiKey
+                local fido_info=$(ykman -d "$this_serial" fido info 2>/dev/null)
+                if [[ -n "$fido_info" && "$fido_info" == *"$aaguid"* ]]; then
+                  serial="$this_serial"
+                  [[ -n "$DEBUG" ]] && log "DEBUG: Matched YubiKey by AAGUID: $this_serial"
+                  break
+                fi
+              fi
+            done
+          fi
+          
+          # If still no match, try by vendor/product ID as last resort
+          if [[ -z "$serial" || "$serial" == *"aaguid:"* ]] && [[ -n "$vendorid" && -n "$productid" ]]; then
+            local vid_pid=$(printf "%04x:%04x" "$vendorid" "$productid")
+            [[ -n "$DEBUG" ]] && log "DEBUG: Trying to match by VID:PID = $vid_pid"
+            
+            # Look for YubiKey with matching vendor/product ID
+            local matched_line=$(echo "$ykman_list" | grep -i "YubiKey" | head -1)
+            if [[ -n "$matched_line" ]]; then
+              local ykman_serial=$(echo "$matched_line" | grep -o "Serial: [0-9]*" | awk '{print $2}')
+              if [[ -n "$ykman_serial" ]]; then
+                serial="$ykman_serial"
+                [[ -n "$DEBUG" ]] && log "DEBUG: Using first YubiKey serial as fallback: $ykman_serial"
+              fi
+            else
+              [[ -n "$DEBUG" ]] && log "DEBUG: No matching YubiKey found by VID:PID"
+            fi
+          fi
         fi
       fi
       
