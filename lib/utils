@@ -259,15 +259,58 @@ check_version() {
     fi
 }
 
-# Columnize output if stdout is a terminal
-columnize-output() {
-  # Takes input from stdin and formats it into columns if stdout is a terminal
-  # Otherwise passes through unchanged
-  if [[ -t 1 ]]; then
-    column -t -s $'\t'
+# Handy function to columnise output
+#
+# Formats tabular data with aligned columns when output is a terminal,
+# but preserves TSV format when piping to another command
+columnise() {
+  # Check if no arguments are provided
+  if [ $# -eq 0 ]; then
+    if ! [[ -t 1 ]]; then
+      cat
+    else
+      column -t -s $'\t'
+    fi
   else
-    cat
+    # Loop through all arguments
+    for file in "$@"; do
+      if [ -e "$file" ]; then
+        # Process the file if it exists
+        column -t -s $'\t' < "$file"
+      else
+        # Print an error message if the file doesn't exist
+        echo "Error: File '$file' does not exist" >&2
+      fi
+    done
   fi
+}
+
+# Alias for backward compatibility
+columnize-output() {
+  columnise
+}
+
+# Append first token from each line of STDIN to argument list
+#
+# Implementation of `pipe-skimming` pattern.
+#
+#     $ stacks | skim-stdin foo bar
+#     foo bar huginn mastodon grafana
+#
+#     $ stacks
+#     huginn    CREATE_COMPLETE  2020-01-11T06:18:46.905Z  NEVER_UPDATED  NOT_NESTED
+#     mastodon  CREATE_COMPLETE  2020-01-11T06:19:31.958Z  NEVER_UPDATED  NOT_NESTED
+#     grafana   CREATE_COMPLETE  2020-01-11T06:19:47.001Z  NEVER_UPDATED  NOT_NESTED
+#
+# Typical usage within Bash-my-AWS functions:
+#
+#     local asg_names=$(skim-stdin "$@") # Append to arg list
+#     local asg_names=$(skim-stdin)      # Only draw from STDIN
+skim-stdin() {
+  local skimmed_stdin="$([[ -t 0 ]] || awk 'ORS=" " { print $1 }')"
+
+  printf -- '%s %s' "$*" "$skimmed_stdin" |
+    awk '{$1=$1;print}'  # trim leading/trailing spaces
 }
 
 check_requirements() {

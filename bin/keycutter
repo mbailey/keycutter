@@ -560,7 +560,7 @@ keycutter-tokens() {
     # Output TSV line
     echo -e "${serial}\t${alias}\t${device}\t${make}\t${model}\t${version}\t${caps}\t${aaguid:-"N/A"}"
   done
-  ) | columnize-output
+  ) | columnise
 }
 
 # Agent subcommands
