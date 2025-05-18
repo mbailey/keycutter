@@ -498,6 +498,10 @@ keycutter-tokens() {
       continue
     fi
 
+    # Debug the device info
+    # echo "Device: $device"
+    # echo "Info: $info"
+
     # Extract fields
     local serial=$(echo "$info" | grep "^serial:" | awk '{print $2}')
     local version=$(echo "$info" | grep "^version strings:" | cut -d: -f2- | tr -d ' ' | tr ',' '|')
