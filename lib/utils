@@ -267,9 +267,11 @@ columnise() {
   # Check if no arguments are provided
   if [ $# -eq 0 ]; then
     if ! [[ -t 1 ]]; then
-      cat
+      # Pass through but remove the # from header lines
+      sed 's/^#//'
     else
-      column -t -s $'\t'
+      # Remove the # from header lines and then columnize
+      sed 's/^#//' | column -t -s $'\t'
     fi
   else
     # Loop through all arguments
@@ -307,7 +309,7 @@ columnize-output() {
 #     local asg_names=$(skim-stdin "$@") # Append to arg list
 #     local asg_names=$(skim-stdin)      # Only draw from STDIN
 skim-stdin() {
-  local skimmed_stdin="$([[ -t 0 ]] || awk 'ORS=" " { print $1 }')"
+  local skimmed_stdin="$([[ -t 0 ]] || awk '!/^#/ {ORS=" "; print $1}')"
 
   printf -- '%s %s' "$*" "$skimmed_stdin" |
     awk '{$1=$1;print}'  # trim leading/trailing spaces

@@ -485,8 +485,8 @@ keycutter-tokens() {
     done <"$alias_file"
   fi
 
-  # Print header
-  echo -e "SERIAL\tALIAS\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID" | (
+  # Print header with a special marker that skim-stdin can filter out
+  echo -e "#SERIAL\tALIAS\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID" | (
 
   # Process each FIDO device
   fido2-token -L | while read -r device_line; do
