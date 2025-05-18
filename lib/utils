@@ -309,8 +309,8 @@ columnize-output() {
 #     local asg_names=$(skim-stdin "$@") # Append to arg list
 #     local asg_names=$(skim-stdin)      # Only draw from STDIN
 skim-stdin() {
-  # Skip the first line (header) and only process data lines
-  local skimmed_stdin="$([[ -t 0 ]] || awk 'NR>1 {ORS=" "; print $1}')"
+  # Skip lines that start with # (headers)
+  local skimmed_stdin="$([[ -t 0 ]] || awk '!/^#/ {ORS=" "; print $1}')"
 
   printf -- '%s %s' "$*" "$skimmed_stdin" |
     awk '{$1=$1;print}'  # trim leading/trailing spaces

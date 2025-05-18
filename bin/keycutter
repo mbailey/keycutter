@@ -485,8 +485,8 @@ keycutter-tokens() {
     done <"$alias_file"
   fi
 
-  # Print header
-  echo -e "SERIAL\tALIAS\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID"
+  # Print header with a marker for skim-stdin to filter
+  echo -e "#SERIAL\tALIAS\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID"
   (
 
   # Process each FIDO device
@@ -561,7 +561,7 @@ keycutter-tokens() {
     # Output TSV line
     echo -e "${serial}\t${alias}\t${device}\t${make}\t${model}\t${version}\t${caps}\t${aaguid:-"N/A"}"
   done
-  ) 
+  )
 } | columnise
 }
 
