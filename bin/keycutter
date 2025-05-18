@@ -486,7 +486,7 @@ keycutter-tokens() {
   fi
 
   # Print header
-  echo -e "SERIAL\tALIAS\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID"
+  echo -e "SERIAL\tALIAS\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID" | (
 
   # Process each FIDO device
   fido2-token -L | while read -r device_line; do
@@ -560,6 +560,7 @@ keycutter-tokens() {
     # Output TSV line
     echo -e "${serial}\t${alias}\t${device}\t${make}\t${model}\t${version}\t${caps}\t${aaguid:-"N/A"}"
   done
+  ) | columnize-output
 }
 
 # Agent subcommands

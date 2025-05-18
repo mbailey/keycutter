@@ -259,6 +259,17 @@ check_version() {
     fi
 }
 
+# Columnize output if stdout is a terminal
+columnize-output() {
+  # Takes input from stdin and formats it into columns if stdout is a terminal
+  # Otherwise passes through unchanged
+  if [[ -t 1 ]]; then
+    column -t -s $'\t'
+  else
+    cat
+  fi
+}
+
 check_requirements() {
     local errors=0
 
