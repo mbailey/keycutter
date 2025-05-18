@@ -1099,6 +1099,40 @@ keycutter-yubikeys2() {
         # Fallback if regex doesn't match
         serial="SecurityKey-$(echo "$yk_line" | md5sum | cut -c1-8)"
       fi
+      
+      # Try to get a more unique identifier using USB info
+      if command -v lsusb &>/dev/null; then
+        [[ -n "$DEBUG" ]] && log "DEBUG: Trying to get USB info for Security Key"
+        # Get USB device info
+        local usb_info=$(lsusb | grep -i "yubico" | head -1)
+        if [[ -n "$usb_info" ]]; then
+          # Extract bus and device numbers
+          if [[ "$usb_info" =~ Bus\ ([0-9]+)\ Device\ ([0-9]+) ]]; then
+            local bus="${BASH_REMATCH[1]}"
+            local device="${BASH_REMATCH[2]}"
+            [[ -n "$DEBUG" ]] && log "DEBUG: Found USB device at Bus $bus Device $device"
+            
+            # Try to get more detailed info from sysfs
+            if [[ -d "/sys/bus/usb/devices/$bus-$device" ]]; then
+              local device_path="/sys/bus/usb/devices/$bus-$device"
+              local serial_from_usb=$(cat "$device_path/serial" 2>/dev/null)
+              
+              if [[ -n "$serial_from_usb" ]]; then
+                [[ -n "$DEBUG" ]] && log "DEBUG: Found USB serial: $serial_from_usb"
+                serial="$serial_from_usb"
+              else
+                # If no serial, use a combination of vendor, product, and physical location
+                local vendor=$(cat "$device_path/idVendor" 2>/dev/null)
+                local product=$(cat "$device_path/idProduct" 2>/dev/null)
+                if [[ -n "$vendor" && -n "$product" ]]; then
+                  serial="USB-${vendor}:${product}-${bus}:${device}"
+                  [[ -n "$DEBUG" ]] && log "DEBUG: Created USB identifier: $serial"
+                fi
+              fi
+            fi
+          fi
+        fi
+      fi
     fi
     
     # Extract YubiKey type
@@ -1179,8 +1213,8 @@ keycutter-yubikey-name() {
   local name="$2"
   local alias_file="${KEYCUTTER_CONFIG_DIR}/device-aliases"
 
-  # Check if ykman is available
-  if command -v ykman &>/dev/null; then
+  # Check if ykman is available and if the serial looks like a numeric YubiKey serial
+  if command -v ykman &>/dev/null && [[ "$serial" =~ ^[0-9]+$ ]]; then
     # Try to set the name using ykman
     if ykman -d "$serial" config set-name "$name" 2>/dev/null; then
       log "Set YubiKey $serial name to '$name' using ykman"
@@ -1188,8 +1222,10 @@ keycutter-yubikey-name() {
     else
       log "Warning: Could not set YubiKey name using ykman, falling back to local alias file"
     fi
+  elif [[ "$serial" =~ ^SecurityKey || "$serial" =~ ^USB- ]]; then
+    log "Note: Security Keys without serial numbers can only use local name storage"
   else
-    log "Warning: ykman not available, using local alias file instead"
+    log "Warning: ykman not available or non-standard serial format, using local alias file"
   fi
 
   # Fallback to local alias file
