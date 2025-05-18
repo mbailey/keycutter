@@ -1089,6 +1089,16 @@ keycutter-yubikeys2() {
     local serial="N/A"
     if [[ "$yk_line" =~ Serial:\ ([0-9]+) ]]; then
       serial="${BASH_REMATCH[1]}"
+    elif [[ "$yk_line" =~ Security\ Key ]]; then
+      # For Security Keys without serial, create a unique identifier based on device type and firmware
+      if [[ "$yk_line" =~ Security\ Key\ ([^\ ]+)\ ([^\ ]+)\ \(([0-9\.]+)\) ]]; then
+        local model="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"
+        local fw="${BASH_REMATCH[3]}"
+        serial="SecurityKey-${model// /-}-${fw}"
+      else
+        # Fallback if regex doesn't match
+        serial="SecurityKey-$(echo "$yk_line" | md5sum | cut -c1-8)"
+      fi
     fi
     
     # Extract YubiKey type
