@@ -2,7 +2,7 @@
 alias: Keycutter
 ---
 
-# Keycutter: FIDO SSH keys made easy.
+# Keycutter: Strengthen your SSH key privacy and security.
 
 Keycutter simplifies using multiple private SSH keys on multiple devices.
 
@@ -10,37 +10,39 @@ Ever wondered how to contribute to an open-source project on GitHub from an empl
 
 Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying management and use of FIDO SSH Keys.
 
-## Why Keycutter?
+## Features
 
-**Connect to services with multiple accounts without SSH configuration:**
+- **[FIDO SSH keys (e.g. Yubikey)](./docs/yubikeys/fido2-on-yubikeys.md):** Uncopiable, physical presence verification, pin retry lockout.
+- **[Multi-account SSH access to services](./docs/ssh-keytags.md#key-innovation-multi-account-ssh):** GitHub.com, GitLab.com, etc.
+- **[Selective SSH Agent Forwarding](./ssh_config/keycutter/agents/README.md):** Enforce security boundaries.
+- **[Public SSH Key privacy](./docs/design/defense-layers-to-protect-against-key-misuse.md):** Only offer relevant keys to remote host.
+- **SSH over SSM (AWS):** Public key removed from remote host after login.
+- OS Support: Linux, MacOS, Windows ([WSL](docs/install.md#wsl-windows-subsystem-for-linux)), [VSCode](docs/vscode/README.md) Remote-SSH Extension
+
+## Project Goals
+
+- **Safe:** Don't screw up users SSH keys or config. Confirm and backup changes.
+- **Simple:** Keep the code and config it generates simple to audit.
+- **Solid:** Support all the things people use SSH for (e.g. scp, rsync, etc).
+
+## Example: SSH access to multiple GitHub accounts
+
+**Connect to multiple Github accounts via SSH without custom config:**
 
 ```bash
-# Different GitHub accounts
-ssh github.com_alice
-ssh github.com_work
-
-# Different GitLab accounts
-ssh gitlab.com_personal
-ssh gitlab.com_contractor
+git clone git@github.com_alex:mbailey/keycutter.git     # Github user @alex
+ssh clone git@github.com_alexwork:mbailey/keycutter.git # Github user @alexwork
 ```
 
-No Host entries needed - keycutter automatically routes to the correct host and uses the appropriate key!
+No Host entries needed - keycutter automatically routes to the correct host and uses the appropriate key.
+
+## How it works
 
 **Keycutter consists of:**
 
 - **`keycutter`:** A CLI tool for creating FIDO SSH keys and managing SSH config.
 - **SSH Keytags:** A naming convention that removes need for custom SSH configuration.
 - **SSH configuration and scripts:** These don't require modification to use.
-
-**It supports:**
-
-- **[Multi-account SSH access to services](docs/ssh-keytags.md#key-innovation-multi-account-ssh):** GitHub.com, GitLab.com, etc.
-- **[FIDO SSH keys ( e.g. Yubikey )](docs/yubikeys/fido2-on-yubikeys.md):** Uncopiable, physical presence verification, pin retry lockout.
-- **[Selective SSH Agent Forwarding](ssh_config/keycutter/agents/README.md):** Enforce security boundaries.
-- **[Public SSH Key privacy](docs/design/defense-layers-to-protect-against-key-misuse.md):** Only offer relevant keys to remote host.
-- **SSH over SSM (AWS):** Public key removed from remote host after login.
-- **[WSL](docs/install.md#wsl-windows-subsystem-for-linux):** Windows Subsystem for Linux
-- **[VSCode](docs/vscode/README.md):** Connect via Remote-SSH Extension
 
 _While initially created for use with YubiKeys and GitHub, Keycutter supports other devices and services._
 
@@ -55,29 +57,32 @@ _While initially created for use with YubiKeys and GitHub, Keycutter supports ot
 ## Quickstart
 
 ```shell
+# Install Keycutter
 $ curl https://raw.githubusercontent.com/mbailey/keycutter/master/install.sh | bash
 <snip>
+# Create a FIDO SSH Key
 $ keycutter create github.com_alex
 <snip>
+# Use it
 $ ssh -T github.com_alex
 Confirm user presence for key ECDSA-SK SHA256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 User presence confirmed
 Hi alex! You've successfully authenticated, but GitHub does not provide shell access.
-
 ```
 
-## Goals
-
-- **Safe:** Don't screw up users SSH keys or config. Confirm and backup changes.
-- **Simple:** Keep the code and config it generates simple to audit.
-- **Solid:** Support all the things people use SSH for (e.g. scp, rsync, etc).
+See also: [Installation](#installation)
 
 ## SSH Keytags
 
 Managing multiple FIDO SSH keys across multiple devices and services can be an effort.
 
-Keycutter introduces **SSH Keytags**, labels to help you organise and keep track of your
-FIDO SSH Keys across multiple devices and services.
+FIDO SSH keys never leave the device they're created on, so you need to create new keys
+on each device.
+
+Keycutter introduces **SSH Keytags** to help you organise and keep track of your
+FIDO SSH Keys across multiple devices and services. The SSH config provided by
+means you don't need to make any changes to your SSH config when you setup additional
+Yubikeys.
 
 **SSH Keytags are used:**
 
@@ -115,6 +120,8 @@ _Note: The installer checks requirements for you._
 - **YubiKey Manager (`ykman`)**: Used to set a PIN on Yubikeys, and perform other configuration.
 
 ### 2. Install Keycutter
+
+Use the [curl-bash command](#quickstart) or clone the git repo and run the install script.
 
 **Clone the Git repo and run installer:**
 

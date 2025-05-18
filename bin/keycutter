@@ -62,16 +62,13 @@ usage() {
   echo "       create <ssh-keytag> [--resident] [--type <value>] Create a new SSH key"
   echo "       check-requirements                                Check if all required software is installed"
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
+  echo "       push-keys <hostname>                             Push public keys to remote host"
   echo "       update                                            Update keycutter from git and refresh config"
   echo "       config <hostname>                                 Show config relevant to host"
   echo "       agents                                            List all agents"
   echo "       hosts                                             List all hosts"
   echo "       hosts edit <filename>                             Edit host configuration file"
   echo "       keys                                              List all keys"
-  echo "       devices                                           List available security devices"
-  echo "       yubikeys                                          List YubiKeys and FIDO tokens (TSV format)"
-  echo "       yubikeys2                                         List YubiKeys using ykman (simpler format)"
-  echo "       yubikey name <serial> <name>                      Set name for a YubiKey"
   echo
   echo "Agent commands:"
   echo "       agent show <agent>                                Show agent details"
@@ -83,8 +80,9 @@ usage() {
   echo "Host commands:"
   echo "       host show <host>                                  Show host config"
   echo "       host agent <host> [agent]                         Get/set agent for host"
-  echo "       host key <host> [key]                             Get/set key for host"
+  echo "       host keys <host>                                  List keys for host"
   echo "       host config <host>                                Show SSH config for host"
+  echo "       host edit <host>                                  Edit the file containing host"
   echo
   echo "Key commands:"
   echo "       key show <key>                                    Show key details"
@@ -230,6 +228,62 @@ keycutter-create() {
 
 keycutter-authorized-keys() {
   ssh-authorized-keys "$@"
+}
+
+keycutter-push-keys() {
+  local host="$1"
+  
+  if [[ -z "$host" ]]; then
+    log "Error: Host required"
+    return 1
+  fi
+  
+  # Get the authorized keys for this host
+  local authorized_keys=$(keycutter authorized-keys "$host")
+  
+  if [[ -z "$authorized_keys" ]]; then
+    log "Error: No authorized keys found for host: $host"
+    return 1
+  fi
+  
+  # Create a temporary file with .pub extension as ssh-copy-id expects
+  local temp_key_file=$(mktemp --suffix=.pub)
+  echo "$authorized_keys" > "$temp_key_file"
+  
+  # First try with existing key authentication (BatchMode=yes prevents password prompts)
+  log "Attempting to push keys to $host..."
+  
+  if ssh-copy-id \
+    -f \
+    -o BatchMode=yes \
+    -o RemoteCommand=none \
+    -o ConnectTimeout=5 \
+    -i "$temp_key_file" \
+    "$host" 2>/dev/null; then
+    log "Successfully pushed keys to $host using existing authentication"
+    rm -f "$temp_key_file"
+    return 0
+  fi
+  
+  # Fall back to password authentication
+  log "Key authentication failed, trying password authentication..."
+  
+  ssh-copy-id \
+    -f \
+    -o PreferredAuthentications=password \
+    -o RemoteCommand=none \
+    -i "$temp_key_file" \
+    "$host"
+  
+  local result=$?
+  rm -f "$temp_key_file"
+  
+  if [[ $result -eq 0 ]]; then
+    log "Successfully pushed keys to $host"
+  else
+    log "Error: Failed to push keys to $host"
+    return 1
+  fi
 }
 
 keycutter-list() {
@@ -660,11 +714,14 @@ keycutter-host() {
   agent)
     keycutter-host-agent "$@"
     ;;
-  key)
-    keycutter-host-key "$@"
+  keys)
+    keycutter-host-keys "$@"
     ;;
   config)
     keycutter-host-config "$@"
+    ;;
+  edit)
+    keycutter-host-edit "$@"
     ;;
   *)
     log "Error: Unknown host subcommand: $subcmd"
@@ -681,10 +738,18 @@ keycutter-host-show() {
   fi
 
   local host="$1"
-  log "Host: $host"
 
-  # Extract SSH config for this host
-  ssh -G "$host" | grep -E '^(hostname|user|port|identityfile|identityagent|forwardagent)' | while read -r line; do
+  # Show commonly customized SSH config values
+  # This list can be expanded based on what users typically care about
+  local important_fields="hostname|user|port|identityfile|identityagent|forwardagent|localforward|remoteforward|dynamicforward|identitiesonly|hashknownhosts|serveralivecountmax|serveraliveinterval|proxycommand|proxyjump|requesttty|remotecommand|sendenv|tag|userknownhostsfile|stricthostkeychecking|checkhostip|controlmaster|controlpath|controlpersist"
+  
+  ssh -G "$host" | grep -E "^($important_fields)" | sort | while read -r line; do
+    # Skip default values that are rarely customized
+    case "$line" in
+      "user $(whoami)"|"port 22"|"hostname $host"|"userknownhostsfile ${HOME}/.ssh/known_hosts ${HOME}/.ssh/known_hosts2")
+        continue
+        ;;
+    esac
     echo "  $line"
   done
 }
@@ -713,26 +778,19 @@ keycutter-host-agent() {
   fi
 }
 
-keycutter-host-key() {
+keycutter-host-keys() {
   if [[ $# -lt 1 ]]; then
     log "Error: Host name required"
     return 1
   fi
 
   local host="$1"
-  local key="$2"
 
-  if [[ -z "$key" ]]; then
-    # Get current keys
-    log "Identity files for $host:"
-    ssh -G "$host" | grep '^identityfile' | awk '{print $2}' | while read -r keyfile; do
-      echo "  $(basename "$keyfile")"
-    done
-  else
-    # Set key - would need to modify SSH config
-    log "Setting keys for hosts is not yet implemented"
-    return 1
-  fi
+  # List current keys
+  log "Identity files for $host:"
+  ssh -G "$host" | grep '^identityfile' | awk '{print $2}' | while read -r keyfile; do
+    echo "  $(basename "$keyfile")"
+  done
 }
 
 keycutter-host-config() {
@@ -743,6 +801,43 @@ keycutter-host-config() {
 
   local host="$1"
   keycutter-config "$host"
+}
+
+keycutter-host-edit() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Host name required"
+    echo "Usage: keycutter host edit <hostname>"
+    return 1
+  fi
+
+  local hostname="$1"
+  local hosts_dir="${KEYCUTTER_CONFIG_DIR}/hosts"
+  local editor="${EDITOR:-vim}"
+  local found_file=""
+
+  # Search for the host in all host files
+  for host_file in "$hosts_dir"/*.conf "$hosts_dir"/*; do
+    if [[ -f "$host_file" && "$host_file" != *.README.md ]]; then
+      if grep -q "^[[:space:]]*Host[[:space:]].*[[:space:]]${hostname}[[:space:]]*$\|^[[:space:]]*Host[[:space:]].*[[:space:]]${hostname}[[:space:]]" "$host_file" 2>/dev/null; then
+        found_file="$host_file"
+        break
+      fi
+    fi
+  done
+
+  if [[ -n "$found_file" ]]; then
+    log "Opening $found_file for host: $hostname"
+    "$editor" "$found_file"
+  else
+    log "Host '$hostname' not found in any configuration file"
+    log "Available host files:"
+    for f in "$hosts_dir"/*.conf "$hosts_dir"/*; do
+      if [[ -f "$f" && "$f" != *.README.md ]]; then
+        echo "  $(basename "$f")"
+      fi
+    done
+    return 1
+  fi
 }
 
 # Key subcommands
@@ -837,69 +932,6 @@ keycutter-key-hosts() {
 }
 
 # YubiKey subcommands
-keycutter-yubikey() {
-  local subcmd="$1"
-  shift
-
-  case "$subcmd" in
-  alias | name)
-    keycutter-yubikey-name "$@"
-    ;;
-  *)
-    log "Error: Unknown yubikey subcommand: $subcmd"
-    usage
-    exit 1
-    ;;
-  esac
-}
-
-keycutter-yubikey-name() {
-  if [[ $# -lt 2 ]]; then
-    log "Error: Serial number and name required"
-    echo "Usage: keycutter yubikey name <serial> <name>"
-    return 1
-  fi
-
-  local serial="$1"
-  local name="$2"
-  local alias_file="${KEYCUTTER_CONFIG_DIR}/device-aliases"
-
-  # Check if ykman is available and if the serial looks like a numeric YubiKey serial
-  if command -v ykman &>/dev/null && [[ "$serial" =~ ^[0-9]+$ ]]; then
-    # Try to set the name using ykman
-    if ykman -d "$serial" config set-name "$name" 2>/dev/null; then
-      log "Set YubiKey $serial name to '$name' using ykman"
-      return 0
-    else
-      log "Warning: Could not set YubiKey name using ykman, falling back to local alias file"
-    fi
-  elif [[ "$serial" =~ ^SecurityKey || "$serial" =~ ^USB- ]]; then
-    log "Note: Security Keys without serial numbers can only use local name storage"
-  else
-    log "Warning: ykman not available or non-standard serial format, using local alias file"
-  fi
-
-  # Fallback to local alias file
-  # Create the config directory if it doesn't exist
-  dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700
-
-  # Check if the serial already has a name in the alias file
-  if [[ -f "$alias_file" ]]; then
-    if grep -q "^$serial" "$alias_file"; then
-      # Update existing name
-      sed -i "s/^$serial\t.*/$serial\t$name/" "$alias_file"
-      log "Updated name for YubiKey $serial to '$name' in local file"
-    else
-      # Add new name
-      echo -e "$serial\t$name" >>"$alias_file"
-      log "Added name '$name' for YubiKey $serial to local file"
-    fi
-  else
-    # Create new file with the name
-    echo -e "$serial\t$name" >"$alias_file"
-    log "Created device aliases file and added name '$name' for YubiKey $serial"
-  fi
-}
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
@@ -911,10 +943,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   shift
 
   case "$cmd" in
-  create | authorized-keys | update | check-requirements | config | agents | hosts | keys | devices | yubikeys | yubikeys2)
+  create | authorized-keys | push-keys | update | check-requirements | config | agents | hosts | keys)
     "keycutter-$cmd" "$@"
     ;;
-  agent | host | key | yubikey)
+  agent | host | key)
     "keycutter-$cmd" "$@"
     ;;
   *)

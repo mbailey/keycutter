@@ -4,9 +4,9 @@ _keycutter_completion() {
   local cur prev words cword
   _init_completion || return
 
-  local commands="create authorized-keys update config check-requirements agents hosts keys devices tokens agent host key"
+  local commands="create authorized-keys push-keys update config check-requirements agents hosts keys tokens agent host key"
   local agent_subcommands="show keys hosts add-key remove-key"
-  local host_subcommands="show agent key config"
+  local host_subcommands="show agent keys config edit"
   local key_subcommands="show agents hosts"
   local hosts_subcommands="edit"
 
@@ -70,7 +70,7 @@ _keycutter_completion() {
     ;;
   host)
     case "$subcmd" in
-    show|agent|key|config)
+    show|agent|keys|config|edit)
       # Complete with host names from SSH config
       if [[ -f "$HOME/.ssh/config" ]] || [[ -f "$HOME/.ssh/keycutter/keycutter.conf" ]]; then
         local hosts=$(grep -h "^Host " "$HOME/.ssh/config" "$HOME/.ssh/keycutter/keycutter.conf" "$HOME/.ssh/keycutter/hosts"/* 2>/dev/null | awk '{for(i=2;i<=NF;i++) print $i}' | grep -v '\*' | sort -u)
@@ -92,7 +92,7 @@ _keycutter_completion() {
       ;;
     esac
     ;;
-  agents|keys|devices|tokens)
+  agents|keys|tokens)
     # No additional completion needed for these list commands
     return
     ;;
@@ -109,7 +109,7 @@ _keycutter_completion() {
     fi
     return
     ;;
-  authorized-keys|config)
+  authorized-keys|push-keys|config)
     # Complete with host names
     if [[ -f "$HOME/.ssh/config" ]] || [[ -f "$HOME/.ssh/keycutter/keycutter.conf" ]]; then
       local hosts=$(grep -h "^Host " "$HOME/.ssh/config" "$HOME/.ssh/keycutter/keycutter.conf" "$HOME/.ssh/keycutter/hosts"/* 2>/dev/null | awk '{for(i=2;i<=NF;i++) print $i}' | grep -v '\*' | sort -u)
