@@ -22,7 +22,7 @@ Create an SSH key for GitHub user alex on dev1
 
 - keycutter create github.com_alex
 - ssh -T github.com_alex
-- Git clone github.com_alex:mbailey/keycutter
+- Git clone github.com_alex:alex/keycutter
 
 Create SSH key for github user alexwork
 

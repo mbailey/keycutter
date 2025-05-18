@@ -66,6 +66,7 @@ usage() {
   echo "       config <hostname>                                 Show config relevant to host"
   echo "       agents                                            List all agents"
   echo "       hosts                                             List all hosts"
+  echo "       hosts edit <filename>                             Edit host configuration file"
   echo "       keys                                              List all keys"
   echo "       devices                                           List available security devices"
   echo "       yubikeys                                          List YubiKeys and FIDO tokens (TSV format)"
@@ -299,23 +300,47 @@ keycutter-update-git() {
 
 keycutter-update-ssh-config() {
 
-  local src_dir="${KEYCUTTER_ROOT}/ssh_config"
+  local src_dir="${KEYCUTTER_ROOT}/ssh_config/keycutter"
   local dest_dir="${KEYCUTTER_CONFIG_DIR}"
 
-  # Create the destination directory structure
-  dir-ensure "$dest_dir"
-  dir-ensure "$dest_dir/agents"
-  dir-ensure "$dest_dir/hosts"
-  dir-ensure "$dest_dir/keys"
-  dir-ensure "$dest_dir/scripts"
-
-  # Apply the template for the main config file
-  apply-template "$src_dir/keycutter.conf" "$dest_dir/keycutter.conf"
-
-  # Apply template for each script in the scripts directory
-  for script in "$src_dir/scripts"/*; do
-    if [[ -f "$script" ]]; then
-      apply-template "$script" "$dest_dir/scripts/$(basename "$script")"
+  # Find all files in the source directory
+  for src_file in $(find "$src_dir" -type f); do
+    # Get relative path from source directory
+    local rel_path="${src_file#${src_dir}/}"
+    local dest_file="${dest_dir}/${rel_path}"
+    
+    # Create destination directory if it doesn't exist
+    local dest_subdir="$(dirname "$dest_file")"
+    [[ -d "$dest_subdir" ]] || mkdir -p "$dest_subdir"
+    
+    # Check if file exists
+    if [[ -f "$dest_file" ]]; then
+      # Special handling for hosts directory - never overwrite
+      if [[ "$rel_path" =~ ^hosts/ && "$rel_path" != "hosts/.README.md" ]]; then
+        log "Preserving existing host file: $dest_file"
+        continue
+      fi
+      
+      # For other files, show diff and prompt
+      if ! cmp -s "$src_file" "$dest_file"; then
+        log "File is different: $dest_file"
+        diff -u "$dest_file" "$src_file" || true
+        prompt "Overwrite? [y/N] "
+        read -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+          apply-template "$src_file" "$dest_file"
+          log "Updated file: $dest_file"
+        else
+          log "Skipped update: $dest_file"
+        fi
+      else
+        log "File is up to date: $dest_file"
+      fi
+    else
+      # File doesn't exist, create it
+      apply-template "$src_file" "$dest_file"
+      log "Created new file: $dest_file"
     fi
   done
 
@@ -365,6 +390,24 @@ keycutter-agents() {
 }
 
 keycutter-hosts() {
+  if [[ $# -gt 0 ]]; then
+    local subcmd="$1"
+    shift
+    case "$subcmd" in
+    edit)
+      keycutter-hosts-edit "$@"
+      ;;
+    *)
+      # Default behavior - list hosts
+      keycutter-hosts-list
+      ;;
+    esac
+  else
+    keycutter-hosts-list
+  fi
+}
+
+keycutter-hosts-list() {
   local ssh_config="${HOME}/.ssh/config"
   local hosts_dir="${KEYCUTTER_CONFIG_DIR}/hosts"
 
@@ -380,6 +423,27 @@ keycutter-hosts() {
         echo "  $host"
       done
   fi
+}
+
+keycutter-hosts-edit() {
+  if [[ $# -lt 1 ]]; then
+    log "Error: Host file name required"
+    echo "Usage: keycutter hosts edit <filename>"
+    return 1
+  fi
+
+  local filename="$1"
+  local hosts_dir="${KEYCUTTER_CONFIG_DIR}/hosts"
+  local file_path="${hosts_dir}/${filename}"
+
+  # Use EDITOR environment variable, fall back to vim
+  local editor="${EDITOR:-vim}"
+
+  if [[ ! -f "$file_path" ]]; then
+    log "Creating new host file: $file_path"
+  fi
+
+  "$editor" "$file_path"
 }
 
 keycutter-keys() {

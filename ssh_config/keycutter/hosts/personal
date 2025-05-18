@@ -1,3 +1,43 @@
-# Keycutter Hosts: Personal
+# Keycutter Hosts Config: Personal
+
+##########################################################################
 #
-# Organising hosts by security boundary keep things tidy.
+# Personal Hosts Profile
+#
+# Set the following on any host Tagged 'personal':
+#
+# - IdentityFile: Only if you have created a key called `personal`.
+# - IdentityAgent: Only if not already set.
+#
+# Note: AgentForwarding is disabled on hosts where not explicitly enabled.
+#
+# NOT Running on ORIGIN
+Match final tagged personal exec "bash -c '[[ -n ${SSH_CONNECTION} && -e ~/.ssh/keycutter/keys/personal@${KEYCUTTER_ORIGIN}.pub ]]'" 
+  IdentityFile ~/.ssh/keycutter/keys/personal@${KEYCUTTER_ORIGIN}.pub
+#
+# Running on ORIGIN
+Match final tagged personal  exec "bash -c '[[ -z $SSH_CONNECTION && -e ~/.ssh/keycutter/keys/personal@${KEYCUTTER_ORIGIN} ]]'" 
+  IdentityFile ~/.ssh/keycutter/keys/personal@${KEYCUTTER_ORIGIN}
+  IdentityAgent ~/.ssh/keycutter/agents/personal/ssh-agent.socket
+#
+# Running on ORIGIN
+Match final tagged personal exec "bash -c '[[ -z $SSH_CONNECTION && -e ~/.ssh/keycutter/keys/personal@%L ]]'" 
+  IdentityFile ~/.ssh/keycutter/keys/personal@%L
+  IdentityAgent ~/.ssh/keycutter/agents/personal/ssh-agent.socket
+#
+###########################################################################
+#
+# Add `personal` tag to hosts where the config above should be applied
+#
+# Host *.homelab cheetah panther
+#   Tag personal
+#
+##########################################################################
+
+# Define custom Host configurations here
+#
+# - Enable ForwardAgent for any hosts that need it
+
+# Host git.homelab
+#   HostName git
+#   ForwardAgent yes

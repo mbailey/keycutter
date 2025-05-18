@@ -33,7 +33,7 @@ When IdentityAgent specifies a directory containing SSH keys or symlinks, ssh-ag
 
 SSH Agent Forwarding introduces security risks as it allows remote hosts to use your SSH keys. When connecting through bastion hosts, prefer SSH ProxyJump over agent forwarding.
 
-For detailed examples and best practices, see [Security Best Practices](../hosts/README.md#security-best-practices) in the hosts documentation.
+For detailed examples and best practices, see [Security Best Practices](../hosts/.README.md#security-best-practices) in the hosts documentation.
 
 Agent forwarding should primarily be used when you need to:
 

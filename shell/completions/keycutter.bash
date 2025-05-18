@@ -8,6 +8,7 @@ _keycutter_completion() {
   local agent_subcommands="show keys hosts add-key remove-key"
   local host_subcommands="show agent key config"
   local key_subcommands="show agents hosts"
+  local hosts_subcommands="edit"
 
   # Get the command (first argument after keycutter)
   local cmd=""
@@ -45,6 +46,10 @@ _keycutter_completion() {
     ;;
   key)
     COMPREPLY=($(compgen -W "$key_subcommands" -- "$cur"))
+    return
+    ;;
+  hosts)
+    COMPREPLY=($(compgen -W "$hosts_subcommands" -- "$cur"))
     return
     ;;
   esac
@@ -87,8 +92,21 @@ _keycutter_completion() {
       ;;
     esac
     ;;
-  agents|hosts|keys|devices|tokens)
+  agents|keys|devices|tokens)
     # No additional completion needed for these list commands
+    return
+    ;;
+  hosts)
+    if [[ $cword -eq 2 ]]; then
+      # Complete with hosts subcommands
+      COMPREPLY=($(compgen -W "$hosts_subcommands" -- "$cur"))
+    elif [[ $subcmd == "edit" && $cword -eq 3 ]]; then
+      # Complete with host files
+      if [[ -d "$HOME/.ssh/keycutter/hosts" ]]; then
+        local host_files=$(ls -1 "$HOME/.ssh/keycutter/hosts" 2>/dev/null | grep -v '^\\.')
+        COMPREPLY=($(compgen -W "$host_files" -- "$cur"))
+      fi
+    fi
     return
     ;;
   authorized-keys|config)
