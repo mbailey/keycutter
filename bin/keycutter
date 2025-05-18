@@ -498,10 +498,7 @@ keycutter-tokens() {
       continue
     fi
 
-    # Debug the device info
-    echo "DEBUG: Device path: $device" >&2
-    echo "DEBUG: Device line: $device_line" >&2
-    echo "DEBUG: Device info: $info" | head -n 5 >&2
+    # Debug output is disabled for clean TSV output
 
     # Extract fields
     local serial=$(echo "$info" | grep "^serial:" | awk '{print $2}')
