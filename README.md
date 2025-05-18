@@ -35,7 +35,7 @@ While initially created for use with YubiKeys and GitHub, Keycutter supports oth
 - **[Selective SSH Agent Forwarding](./ssh_config/keycutter/agents/README.md):** Enforce security boundaries.
 - **[Public SSH Key privacy](./docs/design/defense-layers-to-protect-against-key-misuse.md):** Only offer relevant keys to remote host.
 - **SSH over SSM (AWS):** Public key removed from remote host after login.
-- OS Support: Linux, MacOS, Windows ([WSL](docs/install.md#wsl-windows-subsystem-for-linux)), [VSCode](docs/vscode/README.md) Remote-SSH Extension
+- **OS Support**: Linux, MacOS, Windows ([WSL](docs/install.md#wsl-windows-subsystem-for-linux)), [VSCode](docs/vscode/README.md) Remote-SSH Extension
 
 ## Project Goals
 
