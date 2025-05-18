@@ -486,7 +486,7 @@ keycutter-tokens() {
   fi
 
   # Print header
-  echo -e "SERIAL\tALIAS\tMAKE\tMODEL\tVERSION\tCAPABILITIES"
+  echo -e "SERIAL\tALIAS\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID"
 
   # Process each FIDO device
   fido2-token -L | while read -r device_line; do
@@ -504,11 +504,17 @@ keycutter-tokens() {
 
     # Extract fields
     local serial=$(echo "$info" | grep "^serial:" | awk '{print $2}')
+    local aaguid=$(echo "$info" | grep "^aaguid:" | awk '{print $2}')
     local version=$(echo "$info" | grep "^version strings:" | cut -d: -f2- | tr -d ' ' | tr ',' '|')
     local caps=$(echo "$info" | grep "^caps:" | cut -d: -f2- | sed 's/0x[0-9a-f]* (//' | sed 's/)//')
     local vendorid=$(echo "$info" | grep "^vendorId:" | awk '{print $2}')
     local productid=$(echo "$info" | grep "^productId:" | awk '{print $2}')
 
+    # Use AAGUID as serial if no serial is available
+    if [[ -z "$serial" && -n "$aaguid" ]]; then
+      serial="aaguid:$aaguid"
+    fi
+    
     # Default values
     serial=${serial:-"NO_SERIAL"}
     local alias="${device_aliases[$serial]:-NO_ALIAS_SET}"
@@ -532,7 +538,7 @@ keycutter-tokens() {
     caps=${caps:0:20}
 
     # Output TSV line
-    echo -e "${serial}\t${alias}\t${make}\t${model}\t${version}\t${caps}"
+    echo -e "${serial}\t${alias}\t${make}\t${model}\t${version}\t${caps}\t${aaguid:-"N/A"}"
   done
 }
 
