@@ -521,14 +521,24 @@ keycutter-tokens() {
         # Get list of connected YubiKeys with their device paths
         local ykman_list=$(ykman list 2>/dev/null)
         
-        # Find the serial number for this specific device
-        if [[ -n "$ykman_list" && "$ykman_list" == *"$device_path"* ]]; then
-          # Extract the serial number from the matching line
-          local ykman_line=$(echo "$ykman_list" | grep "$device_path")
-          local ykman_serial=$(echo "$ykman_line" | grep -o "Serial: [0-9]*" | awk '{print $2}')
+        # Find the serial number for this specific device by matching the device path
+        if [[ -n "$ykman_list" ]]; then
+          # Look for exact device path match
+          local ykman_line=$(echo "$ykman_list" | grep -F "$device_path")
           
-          if [[ -n "$ykman_serial" ]]; then
-            serial="$ykman_serial"
+          # If no exact match, try to match by vendor/product ID
+          if [[ -z "$ykman_line" && -n "$vendorid" && -n "$productid" ]]; then
+            # Format vendor:product ID for matching
+            local vid_pid=$(printf "%04x:%04x" "$vendorid" "$productid")
+            ykman_line=$(echo "$ykman_list" | grep -i "$vid_pid")
+          fi
+          
+          # Extract serial number if we found a matching line
+          if [[ -n "$ykman_line" ]]; then
+            local ykman_serial=$(echo "$ykman_line" | grep -o "Serial: [0-9]*" | awk '{print $2}')
+            if [[ -n "$ykman_serial" ]]; then
+              serial="$ykman_serial"
+            fi
           fi
         fi
       fi
