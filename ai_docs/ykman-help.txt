@@ -1,0 +1,49 @@
+Usage: ykman [OPTIONS] COMMAND [ARGS]...
+
+  Configure your YubiKey via the command line.
+
+  Examples:
+
+    List connected YubiKeys, only output serial number:
+    $ ykman list --serials
+
+    Show information about YubiKey with serial number 123456:
+    $ ykman --device 123456 info
+
+Options:
+  -d, --device SERIAL             specify which YubiKey to interact with by
+                                  serial number
+  -r, --reader NAME               specify a YubiKey by smart card reader name
+                                  (can't be used with --device or list)
+  -t, --scp-ca FILENAME           specify the CA to use to verify the SCP11
+                                  card key (CA-KLCC)
+  -s, --scp CRED                  specify private key and certificate chain
+                                  for secure messaging, can be used multiple
+                                  times to provide key and certificates in
+                                  multiple files (private key, certificates in
+                                  leaf-last order), OR SCP03 keys in hex
+                                  separated by colon (:) K-ENC:K-MAC[:K-DEK]
+  -p, --scp-password PASSWORD     specify a password required to access the
+                                  --scp file, if needed
+  -l, --log-level [ERROR|WARNING|INFO|DEBUG|TRAFFIC]
+                                  enable logging at given verbosity level
+  --log-file FILE                 write log to FILE instead of printing to
+                                  stderr (requires --log-level)
+  --diagnose                      show diagnostics information useful for
+                                  troubleshooting
+  -v, --version                   show version information about the app
+  --full-help                     show --help output, including hidden
+                                  commands
+  -h, --help                      show this message and exit
+
+Commands:
+  info     show general information
+  list     list connected YubiKeys
+  script   run a python script
+  config   configure the YubiKey, enable or disable applications
+  fido     manage the FIDO applications
+  hsmauth  manage the YubiHSM Auth application
+  oath     manage the OATH application
+  openpgp  manage the OpenPGP application
+  otp      manage the YubiOTP application
+  piv      manage the PIV application

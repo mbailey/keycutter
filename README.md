@@ -1,6 +1,7 @@
 ---
 alias: Keycutter
 ---
+
 # Keycutter: FIDO SSH keys made easy.
 
 Keycutter simplifies using multiple private SSH keys on multiple devices.
@@ -8,6 +9,22 @@ Keycutter simplifies using multiple private SSH keys on multiple devices.
 Ever wondered how to contribute to an open-source project on GitHub from an employer managed (i.e. untrusted) laptop, without compromising the security of your personal GitHub account?
 
 Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying management and use of FIDO SSH Keys.
+
+## Why Keycutter?
+
+**Connect to services with multiple accounts without SSH configuration:**
+
+```bash
+# Different GitHub accounts
+ssh github.com_alice
+ssh github.com_work
+
+# Different GitLab accounts
+ssh gitlab.com_personal
+ssh gitlab.com_contractor
+```
+
+No Host entries needed - keycutter automatically routes to the correct host and uses the appropriate key!
 
 **Keycutter consists of:**
 
@@ -17,15 +34,15 @@ Keycutter came out of an attempt to solve this problem but evolved into a tool t
 
 **It supports:**
 
-- **Multi-account SSH access to services:** GitHub.com, GitLab.com, etc.
-- **FIDO SSH keys ( e.g. Yubikey )):** Uncopiable, physical presence verification, pin retry lockout.
-- **Selective SSH Agent Forwarding:** Enforce security boundaries.
-- **Public SSH Key privacy:** Only offer relevant keys to remote host.
+- **[Multi-account SSH access to services](docs/ssh-keytags.md#key-innovation-multi-account-ssh):** GitHub.com, GitLab.com, etc.
+- **[FIDO SSH keys ( e.g. Yubikey )](docs/yubikeys/fido2-on-yubikeys.md):** Uncopiable, physical presence verification, pin retry lockout.
+- **[Selective SSH Agent Forwarding](ssh_config/keycutter/agents/README.md):** Enforce security boundaries.
+- **[Public SSH Key privacy](docs/design/defense-layers-to-protect-against-key-misuse.md):** Only offer relevant keys to remote host.
 - **SSH over SSM (AWS):** Public key removed from remote host after login.
-- **WSL**: Windows Subsystem for Linux
-- **VSCode:** Connect via Remote-SSH Extension
+- **[WSL](docs/install.md#wsl-windows-subsystem-for-linux):** Windows Subsystem for Linux
+- **[VSCode](docs/vscode/README.md):** Connect via Remote-SSH Extension
 
-*While initially created for use with YubiKeys and GitHub, Keycutter supports other devices and services.*
+_While initially created for use with YubiKeys and GitHub, Keycutter supports other devices and services._
 
 ## Contents
 
@@ -35,11 +52,18 @@ Keycutter came out of an attempt to solve this problem but evolved into a tool t
 - [Usage](#Usage)
 - [ISSUES](ISSUES.md)
 
-
 ## Quickstart
 
 ```shell
-curl https://raw.githubusercontent.com/mbailey/keycutter/master/install.sh | bash
+$ curl https://raw.githubusercontent.com/mbailey/keycutter/master/install.sh | bash
+<snip>
+$ keycutter create github.com_alex
+<snip>
+$ ssh -T github.com_alex
+Confirm user presence for key ECDSA-SK SHA256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+User presence confirmed
+Hi alex! You've successfully authenticated, but GitHub does not provide shell access.
+
 ```
 
 ## Goals
@@ -61,25 +85,25 @@ FIDO SSH Keys across multiple devices and services.
 - In the public key comment
 - In the key name on services like GitHub
 
-**SSH Keytag format:**  `<service>_<identity>@<device>`
+**SSH Keytag format:** `<service>_<identity>@<device>`
 
 - **Service:** FQDN of remote service (e.g. gitlab.com)
 - **Identity:** The **user account** on remote service (e.g. alex-work)
 - **Device**: The **hardware security key** or **computer** where the private key resides.
 
-*Read more about [SSH Keytags](docs/design/ssh-keytags.md)*
+_Read more about [SSH Keytags](docs/design/ssh-keytags.md)_
 
 ## Installation
 
 ### 1. Install Prerequisites
 
-*Note: The installer checks requirements for you.*
+_Note: The installer checks requirements for you._
 
- **Required:**
-  
+**Required:**
+
 - **Bash >= 4.0**
 - **Git >= 2.34.0**
-- **OpenSSH >= 8.2p1** 
+- **OpenSSH >= 8.2p1**
   - **WSL** Users need `ssh-sk-helper`([OpenSSH for Windows >= 8.9p1-1](https://github.com/PowerShell/Win32-OpenSSH/releases)))
   - **macOS** Bundled OpenSSH is borked. Update with `brew install openssh` and reload terminal
 - **nc**
@@ -87,7 +111,7 @@ FIDO SSH Keys across multiple devices and services.
 **Recommended:**
 
 - **GitHub CLI >= 2.0**: (Greater than 2.4.0+dfsg1-2 on Ubuntu)
-- **[YubiKey Touch Detector](https://github.com/maximbaz/yubikey-touch-detector):**  Get notified when YubiKey needs a touch.
+- **[YubiKey Touch Detector](https://github.com/maximbaz/yubikey-touch-detector):** Get notified when YubiKey needs a touch.
 - **YubiKey Manager (`ykman`)**: Used to set a PIN on Yubikeys, and perform other configuration.
 
 ### 2. Install Keycutter
@@ -156,7 +180,7 @@ git clone git@github.com_alex:bash-my-aws/keycutter
 
 ```shell
 cd keycutter
-date >> README.md 
+date >> README.md
 git commit -m "I signed this commit with my new SSH Key"
 ```
 
@@ -218,6 +242,7 @@ keycutter update
 ```
 
 This command will:
+
 1. Pull the latest changes from the Keycutter git repository.
 2. Check and update any requirements.
 3. Update your SSH configuration with any new changes.
@@ -226,7 +251,7 @@ Here's an example of what you might see when running the update command:
 
 ```
 🔄 Updating Keycutter from git...
-Confirm user presence for key ECDSA-SK SHA256:bW8s2icYERtlbt9Y9jrzCDEcdgcmMbWRiBjxtroNLoI
+Confirm user presence for key ECDSA-SK SHA256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 User presence confirmed
 Keycutter is already up to date.
 All requirements are met.
@@ -239,5 +264,5 @@ Keycutter SSH update complete.
 - **[Tips and tricks](docs/tips-and-tricks.md):** Undocumented features and cool tricks.
 
 - **Prior art (and inspiration):**
-    - **[ssh-over-ssm (github.com)](https://github.com/elpy1/ssh-over-ssm):** Original source of `keycutter/scripts/ssh-ssm`.
-    - **[ssh-ident (github.com)](https://github.com/ccontavalli/ssh-ident):** Different agents and different keys for different projects, with ssh. 
+  - **[ssh-over-ssm (github.com)](https://github.com/elpy1/ssh-over-ssm):** Original source of `keycutter/scripts/ssh-ssm`.
+  - **[ssh-ident (github.com)](https://github.com/ccontavalli/ssh-ident):** Different agents and different keys for different projects, with ssh.

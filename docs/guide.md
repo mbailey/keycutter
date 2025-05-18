@@ -11,16 +11,18 @@ A practical guide to using Keycutter for SSH key management and authentication.
 ## Common Tasks
 
 ### Creating and Managing Keys
+
 - Create a new FIDO SSH key: `keycutter create <ssh-keytag>`
 - [SSH to a remote host](recipes/ssh-to-host.md)
 - [Add SSH key to GitHub](../README.md#quick-start)
 
-### Configuration and Analysis
-- [Analyze SSH config for a host](recipes/ssh-config-impact.md)
+## Configuration and Analysis
+
 - Update Keycutter: `keycutter update`
 - Check which keys would be offered: `keycutter authorized-keys <hostname>`
 
 ### YubiKey Setup
+
 - [Set up a YubiKey with PIN protection](yubikeys/fido2-on-yubikeys.md)
 - [Using YubiKey Manager (ykman)](yubikeys/ykman-yubikey-manager.md)
 - [YubiKey touch notifications](yubikeys/yubikey-touch-detector.md)
@@ -28,16 +30,18 @@ A practical guide to using Keycutter for SSH key management and authentication.
 ## Platform-Specific Setup
 
 ### VSCode Integration
+
 - [Configure VSCode Remote-SSH](vscode/remote-ssh-extension.md)
 - [Example VSCode settings](vscode/settings/)
 
 ### Windows Subsystem for Linux (WSL)
+
 - [GPG on WSL](yubikeys/gpg-on-wsl.md)
 - WSL SSH configuration (see installation guide)
 
 ## SSH Configuration
 
-- [Managing SSH agents](ssh-agent.md)
+- [Managing SSH agents](../ssh_config/keycutter/agents/README.md)
 - [Defense layers and security](design/defense-layers-to-protect-against-key-misuse.md)
 - Connect through firewalls using port 443
 
@@ -60,3 +64,4 @@ A practical guide to using Keycutter for SSH key management and authentication.
 - [Useful commands and shortcuts](tips-and-tricks.md)
 - Working with multiple YubiKeys
 - Managing keys across devices
+
