@@ -500,7 +500,8 @@ keycutter-tokens() {
 
     # Debug the device info
     echo "DEBUG: Device path: $device" >&2
-    echo "DEBUG: Device info: $info" | head -n 3 >&2
+    echo "DEBUG: Device line: $device_line" >&2
+    echo "DEBUG: Device info: $info" | head -n 5 >&2
 
     # Extract fields
     local serial=$(echo "$info" | grep "^serial:" | awk '{print $2}')
@@ -510,9 +511,22 @@ keycutter-tokens() {
     local vendorid=$(echo "$info" | grep "^vendorId:" | awk '{print $2}')
     local productid=$(echo "$info" | grep "^productId:" | awk '{print $2}')
 
-    # Use AAGUID as serial if no serial is available
-    if [[ -z "$serial" && -n "$aaguid" ]]; then
-      serial="aaguid:$aaguid"
+    # Extract device path and vendor/product info from the original line
+    local vendor_product=$(echo "$device_line" | grep -o "vendor=[^,)]*" | cut -d= -f2)
+    local product_id=$(echo "$device_line" | grep -o "product=[^,)]*" | cut -d= -f2)
+    
+    # Create a device identifier using multiple pieces of information
+    if [[ -z "$serial" ]]; then
+      if [[ -n "$aaguid" ]]; then
+        # Use AAGUID + device path as a more specific identifier
+        serial="aaguid:${aaguid}:${device##*/}"
+      elif [[ -n "$vendor_product" && -n "$product_id" ]]; then
+        # Use vendor:product + device path if no AAGUID
+        serial="usb:${vendor_product}:${product_id}:${device##*/}"
+      else
+        # Last resort - just use device path
+        serial="dev:${device##*/}"
+      fi
     fi
     
     # Default values
