@@ -490,8 +490,8 @@ keycutter-tokens() {
 
   # Process each FIDO device
   fido2-token -L | while read -r device_line; do
-    # Extract the device path from the line
-    local device=$(echo "$device_line" | awk '{print $1}')
+    # Extract the device path from the line (split on colon)
+    local device=$(echo "$device_line" | cut -d':' -f1)
     # Get device info
     local info=$(fido2-token -I "$device" 2>/dev/null)
     if [[ $? -ne 0 ]]; then
@@ -499,8 +499,8 @@ keycutter-tokens() {
     fi
 
     # Debug the device info
-    # echo "Device: $device"
-    # echo "Info: $info"
+    echo "DEBUG: Device path: $device" >&2
+    echo "DEBUG: Device info: $info" | head -n 3 >&2
 
     # Extract fields
     local serial=$(echo "$info" | grep "^serial:" | awk '{print $2}')
