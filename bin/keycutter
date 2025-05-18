@@ -486,10 +486,19 @@ keycutter-yubikeys() {
     done <"$alias_file"
   fi
 
+  # Get list of FIDO devices
+  local fido_devices=$(fido2-token -L 2>/dev/null)
+  
   # Process each FIDO device and include header
   (
     # Print header with a marker for skim-stdin to filter
     echo -e "#SERIAL\tNAME\tDEVICE\tMAKE\tMODEL\tVERSION\tCAPABILITIES\tAAGUID"
+    
+    # Check if any devices were found
+    if [[ -z "$fido_devices" ]]; then
+      echo -e "NO_DEVICES_FOUND\tNo YubiKeys or FIDO tokens detected\t-\t-\t-\t-\t-\t-"
+      return 0
+    fi
     
     # Create an array to track seen serial numbers
     declare -A seen_serials
@@ -497,7 +506,7 @@ keycutter-yubikeys() {
     # First pass: collect all device info
     declare -a device_info_array
     
-    fido2-token -L | while read -r device_line; do
+    echo "$fido_devices" | while read -r device_line; do
       # Extract the device path from the line (split on colon)
       local device=$(echo "$device_line" | cut -d':' -f1)
       # Get device info
