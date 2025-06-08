@@ -5,53 +5,77 @@ alias: YubiKey Touch Detector
 
 Get notified when YubiKey needs a touch.
 
-- [yubikey-touch-detector (github.com/maximbaz)](https://github.com/maximbaz/yubikey-touch-detector)
-
 ![](../assets/yubikey-is-waiting-for-a-touch.png)
 
-## Install
+## Quick Install with Keycutter
 
-**Install deps and build Go binary:**
+The easiest way to install YubiKey touch detection is through keycutter:
 
 ```shell
-sudo dnf -y install gpgme-devel
-git clone https://github.com/maximbaz/yubikey-touch-detector.git
-cd yubikey-touch-detector
-# go build
-make
-sudo make install
-sudo cp ~/go/bin/yubikey-touch-detector /usr/bin/
+keycutter install-touch-detector
 ```
 
-**Copy systemd unit files and config into place:**
+This command will:
+- Detect your operating system (Linux or macOS)
+- Present appropriate installation options
+- Handle all dependencies and configuration
+- Set up the service to run automatically
 
+## Platform Support
+
+### Linux
+- **yubikey-touch-detector** - The original tool by [maximbaz](https://github.com/maximbaz/yubikey-touch-detector)
+- Supports package manager installation (Arch), pre-built binaries, or building from source
+- Uses systemd for service management
+
+### macOS
+- **yknotify** - Lightweight tool by [noperator](https://github.com/noperator/yknotify) that monitors system logs
+- **gpg-tap-notifier-macos** - Native Swift app by [palantir](https://github.com/palantir/gpg-tap-notifier-macos) with better GPG integration
+
+## Manual Installation
+
+### Linux (yubikey-touch-detector)
+
+**Package Manager (Arch Linux):**
 ```shell
-mkdir -p ~/.config/systemd/user
-cp yubikey-touch-detector.{service,socket} ~/.config/systemd/user/
-mkdir -p "${XDG_CONFIG_HOME:-"${HOME}/.config"}/yubikey-touch-detector"
-cp service.conf.example "${XDG_CONFIG_HOME:-${HOME}/.config}/yubikey-touch-detector/service.conf"
+sudo pacman -S yubikey-touch-detector
 ```
 
-## Configure
-
-From the readme:
-
-> The package also installs a systemd service and socket. If you want the app to launch on startup, just enable the service like so:
-
+**Build from Source:**
 ```shell
+# Install dependencies
+sudo apt-get install -y libgpgme-dev  # Ubuntu/Debian
+# or
+sudo dnf install -y gpgme-devel       # Fedora
+
+# Install via Go
+go install github.com/maximbaz/yubikey-touch-detector@latest
+
+# Set up systemd service
 systemctl --user daemon-reload
 systemctl --user enable --now yubikey-touch-detector.service
 ```
 
-> If you want the service to be started only when there is a listener on Unix socket, enable the socket instead like so:
+### macOS (yknotify)
 
 ```shell
-systemctl --user daemon-reload
-systemctl --user enable --now yubikey-touch-detector.socket
+# Install dependencies
+brew install go terminal-notifier
+
+# Install yknotify
+go install github.com/noperator/yknotify@latest
+
+# Set up LaunchAgent (see yknotify README for details)
 ```
 
-*Note: I needed to add this to my ~/.bashrc for some unknown reason:*
+## Checking Status
 
+After installation, you can check if the touch detector is running:
+
+```shell
+keycutter check-requirements
 ```
-systemctl restart --user yubikey-touch-detector.service
-```
+
+Or manually:
+- **Linux:** `systemctl --user status yubikey-touch-detector`
+- **macOS:** `launchctl list | grep yknotify`

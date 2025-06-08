@@ -4,7 +4,7 @@ _keycutter_completion() {
   local cur prev words cword
   _init_completion || return
 
-  local commands="create authorized-keys push-keys update config check-requirements agents hosts keys tokens agent host key"
+  local commands="create authorized-keys push-keys update install-touch-detector config check-requirements agents hosts keys tokens agent host key"
   local agent_subcommands="show keys hosts add-key remove-key"
   local host_subcommands="show agent keys config edit"
   local key_subcommands="show agents hosts"
@@ -92,8 +92,8 @@ _keycutter_completion() {
       ;;
     esac
     ;;
-  agents|keys|tokens)
-    # No additional completion needed for these list commands
+  agents|keys|tokens|install-touch-detector)
+    # No additional completion needed for these commands
     return
     ;;
   hosts)

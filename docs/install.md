@@ -16,7 +16,7 @@ The Keycutter installer checks requirements automatically, but here's what you'l
 ### Recommended
 
 - **GitHub CLI >= 2.0** (Greater than 2.4.0+dfsg1-2 on Ubuntu)
-- **[YubiKey Touch Detector](https://github.com/maximbaz/yubikey-touch-detector):** Get notified when YubiKey needs a touch
+- **YubiKey Touch Detector:** Get notified when YubiKey needs a touch (install with `keycutter install-touch-detector`)
 - **YubiKey Manager (`ykman`):** Used to set a PIN on YubiKeys and perform other configuration
 
 ## Installation Methods
@@ -83,4 +83,5 @@ If you encounter issues during installation:
 
 - Read the [Tutorial](tutorial.md) to learn how to use Keycutter
 - Create your first FIDO SSH key with `keycutter create`
+- Install YubiKey touch notifications with `keycutter install-touch-detector`
 - Explore the [Configuration Guide](config/README.md) to understand how Keycutter organizes SSH configuration

@@ -64,6 +64,7 @@ usage() {
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
   echo "       push-keys <hostname>                             Push public keys to remote host"
   echo "       update                                            Update keycutter from git and refresh config"
+  echo "       install-touch-detector                            Install YubiKey touch notification tool"
   echo "       config <hostname>                                 Show config relevant to host"
   echo "       agents                                            List all agents"
   echo "       hosts                                             List all hosts"
@@ -295,6 +296,7 @@ keycutter-update() {
   keycutter-update-git
   check_requirements
   keycutter-update-ssh-config
+  keycutter-update-touch-detector
 }
 
 keycutter-update-git() {
@@ -402,6 +404,53 @@ keycutter-update-ssh-config() {
   prepend-line-if-missing "${HOME}/.ssh/config" "Include ${KEYCUTTER_CONFIG#${HOME}/.ssh/}"
 
   log "Keycutter SSH update complete."
+}
+
+keycutter-update-touch-detector() {
+  # Only check/prompt if we have FIDO keys
+  local has_fido_keys=false
+  if [[ -d "$KEYCUTTER_SSH_KEY_DIR" ]]; then
+    for key_file in "$KEYCUTTER_SSH_KEY_DIR"/*; do
+      if [[ -f "$key_file" && ! "$key_file" =~ \.pub$ && ! $(basename "$key_file") =~ ^\. ]]; then
+        # Check if it's a FIDO key by looking at the public key
+        if [[ -f "${key_file}.pub" ]] && grep -q "sk-" "${key_file}.pub"; then
+          has_fido_keys=true
+          break
+        fi
+      fi
+    done
+  fi
+  
+  if [[ "$has_fido_keys" != "true" ]]; then
+    return 0
+  fi
+  
+  # Check if touch detector is already installed
+  local touch_detector_installed=false
+  if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    if command -v yubikey-touch-detector &>/dev/null || systemctl --user is-active yubikey-touch-detector.service &>/dev/null 2>&1; then
+      touch_detector_installed=true
+    fi
+  elif [[ "$OSTYPE" == "darwin"* ]]; then
+    if command -v yknotify &>/dev/null || launchctl list 2>/dev/null | grep -q com.user.yknotify; then
+      touch_detector_installed=true
+    fi
+  fi
+  
+  if [[ "$touch_detector_installed" == "true" ]]; then
+    return 0
+  fi
+  
+  log ""
+  log "YubiKey Touch Detector is not installed."
+  log "This tool shows a notification when your YubiKey is waiting for a touch."
+  prompt "Would you like to install it now? [Y/n] "
+  read -n 1 -r
+  echo
+  
+  if [[ ! ${REPLY:-} =~ ^[Nn]$ ]]; then
+    keycutter-install-touch-detector
+  fi
 }
 
 keycutter-check-requirements() {
@@ -931,6 +980,17 @@ keycutter-key-hosts() {
     done
 }
 
+keycutter-install-touch-detector() {
+  local installer_script="${KEYCUTTER_ROOT}/libexec/keycutter/install-touch-detector"
+  
+  if [[ ! -x "$installer_script" ]]; then
+    log "Error: Touch detector installer not found at: $installer_script"
+    return 1
+  fi
+  
+  "$installer_script"
+}
+
 # YubiKey subcommands
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
@@ -945,6 +1005,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   case "$cmd" in
   create | authorized-keys | push-keys | update | check-requirements | config | agents | hosts | keys)
     "keycutter-$cmd" "$@"
+    ;;
+  install-touch-detector)
+    keycutter-install-touch-detector "$@"
     ;;
   agent | host | key)
     "keycutter-$cmd" "$@"

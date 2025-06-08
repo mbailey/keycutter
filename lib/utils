@@ -356,6 +356,27 @@ check_requirements() {
             errors=$((errors + 1))
         fi
 
+        # Check for YubiKey touch detector (recommended but not required)
+        local touch_detector_status="not installed"
+        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            if command -v yubikey-touch-detector &>/dev/null; then
+                touch_detector_status="installed"
+                if systemctl --user is-active yubikey-touch-detector.service &>/dev/null 2>&1; then
+                    touch_detector_status="installed and running"
+                fi
+            fi
+        elif [[ "$OSTYPE" == "darwin"* ]]; then
+            if command -v yknotify &>/dev/null || launchctl list 2>/dev/null | grep -q com.user.yknotify; then
+                touch_detector_status="installed and running"
+            fi
+        fi
+        
+        if [[ "$touch_detector_status" == "not installed" ]]; then
+            echo "YubiKey touch detector is recommended but not installed (run 'keycutter install-touch-detector')"
+        else
+            echo "YubiKey touch detector is $touch_detector_status"
+        fi
+
     fi
 
     if [[ $errors -gt 0 ]]; then
