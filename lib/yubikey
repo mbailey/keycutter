@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # keycutter/lib/yubikey - Functions to work with yubikey
 
 # Might not keep this here, but for now it's here

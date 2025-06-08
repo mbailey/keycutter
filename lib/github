@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # GitHub Functions
 
 github-ssh-key-add() {
@@ -13,7 +14,7 @@ github-ssh-key-add() {
     fi
 
     prompt "Upload public key to GitHub for auth and commit signing using Github CLI? (Y/n) "
-    read choice
+    read -r choice
     choice=${choice:-Y}
     [[ $choice =~ ^[Yy]*$ ]] || return 1
 
@@ -61,7 +62,7 @@ github-auth() {
     
     # Add the new confirmation prompt
     prompt "Continue with current GitHub account (${logged_in_user})? [Y/n] "
-    read choice
+    read -r choice
     choice=${choice:-Y}
     if [[ ! $choice =~ ^[Yy]*$ ]]; then
       # Log out if user wants to switch accounts
