@@ -10,18 +10,27 @@ setup_test_environment() {
     export KEYCUTTER_CONFIG_DIR="$TEST_HOME/.ssh/keycutter"
     export KEYCUTTER_SSH_KEY_DIR="$TEST_HOME/.ssh/keycutter/keys"
     
+    # Enable test mode to prevent stdin reattachment
+    export KEYCUTTER_TEST_MODE=1
+    
     # Prevent actual git operations during tests
     export GIT_CONFIG_GLOBAL=/dev/null
     export GIT_CONFIG_SYSTEM=/dev/null
     
-    # Disable actual systemctl/launchctl commands
-    export PATH="$BATS_TMPDIR/mock_bin:$PATH"
-    mkdir -p "$BATS_TMPDIR/mock_bin"
-    
-    # Create mock directories
+    # Create test directories
     mkdir -p "$TEST_HOME/.ssh/keycutter/"{keys,agents,hosts,scripts}
     mkdir -p "$TEST_HOME/.local/bin"
     mkdir -p "$TEST_HOME/.config/systemd/user"
+    mkdir -p "$TEST_HOME/go/bin"
+    
+    # Create minimal mock bin directory for essential commands
+    mkdir -p "$BATS_TMPDIR/mock_bin"
+    export PATH="$BATS_TMPDIR/mock_bin:$PATH"
+    
+    # Only mock the most essential commands to prevent system modifications
+    create_mock_command "sudo" 0 ""
+    create_mock_command "systemctl" 0 ""
+    create_mock_command "launchctl" 0 ""
 }
 
 # Clean up test environment
@@ -135,17 +144,30 @@ init_mock_log() {
 # Set up a fake OS environment for testing
 mock_os_environment() {
     local os_type="$1"
+    local pretty_name="${2:-}"
     
     case "$os_type" in
         "linux")
             export OSTYPE="linux-gnu"
-            echo 'PRETTY_NAME="Test Linux Distribution"' > "$BATS_TMPDIR/os-release"
+            # Create a test os-release file in the test tmp directory
+            mkdir -p "$BATS_TMPDIR/etc"
+            if [[ -n "$pretty_name" ]]; then
+                echo "PRETTY_NAME=\"$pretty_name\"" > "$BATS_TMPDIR/etc/os-release"
+            else
+                echo 'PRETTY_NAME="Test Linux Distribution"' > "$BATS_TMPDIR/etc/os-release"
+            fi
+            # Mock commands to prevent detection of existing installations
+            create_mock_command "command" 1 ""  # command -v returns not found
+            create_mock_command "systemctl" 1 ""  # systemctl returns not active
             create_mock_command "dnf" 0 ""
             ;;
         "macos")
             export OSTYPE="darwin22"
             create_mock_command "sw_vers" 0 "14.2.1"
             create_mock_command "brew" 0 ""
+            # Mock commands to prevent detection of existing installations
+            create_mock_command "command" 1 ""  # command -v returns not found
+            create_mock_command "launchctl" 1 ""  # launchctl list returns empty
             ;;
     esac
 }

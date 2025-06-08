@@ -47,15 +47,53 @@ echo
 # Set test environment
 export KEYCUTTER_ROOT="$PROJECT_ROOT"
 
+# Parse arguments
+VERBOSE=false
+TEST_FILES=()
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --verbose|-v)
+            VERBOSE=true
+            shift
+            ;;
+        --help|-h)
+            log "$BLUE" "Usage: $0 [--verbose] [test_file...]"
+            log "$BLUE" ""
+            log "$BLUE" "Options:"
+            log "$BLUE" "  --verbose, -v    Run tests with verbose output"
+            log "$BLUE" "  --help, -h       Show this help message"
+            log "$BLUE" ""
+            log "$BLUE" "Examples:"
+            log "$BLUE" "  $0                           # Run all tests"
+            log "$BLUE" "  $0 --verbose                 # Run all tests verbosely"
+            log "$BLUE" "  $0 test_keycutter.bats       # Run specific test"
+            log "$BLUE" "  $0 -v test_keycutter.bats    # Run specific test verbosely"
+            exit 0
+            ;;
+        *)
+            TEST_FILES+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Set BATS options
+BATS_OPTS=""
+if $VERBOSE; then
+    BATS_OPTS="--verbose-run"
+    log "$YELLOW" "Running in verbose mode..."
+fi
+
 # Run specific test file if provided, otherwise run all tests
-if [[ $# -gt 0 ]]; then
-    for test_file in "$@"; do
+if [[ ${#TEST_FILES[@]} -gt 0 ]]; then
+    for test_file in "${TEST_FILES[@]}"; do
         if [[ -f "$TEST_DIR/$test_file" ]]; then
             log "$YELLOW" "Running $test_file..."
-            bats "$TEST_DIR/$test_file"
+            bats $BATS_OPTS "$TEST_DIR/$test_file"
         elif [[ -f "$test_file" ]]; then
             log "$YELLOW" "Running $test_file..."
-            bats "$test_file"
+            bats $BATS_OPTS "$test_file"
         else
             log "$RED" "Test file not found: $test_file"
             exit 1
@@ -63,7 +101,7 @@ if [[ $# -gt 0 ]]; then
     done
 else
     log "$YELLOW" "Running all tests..."
-    bats "$TEST_DIR"/*.bats
+    bats $BATS_OPTS "$TEST_DIR"/*.bats
 fi
 
 log "$GREEN" "Tests completed!"
