@@ -8,7 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-${0:A}}")")" && pw
 KEYCUTTER_ROOT="$(cd -- "$SCRIPT_DIR/../" && pwd)"
 source "${KEYCUTTER_ROOT}/lib/functions"
 
-[ -t 0 ] || exec </dev/tty # reattach keyboard to STDIN
+# Skip stdin reattachment in test mode
+[ -n "${KEYCUTTER_TEST_MODE:-}" ] || { [ -t 0 ] || exec </dev/tty; } # reattach keyboard to STDIN
 
 # If run on ORIGIN (not connected by SSH), default KEYCUTTER_ORIGIN to local hostname.
 # Track whether KEYCUTTER_ORIGIN was explicitly set
