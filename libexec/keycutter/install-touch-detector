@@ -75,24 +75,63 @@ main() {
   case "$os" in
     linux)
       log "Detected Linux system"
+      
+      # Detect distribution and available installation methods
+      local distro=""
+      local install_options=()
+      local install_methods=()
+      
+      if command -v pacman &>/dev/null; then
+        distro="Arch Linux"
+        install_options+=("1. Install from AUR/pacman (recommended)")
+        install_methods+=("install_linux_arch_package")
+      elif command -v apt-get &>/dev/null; then
+        distro="Ubuntu/Debian"
+      elif command -v dnf &>/dev/null; then
+        distro="Fedora"
+      elif command -v zypper &>/dev/null; then
+        distro="openSUSE"
+      fi
+      
+      if [[ -n "$distro" ]]; then
+        log "Detected $distro"
+      fi
+      
+      # Add common options for all distributions
+      local next_num=$((${#install_options[@]}+1))
+      install_options+=("${next_num}. Download pre-built binary from GitHub")
+      install_methods+=("install_linux_binary")
+      
+      next_num=$((next_num+1))
+      install_options+=("${next_num}. Build from source (requires Go)")
+      install_methods+=("install_linux_source")
+      
+      next_num=$((next_num+1))
+      install_options+=("${next_num}. Cancel")
+      install_methods+=("cancel")
+      
       log ""
       log "Options:"
-      log "  1. Package manager install (recommended if available)"
-      log "  2. Download pre-built binary from GitHub"
-      log "  3. Build from source"
-      log "  4. Cancel"
+      for opt in "${install_options[@]}"; do
+        log "  $opt"
+      done
       log ""
-      prompt "Select installation method [1-4]: "
+      prompt "Select installation method [1-${#install_options[@]}]: "
       read -n 1 -r choice
       echo
       
-      case "${choice:-}" in
-        1) install_linux_package ;;
-        2) install_linux_binary ;;
-        3) install_linux_source ;;
-        4) log "Installation cancelled."; return 0 ;;
-        *) log "Invalid choice"; return 1 ;;
-      esac
+      if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le "${#install_options[@]}" ]]; then
+        local method="${install_methods[$((choice-1))]}"
+        if [[ "$method" == "cancel" ]]; then
+          log "Installation cancelled."
+          return 0
+        else
+          "$method"
+        fi
+      else
+        log "Invalid choice"
+        return 1
+      fi
       ;;
       
     macos)
@@ -117,30 +156,10 @@ main() {
   esac
 }
 
-# Linux: Package manager installation
-install_linux_package() {
-  log "Checking for package manager support..."
-  
-  if command -v pacman &>/dev/null; then
-    log "Found pacman (Arch Linux)"
-    sudo pacman -S yubikey-touch-detector
-  elif command -v apt-get &>/dev/null; then
-    log "Installing dependencies for Ubuntu/Debian..."
-    sudo apt-get update
-    sudo apt-get install -y libgpgme-dev golang
-    install_linux_source
-  elif command -v dnf &>/dev/null; then
-    log "Installing dependencies for Fedora..."
-    sudo dnf install -y gpgme-devel golang
-    install_linux_source
-  elif command -v zypper &>/dev/null; then
-    log "Installing dependencies for openSUSE..."
-    sudo zypper install -y libgpgme-devel go
-    install_linux_source
-  else
-    log "Package manager not supported. Falling back to binary installation."
-    install_linux_binary
-  fi
+# Linux: Arch Linux package installation
+install_linux_arch_package() {
+  log "Installing from Arch Linux repository..."
+  sudo pacman -S yubikey-touch-detector
   
   setup_linux_systemd
 }
@@ -194,16 +213,31 @@ install_linux_binary() {
 install_linux_source() {
   log "Building from source..."
   
-  # Check for Go
-  if ! command -v go &>/dev/null; then
-    log "Error: Go is not installed. Please install Go first."
-    return 1
-  fi
-  
-  # Check for gpgme
-  if ! pkg-config --exists gpgme 2>/dev/null; then
-    log "Error: libgpgme-dev is not installed. Please install it first."
-    return 1
+  # Install dependencies based on distribution
+  if command -v apt-get &>/dev/null; then
+    log "Installing dependencies for Ubuntu/Debian..."
+    sudo apt-get update
+    sudo apt-get install -y libgpgme-dev golang
+  elif command -v dnf &>/dev/null; then
+    log "Installing dependencies for Fedora..."
+    sudo dnf install -y gpgme-devel golang
+  elif command -v zypper &>/dev/null; then
+    log "Installing dependencies for openSUSE..."
+    sudo zypper install -y libgpgme-devel go
+  elif command -v pacman &>/dev/null; then
+    log "Installing dependencies for Arch Linux..."
+    sudo pacman -S --needed gpgme go
+  else
+    # Check if dependencies are already installed
+    if ! command -v go &>/dev/null; then
+      log "Error: Go is not installed. Please install Go first."
+      return 1
+    fi
+    
+    if ! pkg-config --exists gpgme 2>/dev/null; then
+      log "Error: libgpgme-dev is not installed. Please install it first."
+      return 1
+    fi
   fi
   
   log "Installing yubikey-touch-detector via Go..."
