@@ -5,7 +5,7 @@ KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/utils"
 
 # If run on ORIGIN (not connected by SSH), default KEYCUTTER_ORIGIN to local hostname.
-[[ -z $SSH_CONNECTION ]] && : ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
+[[ -z ${SSH_CONNECTION:-} ]] && : ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
 
 # Initialise some environment variables
 
@@ -14,124 +14,124 @@ source "${KEYCUTTER_ROOT}/lib/utils"
 : ${KEYCUTTER_SSH_KEY_DIR:="${KEYCUTTER_CONFIG_DIR}/keys"}
 
 ssh-authorized-keys() {
-    local hostname="$1"
+  local hostname="$1"
 
-    # Extract identity files using `ssh -G`
-    local identity_files
-    identity_files=$(ssh -G "$hostname" | grep '^identityfile ' | awk '{print $2}')
+  # Extract identity files using `ssh -G`
+  local identity_files
+  identity_files=$(ssh -G "$hostname" | grep '^identityfile ' | awk '{print $2}')
 
-    # Loop through each identity file and output the public key, then sort and deduplicate
-    {
-        for id_file in $identity_files; do
-            # Expand ~ to the home directory
-            id_file="${id_file/#\~/$HOME}"
-            # Expand %n to the hostname
-            id_file="${id_file//%n/$hostname}"
-            # Expand ${KEYCUTTER_ORIGIN} if it's set
-            if [[ -n "${KEYCUTTER_ORIGIN:-}" ]]; then
-                id_file="${id_file/\$\{KEYCUTTER_ORIGIN\}/$KEYCUTTER_ORIGIN}"
-                id_file="${id_file/\%L/$KEYCUTTER_ORIGIN}"
-            fi
-            pub_file="${id_file}.pub"
-            
-            if [[ -f "$pub_file" ]]; then
-                # Use the existing .pub file
-                cat "$pub_file"
+  # Loop through each identity file and output the public key, then sort and deduplicate
+  {
+    for id_file in $identity_files; do
+      # Expand ~ to the home directory
+      id_file="${id_file/#\~/$HOME}"
+      # Expand %n to the hostname
+      id_file="${id_file//%n/$hostname}"
+      # Expand ${KEYCUTTER_ORIGIN} if it's set
+      if [[ -n "${KEYCUTTER_ORIGIN:-}" ]]; then
+        id_file="${id_file/\$\{KEYCUTTER_ORIGIN\}/$KEYCUTTER_ORIGIN}"
+        id_file="${id_file/\%L/$KEYCUTTER_ORIGIN}"
+      fi
+      pub_file="${id_file}.pub"
+
+      if [[ -f "$pub_file" ]]; then
+        # Use the existing .pub file
+        cat "$pub_file"
+      else
+        echo >&2 "Warning: Public key $pub_file not found."
+        if [[ -f "$id_file" ]]; then
+          # Try extracting the public key without a passphrase
+          if ssh-keygen -y -P '' -f "$id_file" >/dev/null 2>&1; then
+            ssh-keygen -y -P '' -f "$id_file"
+          else
+            # Prompt the user for a passphrase if required
+            prompt "The private key $id_file requires a passphrase. Do you want to enter it? (yes/no)"
+            read -r answer
+            if [[ "$answer" == "yes" ]]; then
+              ssh-keygen -y -f "$id_file"
             else
-                echo >&2 "Warning: Public key $pub_file not found." 
-                if [[ -f "$id_file" ]]; then
-                    # Try extracting the public key without a passphrase
-                    if ssh-keygen -y -P '' -f "$id_file" > /dev/null 2>&1; then
-                        ssh-keygen -y -P '' -f "$id_file"
-                    else
-                        # Prompt the user for a passphrase if required
-                        prompt "The private key $id_file requires a passphrase. Do you want to enter it? (yes/no)"
-                        read -r answer
-                        if [[ "$answer" == "yes" ]]; then
-                            ssh-keygen -y -f "$id_file"
-                        else
-                            echo "Skipping key $id_file due to missing passphrase."
-                        fi
-                    fi
-                else
-                    echo "Warning: Private key $id_file not found." >&2
-                fi
+              echo "Skipping key $id_file due to missing passphrase."
             fi
-        done
-    } | sort -u
+          fi
+        else
+          echo "Warning: Private key $id_file not found." >&2
+        fi
+      fi
+    done
+  } | sort -u
 }
 
 ## SSH Keytags - Manipulate SSH Keytags (strings) used by Keycutter
 
 ssh-keytag-validate() {
-    local keytag="$1"
+  local keytag="$1"
 
-    # Regular expression to match the SSH keytag format
-    local regex="^([a-zA-Z0-9._-]+_)?([a-zA-Z0-9._-]+)(@[a-zA-Z0-9._-]+)?$"
+  # Regular expression to match the SSH keytag format
+  local regex="^([a-zA-Z0-9._-]+_)?([a-zA-Z0-9._-]+)(@[a-zA-Z0-9._-]+)?$"
 
-    if [[ $keytag =~ $regex ]]; then
-        local fqdn="${BASH_REMATCH[1]}"
-        local user="${BASH_REMATCH[2]}"
-        local device="${BASH_REMATCH[3]}"
+  if [[ $keytag =~ $regex ]]; then
+    local fqdn="${BASH_REMATCH[1]}"
+    local user="${BASH_REMATCH[2]}"
+    local device="${BASH_REMATCH[3]}"
 
-        # If device is missing and $KEYCUTTER_HOSTNAME is set, use it
-        if [[ -z $device && -n $KEYCUTTER_HOSTNAME ]]; then
-            device="$KEYCUTTER_HOSTNAME"
-        fi
-
-        # Construct the new keytag
-        if [[ -n $device ]]; then
-            local new_keytag="${fqdn}${user}@${device}"
-            echo "$new_keytag"
-        else
-            echo "Error: Device name is missing and KEYCUTTER_HOSTNAME is not set." >&2
-            return 1
-        fi
-    else
-        echo "Error: Invalid SSH keytag format." >&2
-        return 1
+    # If device is missing and $KEYCUTTER_HOSTNAME is set, use it
+    if [[ -z $device && -n $KEYCUTTER_HOSTNAME ]]; then
+      device="$KEYCUTTER_HOSTNAME"
     fi
+
+    # Construct the new keytag
+    if [[ -n $device ]]; then
+      local new_keytag="${fqdn}${user}@${device}"
+      echo "$new_keytag"
+    else
+      echo "Error: Device name is missing and KEYCUTTER_HOSTNAME is not set." >&2
+      return 1
+    fi
+  else
+    echo "Error: Invalid SSH keytag format." >&2
+    return 1
+  fi
 }
 
-_ssh-keytag-create(){
-    # Generate a default SSH Keytag
-    local user="${1:-$(whoami)}"
-    local device="${2:-"${KEYCUTTER_HOSTNAME:-"$(hostname -s)"}"}"
-    local service="${3:-}"
-    echo "${service:+"${service}_"}${user}@${device}"
+_ssh-keytag-create() {
+  # Generate a default SSH Keytag
+  local user="${1:-$(whoami)}"
+  local device="${2:-"${KEYCUTTER_HOSTNAME:-"$(hostname -s)"}"}"
+  local service="${3:-}"
+  echo "${service:+"${service}_"}${user}@${device}"
 }
 
 _ssh-keytag() {
-    # Extract SSH Keytag from path
-    echo "$(basename "${1:-}")" # Strip path if filename is provided
+  # Extract SSH Keytag from path
+  echo "$(basename "${1:-}")" # Strip path if filename is provided
 }
 
 _ssh-keytag-device() {
-    # Extract the Device part of the SSH Keytag
-    local ssh_keytag="$(ssh-keytag "${1:-}")"
-    echo "${ssh_keytag#*@}"
+  # Extract the Device part of the SSH Keytag
+  local ssh_keytag="$(ssh-keytag "${1:-}")"
+  echo "${ssh_keytag#*@}"
 }
 
 _ssh-keytag-service-identity() {
-    # Extract the Service_Identity part of the SSH Keytag
-    local ssh_keytag="$(_ssh-keytag "${1:-}")"
-    echo "${ssh_keytag%@*}"
+  # Extract the Service_Identity part of the SSH Keytag
+  local ssh_keytag="$(_ssh-keytag "${1:-}")"
+  echo "${ssh_keytag%@*}"
 }
 
 _ssh-keytag-service() {
-    # Extract the Identity part of the SSH Keytag
-    local ssh_keytag_service_identity="$(_ssh-keytag-service-identity "${1:-}")"
-    local service="${ssh_keytag_service_identity%%_*}" # Removed longest match from end
-    if [[ $service == $ssh_keytag_service_identity ]]; then
-        return
-    else
-        echo "$service"
-    fi
+  # Extract the Identity part of the SSH Keytag
+  local ssh_keytag_service_identity="$(_ssh-keytag-service-identity "${1:-}")"
+  local service="${ssh_keytag_service_identity%%_*}" # Removed longest match from end
+  if [[ $service == $ssh_keytag_service_identity ]]; then
+    return
+  else
+    echo "$service"
+  fi
 }
 
 _ssh-keytag-identity() {
-    # Extract the Identity part of the SSH Keytag
-    local ssh_keytag_service_identity="$(_ssh-keytag-service-identity "${1:-}")"
-    local identity="${ssh_keytag_service_identity#*_}" # remove shortest match from start
-    echo "$identity"
+  # Extract the Identity part of the SSH Keytag
+  local ssh_keytag_service_identity="$(_ssh-keytag-service-identity "${1:-}")"
+  local identity="${ssh_keytag_service_identity#*_}" # remove shortest match from start
+  echo "$identity"
 }
