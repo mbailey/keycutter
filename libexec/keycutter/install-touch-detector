@@ -99,11 +99,7 @@ main() {
       
       # Add common options for all distributions
       local next_num=$((${#install_options[@]}+1))
-      install_options+=("${next_num}. Download pre-built binary from GitHub")
-      install_methods+=("install_linux_binary")
-      
-      next_num=$((next_num+1))
-      install_options+=("${next_num}. Build from source (requires Go)")
+      install_options+=("${next_num}. Install via Go build (recommended)")
       install_methods+=("install_linux_source")
       
       next_num=$((next_num+1))
@@ -164,49 +160,13 @@ install_linux_arch_package() {
   setup_linux_systemd
 }
 
-# Linux: Binary installation
+# Linux: Binary installation (not currently available from upstream)
+# Note: yubikey-touch-detector doesn't provide pre-built binaries
+# Keeping this function for potential future use
 install_linux_binary() {
-  log "Downloading pre-built binary from GitHub..."
-  
-  local arch=$(uname -m)
-  local download_arch=""
-  
-  case "$arch" in
-    x86_64) download_arch="amd64" ;;
-    aarch64) download_arch="arm64" ;;
-    armv7l) download_arch="armv7" ;;
-    *) log "Error: Unsupported architecture: $arch"; return 1 ;;
-  esac
-  
-  local release_url="https://api.github.com/repos/maximbaz/yubikey-touch-detector/releases/latest"
-  local download_url=$(curl -s "$release_url" | grep -o "https://.*yubikey-touch-detector-.*linux.*${download_arch}.*" | head -1)
-  
-  if [[ -z "$download_url" ]]; then
-    log "Error: Could not find download URL for your architecture"
-    return 1
-  fi
-  
-  local temp_dir=$(mktemp -d)
-  local original_dir=$(pwd)
-  cd "$temp_dir"
-  
-  log "Downloading from: $download_url"
-  curl -L -o yubikey-touch-detector.tar.gz "$download_url"
-  tar -xzf yubikey-touch-detector.tar.gz
-  
-  sudo install -m 755 yubikey-touch-detector /usr/local/bin/
-  
-  # Download systemd files
-  curl -s -o yubikey-touch-detector.service https://raw.githubusercontent.com/maximbaz/yubikey-touch-detector/main/yubikey-touch-detector.service
-  curl -s -o yubikey-touch-detector.socket https://raw.githubusercontent.com/maximbaz/yubikey-touch-detector/main/yubikey-touch-detector.socket
-  
-  mkdir -p ~/.config/systemd/user
-  cp yubikey-touch-detector.{service,socket} ~/.config/systemd/user/
-  
-  cd "$original_dir"
-  rm -rf "$temp_dir"
-  
-  setup_linux_systemd
+  log "Error: Pre-built binaries are not available for yubikey-touch-detector"
+  log "Please use the 'Install via Go build' option instead"
+  return 1
 }
 
 # Linux: Source installation

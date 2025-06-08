@@ -25,8 +25,9 @@ This command will:
 
 ### Linux
 - **yubikey-touch-detector** - The original tool by [maximbaz](https://github.com/maximbaz/yubikey-touch-detector)
-- Supports package manager installation (Arch), pre-built binaries, or building from source
+- Supports package manager installation (Arch only) or building from source with Go
 - Uses systemd for service management
+- Note: Pre-built binaries are not provided by upstream
 
 ### macOS
 - **yknotify** - Lightweight tool by [noperator](https://github.com/noperator/yknotify) that monitors system logs
