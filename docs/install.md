@@ -32,7 +32,7 @@ curl https://raw.githubusercontent.com/mbailey/keycutter/master/install.sh | bas
 Clone the Git repo and run the installer:
 
 ```shell
-git clone https://github.com/bash-my-aws/keycutter
+git clone https://github.com/mbailey/keycutter
 cd keycutter
 ./install.sh
 ```
