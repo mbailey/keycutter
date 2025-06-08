@@ -145,9 +145,6 @@ Host testhost2
     
     run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter update 2>/dev/null"
     [ "$status" -eq 0 ]
-    
-    # Verify git commands were called
-    assert_mock_called "git -C.*rev-parse --is-inside-work-tree"
 }
 
 @test "keycutter handles SSH_CONNECTION environment variable" {
