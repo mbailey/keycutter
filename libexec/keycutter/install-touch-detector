@@ -168,6 +168,7 @@ install_linux_binary() {
   fi
   
   local temp_dir=$(mktemp -d)
+  local original_dir=$(pwd)
   cd "$temp_dir"
   
   log "Downloading from: $download_url"
@@ -183,7 +184,7 @@ install_linux_binary() {
   mkdir -p ~/.config/systemd/user
   cp yubikey-touch-detector.{service,socket} ~/.config/systemd/user/
   
-  cd - >/dev/null
+  cd "$original_dir"
   rm -rf "$temp_dir"
   
   setup_linux_systemd
@@ -218,6 +219,7 @@ install_linux_source() {
   
   # Download and install systemd files
   local temp_dir=$(mktemp -d)
+  local original_dir=$(pwd)
   cd "$temp_dir"
   
   git clone https://github.com/maximbaz/yubikey-touch-detector.git
@@ -232,7 +234,7 @@ install_linux_source() {
     cp service.conf.example "${XDG_CONFIG_HOME:-${HOME}/.config}/yubikey-touch-detector/service.conf"
   fi
   
-  cd - >/dev/null
+  cd "$original_dir"
   rm -rf "$temp_dir"
   
   setup_linux_systemd
