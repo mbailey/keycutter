@@ -52,12 +52,19 @@ main() {
     return 1
   fi
   
-  log "YubiKey Touch Detector Installation"
-  log "===================================="
-  log ""
-  log "This tool provides notifications when your YubiKey is waiting for a touch."
-  log "It helps prevent timeouts and improves the user experience."
-  log ""
+  # Get OS details
+  local os_name=""
+  if [[ "$os" == "linux" ]]; then
+    if [[ -f /etc/os-release ]]; then
+      os_name=$(grep -E '^PRETTY_NAME=' /etc/os-release | cut -d'"' -f2)
+    else
+      os_name="Linux"
+    fi
+  elif [[ "$os" == "macos" ]]; then
+    os_name="macOS $(sw_vers -productVersion 2>/dev/null || echo "")"
+  fi
+  
+  log "Detected: $os_name"
   
   # Check for existing installation
   if check_existing_installation "$os"; then
@@ -74,80 +81,40 @@ main() {
   # Platform-specific installation
   case "$os" in
     linux)
-      log "Detected Linux system"
-      
-      # Detect distribution and available installation methods
-      local distro=""
-      local install_options=()
-      local install_methods=()
-      
-      if command -v pacman &>/dev/null; then
-        distro="Arch Linux"
-        install_options+=("1. Install from AUR/pacman (recommended)")
-        install_methods+=("install_linux_arch_package")
-      elif command -v apt-get &>/dev/null; then
-        distro="Ubuntu/Debian"
-      elif command -v dnf &>/dev/null; then
-        distro="Fedora"
-      elif command -v zypper &>/dev/null; then
-        distro="openSUSE"
-      fi
-      
-      if [[ -n "$distro" ]]; then
-        log "Detected $distro"
-      fi
-      
-      # Add common options for all distributions
-      local next_num=$((${#install_options[@]}+1))
-      install_options+=("${next_num}. Install via Go build (recommended)")
-      install_methods+=("install_linux_source")
-      
-      next_num=$((next_num+1))
-      install_options+=("${next_num}. Cancel")
-      install_methods+=("cancel")
-      
-      log ""
-      log "Options:"
-      for opt in "${install_options[@]}"; do
-        log "  $opt"
-      done
-      log ""
-      prompt "Select installation method [1-${#install_options[@]}]: "
-      read -n 1 -r choice
-      echo
-      
-      if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le "${#install_options[@]}" ]]; then
-        local method="${install_methods[$((choice-1))]}"
-        if [[ "$method" == "cancel" ]]; then
+      # Check if it's Arch Linux with pacman support
+      if command -v pacman &>/dev/null && pacman -Qq 2>/dev/null | grep -q "^yubikey-touch-detector$" &>/dev/null; then
+        prompt "Install yubikey-touch-detector from Arch repository? [Y/n] "
+        read -n 1 -r
+        echo
+        if [[ ! ${REPLY:-} =~ ^[Nn]$ ]]; then
+          install_linux_arch_package
+        else
           log "Installation cancelled."
           return 0
-        else
-          "$method"
         fi
       else
-        log "Invalid choice"
-        return 1
+        prompt "Install yubikey-touch-detector via Go build? [Y/n] "
+        read -n 1 -r
+        echo
+        if [[ ! ${REPLY:-} =~ ^[Nn]$ ]]; then
+          install_linux_source
+        else
+          log "Installation cancelled."
+          return 0
+        fi
       fi
       ;;
       
     macos)
-      log "Detected macOS system"
-      log ""
-      log "Options:"
-      log "  1. Install yknotify (recommended - lightweight, reliable)"
-      log "  2. Install gpg-tap-notifier-macos (better GPG integration)"
-      log "  3. Cancel"
-      log ""
-      prompt "Select installation method [1-3]: "
-      read -n 1 -r choice
+      prompt "Install yknotify for YubiKey touch notifications? [Y/n] "
+      read -n 1 -r
       echo
-      
-      case "${choice:-}" in
-        1) install_macos_yknotify ;;
-        2) install_macos_gpg_tap_notifier ;;
-        3) log "Installation cancelled."; return 0 ;;
-        *) log "Invalid choice"; return 1 ;;
-      esac
+      if [[ ! ${REPLY:-} =~ ^[Nn]$ ]]; then
+        install_macos_yknotify
+      else
+        log "Installation cancelled."
+        return 0
+      fi
       ;;
   esac
 }
@@ -171,21 +138,17 @@ install_linux_binary() {
 
 # Linux: Source installation
 install_linux_source() {
-  log "Building from source..."
+  log "Installing dependencies and building from source..."
   
   # Install dependencies based on distribution
   if command -v apt-get &>/dev/null; then
-    log "Installing dependencies for Ubuntu/Debian..."
-    sudo apt-get update
+    sudo apt-get update -qq
     sudo apt-get install -y libgpgme-dev golang
   elif command -v dnf &>/dev/null; then
-    log "Installing dependencies for Fedora..."
     sudo dnf install -y gpgme-devel golang
   elif command -v zypper &>/dev/null; then
-    log "Installing dependencies for openSUSE..."
     sudo zypper install -y libgpgme-devel go
   elif command -v pacman &>/dev/null; then
-    log "Installing dependencies for Arch Linux..."
     sudo pacman -S --needed gpgme go
   else
     # Check if dependencies are already installed
