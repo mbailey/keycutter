@@ -203,9 +203,14 @@ install_linux_source() {
   log "Installing yubikey-touch-detector via Go..."
   go install github.com/maximbaz/yubikey-touch-detector@latest
   
-  # Copy binary to system location
+  # Install binary to XDG user directory
+  local user_bin_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
+  mkdir -p "$user_bin_dir"
+  
   if [[ -f "$HOME/go/bin/yubikey-touch-detector" ]]; then
-    sudo cp "$HOME/go/bin/yubikey-touch-detector" /usr/local/bin/
+    cp "$HOME/go/bin/yubikey-touch-detector" "$user_bin_dir/"
+    chmod +x "$user_bin_dir/yubikey-touch-detector"
+    log "Installed binary to: $user_bin_dir/yubikey-touch-detector"
   else
     log "Error: Binary not found after go install"
     return 1
@@ -220,7 +225,14 @@ install_linux_source() {
   cd yubikey-touch-detector
   
   mkdir -p ~/.config/systemd/user
-  cp yubikey-touch-detector.{service,socket} ~/.config/systemd/user/
+  
+  # Copy socket file as-is
+  cp yubikey-touch-detector.socket ~/.config/systemd/user/
+  
+  # Update service file with correct binary path
+  local user_bin_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
+  sed "s|/usr/bin/yubikey-touch-detector|${user_bin_dir}/yubikey-touch-detector|g" \
+      yubikey-touch-detector.service > ~/.config/systemd/user/yubikey-touch-detector.service
   
   # Create config directory
   mkdir -p "${XDG_CONFIG_HOME:-${HOME}/.config}/yubikey-touch-detector"
