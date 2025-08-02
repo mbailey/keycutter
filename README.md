@@ -130,6 +130,7 @@ Keycutter SSH update complete.
 ## See also
 
 - **[Configuration Guide](docs/config/README.md):** Overview of keycutter's configuration structure
+- **[Development Guide](docs/development.md):** How to develop and test Keycutter locally
 - **[Tips and tricks](docs/tips-and-tricks.md):** Undocumented features and cool tricks.
 
 - **Prior art (and inspiration):**

@@ -40,6 +40,15 @@ make clean
 
 # Update keycutter (for users)
 keycutter update
+
+# Test local changes without git pull
+keycutter update config
+
+# Update specific components
+keycutter update git          # Pull from git
+keycutter update config       # Update SSH config
+keycutter update requirements # Check requirements
+keycutter update touch-detector # Update touch detector
 ```
 
 ## Architecture

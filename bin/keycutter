@@ -64,7 +64,11 @@ usage() {
   echo "       check-requirements                                Check if all required software is installed"
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
   echo "       push-keys <hostname>                             Push public keys to remote host"
-  echo "       update                                            Update keycutter from git and refresh config"
+  echo "       update                                            Update all: git, config, requirements, touch-detector"
+  echo "       update git                                        Pull latest changes from git repository"
+  echo "       update config                                     Update SSH config files from current installation"
+  echo "       update requirements                               Check and update system requirements"
+  echo "       update touch-detector                             Update YubiKey touch notification tool"
   echo "       install-touch-detector                            Install YubiKey touch notification tool"
   echo "       config <hostname>                                 Show config relevant to host"
   echo "       agents                                            List all agents"
@@ -1004,8 +1008,37 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   shift
 
   case "$cmd" in
-  create | authorized-keys | push-keys | update | check-requirements | config | agents | hosts | keys)
+  create | authorized-keys | push-keys | check-requirements | config | agents | hosts | keys)
     "keycutter-$cmd" "$@"
+    ;;
+  update)
+    # Handle update subcommands
+    if [[ $# -eq 0 ]]; then
+      # No subcommand - run full update
+      keycutter-update
+    else
+      subcmd="$1"
+      shift
+      case "$subcmd" in
+        git)
+          keycutter-update-git "$@"
+          ;;
+        config)
+          keycutter-update-ssh-config "$@"
+          ;;
+        requirements)
+          check_requirements "$@"
+          ;;
+        touch-detector)
+          keycutter-update-touch-detector "$@"
+          ;;
+        *)
+          log "Error: Unknown update subcommand: $subcmd"
+          echo "Available subcommands: git, config, requirements, touch-detector"
+          exit 1
+          ;;
+      esac
+    fi
     ;;
   install-touch-detector)
     keycutter-install-touch-detector "$@"
