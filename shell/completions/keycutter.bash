@@ -9,6 +9,7 @@ _keycutter_completion() {
   local host_subcommands="show agent keys config edit"
   local key_subcommands="show agents hosts"
   local hosts_subcommands="edit"
+  local update_subcommands="git config requirements touch-detector"
 
   # Get the command (first argument after keycutter)
   local cmd=""
@@ -50,6 +51,10 @@ _keycutter_completion() {
     ;;
   hosts)
     COMPREPLY=($(compgen -W "$hosts_subcommands" -- "$cur"))
+    return
+    ;;
+  update)
+    COMPREPLY=($(compgen -W "$update_subcommands" -- "$cur"))
     return
     ;;
   esac

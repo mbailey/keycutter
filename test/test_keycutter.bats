@@ -147,6 +147,64 @@ Host testhost2
     [ "$status" -eq 0 ]
 }
 
+@test "keycutter update git subcommand runs only git update" {
+    # Mock git commands
+    create_mock_command "git" 0 "Already up to date."
+    
+    run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter update git 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Updating Keycutter from git" ]]
+}
+
+@test "keycutter update config subcommand runs only config update" {
+    # Mock hostname for KEYCUTTER_ORIGIN
+    create_mock_command "hostname" 0 "testhost"
+    
+    # Create test config directory structure
+    mkdir -p "$TEST_HOME/.ssh/keycutter"
+    
+    run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter update config 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Keycutter SSH update complete" ]]
+}
+
+@test "keycutter update requirements subcommand runs only requirements check" {
+    # Mock required commands
+    create_mock_command "bash" 0 "GNU bash, version 5.0.0"
+    create_mock_command "ssh" 0 "OpenSSH_8.2p1"
+    create_mock_command "gh" 0 "gh version 2.4.0"
+    create_mock_command "ykman" 0 "YubiKey Manager (ykman) version: 4.0.0"
+    
+    run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter update requirements 2>/dev/null"
+    [ "$status" -eq 0 ]
+}
+
+@test "keycutter update touch-detector subcommand runs only touch detector update" {
+    # Mock hostname for KEYCUTTER_ORIGIN
+    create_mock_command "hostname" 0 "testhost"
+    
+    # Create empty key directory (no FIDO keys)
+    mkdir -p "$TEST_HOME/.ssh/keycutter/keys"
+    
+    run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter update touch-detector 2>/dev/null"
+    [ "$status" -eq 0 ]
+}
+
+@test "keycutter update with invalid subcommand shows error" {
+    run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter update invalid 2>/dev/null"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Error: Unknown update subcommand: invalid" ]]
+    [[ "$output" =~ "Available subcommands: git, config, requirements, touch-detector" ]]
+}
+
+@test "keycutter update subcommands appear in help text" {
+    run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter --help 2>/dev/null"
+    [[ "$output" =~ "update git" ]]
+    [[ "$output" =~ "update config" ]]
+    [[ "$output" =~ "update requirements" ]]
+    [[ "$output" =~ "update touch-detector" ]]
+}
+
 @test "keycutter handles SSH_CONNECTION environment variable" {
     # Test without SSH_CONNECTION (local execution)
     unset SSH_CONNECTION

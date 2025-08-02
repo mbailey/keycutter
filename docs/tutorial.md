@@ -122,3 +122,54 @@ The `push-keys` command intelligently handles authentication by:
 1. First attempting to use existing SSH key authentication
 2. Falling back to password authentication if needed
 3. Automatically handling keycutter's RemoteCommand configuration
+
+## Updating Keycutter
+
+Keycutter provides flexible update options to suit different workflows:
+
+### Full Update
+
+Update everything - git repository, requirements, SSH config, and touch detector:
+
+```bash
+keycutter update
+```
+
+This performs a complete update sequence and is the recommended approach for most users.
+
+### Selective Updates
+
+For development or specific maintenance tasks, you can update individual components:
+
+```bash
+# Pull latest changes from git (master branch only)
+keycutter update git
+
+# Update SSH config files from current installation
+keycutter update config
+
+# Check and update system requirements
+keycutter update requirements
+
+# Update YubiKey touch notification tool
+keycutter update touch-detector
+```
+
+### Development Workflow
+
+When developing or testing local changes:
+
+```bash
+# From your feature branch or worktree
+keycutter update config  # Updates config without git pull
+
+# Or use environment variable
+KEYCUTTER_ROOT=/path/to/worktree keycutter update config
+```
+
+This is particularly useful when:
+- Testing configuration changes before committing
+- Working on feature branches
+- Developing in git worktrees
+
+For more details on development workflows, see the [Development Guide](development.md)
