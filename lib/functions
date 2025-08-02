@@ -7,5 +7,6 @@ KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 [[ -z ${SSH_CONNECTION:-} ]] && : ${KEYCUTTER_ORIGIN:="$(hostname -s)"}
 
 source "${KEYCUTTER_ROOT}/lib/github"
+source "${KEYCUTTER_ROOT}/lib/sourcehut"
 source "${KEYCUTTER_ROOT}/lib/ssh"
 source "${KEYCUTTER_ROOT}/lib/utils"

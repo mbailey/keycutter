@@ -78,5 +78,7 @@ The following help explain why each key is required:
 | `github.com_workgh@workpc` | Github                              | Github User: `workgh`     | workpc  | Work                           |
 | `github.com_workgh@homepc` | Github                              | Github User: `workgh`     | homepc  | Work                           |
 | `github.com_alex@homepc`   | Github                              | Github User: `personalgh` | homepc  | Personal                       |
+| `git.sr.ht_alex@homepc`    | Sourcehut                           | Sourcehut User: `alex`    | homepc  | Personal                       |
+| `git.sr.ht_workuser@workpc`| Sourcehut                           | Sourcehut User: `workuser`| workpc  | Work                           |
 | `aws-ssm_e12345@workpc`    | AWS EC2 Instances<br>(SSH over SSM) | Employee Number           | workpc  | Work                           |
 | `aws-ssm_personal@homepc`  | AWS EC2 Instances<br>(SSH over SSM) | Generic                   | homepc  | Personal                       |

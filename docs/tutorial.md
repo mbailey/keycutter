@@ -42,6 +42,24 @@ export KEYCUTTER_ORIGIN=yubikey2
 
 Then repeat the steps above for both GitHub accounts.
 
+## SSH Keys for Sourcehut (sr.ht)
+
+Create an SSH key for your Sourcehut account:
+
+```bash
+keycutter create git.sr.ht_alex
+ssh -T git.sr.ht_alex
+git clone git@git.sr.ht_alex:~alex/myproject
+```
+
+For a work Sourcehut account:
+
+```bash
+keycutter create git.sr.ht_workuser
+ssh -T git.sr.ht_workuser
+git clone git@git.sr.ht_workuser:~workuser/workproject
+```
+
 ### Create SSH key for personal hosts
 
 Set the origin and create the key:

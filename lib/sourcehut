@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Sourcehut Functions
+
+# Source common functions
+# Note: utils is already sourced by lib/functions
+
+# Check if hut CLI is installed
+sourcehut-check-cli() {
+    if ! command -v hut &> /dev/null; then
+        echo "hut CLI tool is not installed." >&2
+        echo "Install it to manage Sourcehut SSH keys:" >&2
+        echo "  - On macOS: brew install hut" >&2
+        echo "  - On Linux: check your package manager or visit https://sr.ht/~emersion/hut/" >&2
+        return 1
+    fi
+    return 0
+}
+
+# Check if hut is authenticated
+sourcehut-auth() {
+    if ! sourcehut-check-cli; then
+        return 1
+    fi
+    
+    # Try to list SSH keys to verify authentication
+    if ! hut ssh-key list &> /dev/null; then
+        echo "hut is not authenticated. Run 'hut init' to configure authentication." >&2
+        return 1
+    fi
+    return 0
+}
+
+# Add SSH key to Sourcehut account
+sourcehut-ssh-key-add() {
+    local ssh_key_path="$1"
+    local ssh_keytag="$2"
+    
+    if ! sourcehut-auth; then
+        return 1
+    fi
+    
+    if [[ ! -f "$ssh_key_path.pub" ]]; then
+        echo "Error: SSH public key not found at $ssh_key_path.pub" >&2
+        return 1
+    fi
+    
+    echo
+    echo "Would you like to add this SSH key to your Sourcehut account?"
+    echo "Key: $ssh_keytag"
+    if confirm; then
+        echo "Uploading SSH key to Sourcehut..."
+        if hut ssh-key create "$ssh_key_path.pub"; then
+            echo "SSH key successfully added to Sourcehut."
+            return 0
+        else
+            echo "Failed to add SSH key to Sourcehut." >&2
+            return 1
+        fi
+    else
+        echo "Skipping Sourcehut key upload."
+        return 0
+    fi
+}
+
+# List SSH keys from Sourcehut account
+sourcehut-ssh-keys() {
+    if ! sourcehut-auth; then
+        return 1
+    fi
+    
+    echo "SSH keys on your Sourcehut account:"
+    hut ssh-key list
+}
+
+# Remove SSH key from Sourcehut account
+sourcehut-ssh-key-delete() {
+    local key_id="$1"
+    
+    if ! sourcehut-auth; then
+        return 1
+    fi
+    
+    if [[ -z "$key_id" ]]; then
+        echo "Error: Key ID is required" >&2
+        return 1
+    fi
+    
+    echo "Deleting SSH key with ID: $key_id"
+    if hut ssh-key delete "$key_id"; then
+        echo "SSH key successfully deleted from Sourcehut."
+        return 0
+    else
+        echo "Failed to delete SSH key from Sourcehut." >&2
+        return 1
+    fi
+}

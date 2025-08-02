@@ -221,8 +221,12 @@ keycutter-create() {
       log "Creating symlink: ln -sf $ssh_key_path ${ssh_key_path/github.com/ssh.github.com}"
       ln -sf "$ssh_key_path" "${ssh_key_path/github.com/ssh.github.com}"
     fi
+  elif [[ $service =~ (git\.)?sr\.ht ]]; then
+    # Optionally add SSH key to Sourcehut
+    sourcehut-ssh-key-add "$ssh_key_path" "$ssh_keytag"
+    local demo_message="\nYou can SSH to Sourcehut by running:\n\n ssh -T $(_ssh-keytag-service-identity "$ssh_key_path")\n"
   else
-    log "DEBUG Skipping GitHub specific setup - SSH Keytag identity part doesn't contain 'github.com'."
+    log "DEBUG Skipping service-specific setup - SSH Keytag doesn't match known services."
   fi
 
   log "Success! Setup complete for key: $ssh_keytag"
