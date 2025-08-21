@@ -7,6 +7,7 @@ github-ssh-key-add() {
 
     local ssh_key_path="$1"
     local ssh_keytag="$2"
+    local performed_login=false
 
     if [[ -z "$ssh_keytag" || -z "$ssh_key_path" ]]; then
         log "Error: ssh_keytag and ssh_key_path are required."
@@ -20,14 +21,30 @@ github-ssh-key-add() {
 
     log "Tip: You can authorise GitHub CLI from a trusted device by visiting https://github.com/login/device"
 
+    # Check if already logged in before calling github-auth
+    local was_logged_in=false
+    if gh auth status -h github.com &> /dev/null; then
+        was_logged_in=true
+    fi
+
     if github-auth; then
+        # If we weren't logged in before but are now, we performed a login
+        if [[ "$was_logged_in" == "false" ]] && gh auth status -h github.com &> /dev/null; then
+            performed_login=true
+        fi
+        
         log "Add SSH authentication key (${ssh_key_path}.pub) to GitHub"
         gh ssh-key add --type authentication --title "${ssh_keytag}" "${ssh_key_path}.pub"
         log "Add SSH signing key (${ssh_key_path}.pub) to GitHub"
         gh ssh-key add --type signing --title "${ssh_keytag}" "${ssh_key_path}.pub"
         log
-        # echo "Log out of GitHub"
-        # gh auth logout # XXX Only if we logged in or requested additional scopes
+        
+        # Log out if we performed a fresh login for this operation
+        if [[ "$performed_login" == "true" ]]; then
+            log "Logging out of GitHub CLI (session was created for this key upload only)"
+            gh auth logout -h github.com
+        fi
+        
         log "Note: You will need to authorise this key for any GitHub Orgs that enforce SAML SSO."
         log "      This requires visiting https://github.com/settings/keys"
     else
@@ -40,8 +57,27 @@ github-auth() {
   # Check if GitHub CLI is installed
   if ! command -v gh &> /dev/null; then
     log >&2 "Error: GitHub CLI (gh) is not installed or not in PATH."
-    log >&2 "Please install it from: https://cli.github.com/"
-    return 1
+    
+    # Offer to install on macOS via Homebrew
+    if [[ "$OSTYPE" == "darwin"* ]] && command -v brew &> /dev/null; then
+      log >&2 "Homebrew is available. Would you like to install GitHub CLI?"
+      read -r -p "Install GitHub CLI using Homebrew? [y/N] " response
+      if [[ "$response" =~ ^[Yy]$ ]]; then
+        log "Installing GitHub CLI..."
+        if brew install gh; then
+          log "GitHub CLI installed successfully."
+        else
+          log >&2 "Failed to install GitHub CLI."
+          return 1
+        fi
+      else
+        log >&2 "Please install it from: https://cli.github.com/"
+        return 1
+      fi
+    else
+      log >&2 "Please install it from: https://cli.github.com/"
+      return 1
+    fi
   fi
 
   # Check for problematic version on Ubuntu

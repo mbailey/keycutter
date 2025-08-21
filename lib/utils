@@ -316,47 +316,265 @@ skim-stdin() {
     awk '{$1=$1;print}'  # trim leading/trailing spaces
 }
 
+offer_install_dependencies() {
+    local deps=("$@")
+    local to_install=()
+    local install_all=false
+    
+    echo "Would you like to install the missing dependencies?"
+    echo
+    echo "Options: [y]es, [n]o, [a]ll, [s]kip"
+    echo
+    
+    for dep in "${deps[@]}"; do
+        if [[ "$install_all" == "true" ]]; then
+            to_install+=("$dep")
+            continue
+        fi
+        
+        local dep_name="$dep"
+        case "$dep" in
+            gh) dep_name="GitHub CLI" ;;
+            ykman) dep_name="YubiKey Manager" ;;
+            touch-detector) dep_name="YubiKey Touch Detector" ;;
+            openssh) dep_name="OpenSSH (via Homebrew)" ;;
+            netcat) dep_name="netcat" ;;
+            git) dep_name="Git" ;;
+            bash) dep_name="Bash (via Homebrew)" ;;
+        esac
+        
+        read -r -p "Install ${dep_name}? [y/n/a/s] " response
+        case "$response" in
+            [Yy]*)
+                to_install+=("$dep")
+                ;;
+            [Aa]*)
+                install_all=true
+                to_install+=("$dep")
+                ;;
+            [Ss]*)
+                echo "Skipping remaining dependencies."
+                break
+                ;;
+            *)
+                echo "Skipping ${dep_name}."
+                ;;
+        esac
+    done
+    
+    # Install selected dependencies
+    for dep in "${to_install[@]}"; do
+        install_dependency "$dep"
+    done
+}
+
+install_dependency() {
+    local dep="$1"
+    
+    case "$dep" in
+        gh)
+            if [[ "$OSTYPE" == "darwin"* ]] && command -v brew &> /dev/null; then
+                echo "Installing GitHub CLI via Homebrew..."
+                brew install gh
+            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                if command -v apt-get &> /dev/null; then
+                    echo "Installing GitHub CLI via apt..."
+                    echo "Run: sudo apt-get update && sudo apt-get install gh"
+                elif command -v dnf &> /dev/null; then
+                    echo "Installing GitHub CLI via dnf..."
+                    echo "Run: sudo dnf install gh"
+                else
+                    echo "Please visit https://cli.github.com/manual/installation for installation instructions."
+                fi
+            else
+                echo "Please visit https://cli.github.com/ for installation instructions."
+            fi
+            ;;
+        ykman)
+            if [[ "$OSTYPE" == "darwin"* ]] && command -v brew &> /dev/null; then
+                echo "Installing YubiKey Manager via Homebrew..."
+                brew install ykman
+            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                if command -v apt-get &> /dev/null; then
+                    echo "Installing YubiKey Manager via apt..."
+                    echo "Run: sudo apt-get update && sudo apt-get install yubikey-manager"
+                elif command -v dnf &> /dev/null; then
+                    echo "Installing YubiKey Manager via dnf..."
+                    echo "Run: sudo dnf install yubikey-manager"
+                else
+                    echo "Please visit https://developers.yubico.com/yubikey-manager/ for installation instructions."
+                fi
+            else
+                echo "Please visit https://developers.yubico.com/yubikey-manager/ for installation instructions."
+            fi
+            ;;
+        touch-detector)
+            echo "Installing YubiKey Touch Detector..."
+            keycutter install-touch-detector
+            ;;
+        openssh)
+            if [[ "$OSTYPE" == "darwin"* ]] && command -v brew &> /dev/null; then
+                echo "Installing OpenSSH via Homebrew..."
+                brew install openssh
+                echo "Note: You may need to restart your terminal for the new OpenSSH to take effect."
+            else
+                echo "Please update OpenSSH to version 8.2p1 or higher."
+            fi
+            ;;
+        netcat)
+            if [[ "$OSTYPE" == "darwin"* ]] && command -v brew &> /dev/null; then
+                echo "Installing netcat via Homebrew..."
+                brew install netcat
+            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                if command -v apt-get &> /dev/null; then
+                    echo "Installing netcat via apt..."
+                    echo "Run: sudo apt-get update && sudo apt-get install netcat"
+                elif command -v dnf &> /dev/null; then
+                    echo "Installing netcat via dnf..."
+                    echo "Run: sudo dnf install nc"
+                else
+                    echo "Please install netcat using your package manager."
+                fi
+            else
+                echo "Please install netcat using your package manager."
+            fi
+            ;;
+        git)
+            if [[ "$OSTYPE" == "darwin"* ]] && command -v brew &> /dev/null; then
+                echo "Installing Git via Homebrew..."
+                brew install git
+            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                if command -v apt-get &> /dev/null; then
+                    echo "Installing Git via apt..."
+                    echo "Run: sudo apt-get update && sudo apt-get install git"
+                elif command -v dnf &> /dev/null; then
+                    echo "Installing Git via dnf..."
+                    echo "Run: sudo dnf install git"
+                else
+                    echo "Please install Git using your package manager."
+                fi
+            else
+                echo "Please install Git using your package manager."
+            fi
+            ;;
+        bash)
+            if [[ "$OSTYPE" == "darwin"* ]] && command -v brew &> /dev/null; then
+                echo "Installing Bash via Homebrew..."
+                brew install bash
+                echo "Note: You may need to add /usr/local/bin/bash or /opt/homebrew/bin/bash to /etc/shells"
+                echo "and change your default shell with: chsh -s /usr/local/bin/bash"
+            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                echo "Bash should already be up-to-date on Linux. Please check your distribution."
+            else
+                echo "Please update Bash to version 4.0 or higher."
+            fi
+            ;;
+        *)
+            echo "Unknown dependency: $dep"
+            ;;
+    esac
+}
+
 check_requirements() {
     local errors=0
-
+    local missing_deps=()
+    
+    # Color codes for terminal output
+    local RED='\033[0;31m'
+    local GREEN='\033[0;32m'
+    local YELLOW='\033[0;33m'
+    local NC='\033[0m' # No Color
+    
+    # Symbols for colorblind accessibility
+    local CHECK="✓"  # Check mark for installed
+    local CROSS="✗"  # Cross for missing
+    local WARN="⚠"   # Warning for outdated
+    
+    echo
+    echo "Checking Keycutter dependencies:"
+    echo "================================="
+    echo
+    echo "Required:"
+    echo "---------"
+    
     # Check Bash version
-    bash_version=$(bash --version | head -n1 | awk '{print $4}')
-    if [[ $(check_version "$bash_version" "4.0") == "false" ]]; then
-        echo "Bash version 4.0 or higher is required. Current version: $bash_version"
+    local bash_version=$(bash --version | head -n1 | awk '{print $4}')
+    local bash_required="4.0"
+    if [[ $(check_version "$bash_version" "$bash_required") == "false" ]]; then
+        echo -e "${RED}${CROSS}${NC} Bash >= ${bash_required} (current: ${bash_version})"
         errors=$((errors + 1))
+        missing_deps+=("bash")
+    else
+        echo -e "${GREEN}${CHECK}${NC} Bash >= ${bash_required} (current: ${bash_version})"
     fi
-
-    # Check OpenSSH version
-    ssh_version=$(ssh -V 2>&1 | awk '{print $1}' | awk -F[_p] '{print $2}')
-    if [[ $(check_version "$ssh_version" "8.2") == "false" ]]; then
-        echo "OpenSSH version 8.2p1 or higher is required. Current version: $ssh_version"
-        errors=$((errors + 1))
-    fi
-
-    ## If on an ORIGIN host
-
-    if [[ -z $SSH_CONNECTION ]]; then
-
-        # Check GitHub CLI version
-        gh_version=$(gh --version | head -n1 | awk '{print $3}')
-        if [[ $(check_version "$gh_version" "2.4.0+dfsg1-2") == "false" ]]; then
-            echo "GitHub CLI version 2.4.0+dfsg1-2 or higher is required. Current version: $gh_version"
-            errors=$((errors + 1))
+    
+    # Check Git version
+    if command -v git &> /dev/null; then
+        local git_version=$(git --version | awk '{print $3}')
+        local git_required="2.34.0"
+        if [[ $(check_version "$git_version" "$git_required") == "false" ]]; then
+            echo -e "${YELLOW}${WARN}${NC} Git >= ${git_required} (current: ${git_version})"
+        else
+            echo -e "${GREEN}${CHECK}${NC} Git >= ${git_required} (current: ${git_version})"
         fi
-
-        # Check YubiKey Manager (ykman) version
-        if command -v ykman &> /dev/null; then
-            ykman_version=$(ykman --version | head -n1 | awk '{print $3}')
-            if [[ $(check_version "$ykman_version" "0.0.0") == "false" ]]; then
-                echo "YubiKey Manager (ykman) is required. Current version: $ykman_version"
-                errors=$((errors + 1))
+    else
+        echo -e "${RED}${CROSS}${NC} Git >= 2.34.0 (not installed)"
+        errors=$((errors + 1))
+        missing_deps+=("git")
+    fi
+    
+    # Check OpenSSH version
+    local ssh_version=$(ssh -V 2>&1 | awk '{print $1}' | awk -F[_p] '{print $2}')
+    local ssh_required="8.2"
+    if [[ $(check_version "$ssh_version" "$ssh_required") == "false" ]]; then
+        echo -e "${RED}${CROSS}${NC} OpenSSH >= ${ssh_required}p1 (current: ${ssh_version})"
+        errors=$((errors + 1))
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            missing_deps+=("openssh")
+        fi
+    else
+        echo -e "${GREEN}${CHECK}${NC} OpenSSH >= ${ssh_required}p1 (current: ${ssh_version})"
+    fi
+    
+    # Check netcat
+    if command -v nc &> /dev/null; then
+        echo -e "${GREEN}${CHECK}${NC} netcat (nc)"
+    else
+        echo -e "${RED}${CROSS}${NC} netcat (nc) (not installed)"
+        errors=$((errors + 1))
+        missing_deps+=("netcat")
+    fi
+    
+    ## If on an ORIGIN host
+    if [[ -z $SSH_CONNECTION ]]; then
+        echo
+        echo "Recommended (for origin host):"
+        echo "------------------------------"
+        
+        # Check GitHub CLI
+        if command -v gh &> /dev/null; then
+            local gh_version=$(gh --version 2>/dev/null | head -n1 | awk '{print $3}')
+            local gh_required="2.0.0"
+            if [[ $(check_version "$gh_version" "$gh_required") == "false" ]]; then
+                echo -e "${YELLOW}${WARN}${NC} GitHub CLI >= ${gh_required} (current: ${gh_version})"
+            else
+                echo -e "${GREEN}${CHECK}${NC} GitHub CLI >= ${gh_required} (current: ${gh_version})"
             fi
         else
-            echo "YubiKey Manager (ykman) is required but not installed."
-            errors=$((errors + 1))
+            echo -e "${YELLOW}${WARN}${NC} GitHub CLI >= 2.0.0 (not installed - recommended for GitHub key upload)"
+            missing_deps+=("gh")
         fi
-
-        # Check for YubiKey touch detector (recommended but not required)
+        
+        # Check YubiKey Manager (ykman)
+        if command -v ykman &> /dev/null; then
+            local ykman_version=$(ykman --version 2>/dev/null | head -n1 | awk '{print $3}')
+            echo -e "${GREEN}${CHECK}${NC} YubiKey Manager (ykman) ${ykman_version}"
+        else
+            echo -e "${YELLOW}${WARN}${NC} YubiKey Manager (ykman) (not installed - recommended for YubiKey setup)"
+            missing_deps+=("ykman")
+        fi
+        
+        # Check for YubiKey touch detector
         local touch_detector_status="not installed"
         if [[ "$OSTYPE" == "linux-gnu"* ]]; then
             if command -v yubikey-touch-detector &>/dev/null; then
@@ -372,14 +590,23 @@ check_requirements() {
         fi
         
         if [[ "$touch_detector_status" == "not installed" ]]; then
-            echo "YubiKey touch detector is recommended but not installed (run 'keycutter install-touch-detector')"
+            echo -e "${YELLOW}${WARN}${NC} YubiKey touch detector (not installed - run 'keycutter install-touch-detector')"
+            missing_deps+=("touch-detector")
+        elif [[ "$touch_detector_status" == "installed" ]]; then
+            echo -e "${YELLOW}${WARN}${NC} YubiKey touch detector (installed but not running)"
         else
-            echo "YubiKey touch detector is $touch_detector_status"
+            echo -e "${GREEN}${CHECK}${NC} YubiKey touch detector (${touch_detector_status})"
         fi
-
     fi
-
-    if [[ $errors -gt 0 ]]; then
+    
+    echo
+    
+    # Offer to install missing dependencies
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        echo "Missing or outdated dependencies detected."
+        echo
+        offer_install_dependencies "${missing_deps[@]}"
+    elif [[ $errors -gt 0 ]]; then
         echo "Some requirements are not met. Please install the required versions."
         return 1
     else
