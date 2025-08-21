@@ -65,6 +65,7 @@ usage() {
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
   echo "       push-keys <hostname>                             Push public keys to remote host"
   echo "       git-config setup                                  Set up Git URL rewriting for automatic key selection"
+  echo "       git-config scan                                   Scan existing keys and offer Git config setup"
   echo "       git-config show                                   Show current Git URL mappings"
   echo "       update                                            Update all: git, config, requirements, touch-detector"
   echo "       update git                                        Pull latest changes from git repository"
@@ -251,16 +252,16 @@ keycutter-create() {
         # Initialize git-config if needed
         git-config-init
         
-        # Add the user mapping
-        git-config-add-user "github.com" "$username" "$ssh_keytag"
+        # Generate per-key config file
+        git-config-generate-for-key "$ssh_keytag" "$username"
         
-        # Check if gitconfig include is set up
-        if ! grep -q "path.*keycutter/gitconfig" ~/.gitconfig 2>/dev/null; then
+        # Check if gitconfig include is set up for per-key configs
+        if ! grep -q "path.*keycutter/git-configs/\*.gitconfig" ~/.gitconfig 2>/dev/null; then
           echo
           log "To enable Git URL rewriting, add this to your ~/.gitconfig:"
           log ""
           log "[include]"
-          log "    path = ~/.ssh/keycutter/gitconfig"
+          log "    path = ~/.ssh/keycutter/git-configs/*.gitconfig"
           echo
           prompt "Add this include directive automatically? [Y/n] "
           read -n 1 -r
@@ -275,9 +276,9 @@ keycutter-create() {
             # Add include directive
             {
               echo ""
-              echo "# Include keycutter Git URL rewriting configuration"
+              echo "# Include all keycutter per-key Git configurations"
               echo "[include]"
-              echo "    path = ~/.ssh/keycutter/gitconfig"
+              echo "    path = ~/.ssh/keycutter/git-configs/*.gitconfig"
             } >> ~/.gitconfig
             
             log "✓ Added include directive to ~/.gitconfig"
@@ -539,6 +540,9 @@ keycutter-git-config() {
     setup)
       git-config-setup "$@"
       ;;
+    scan)
+      git-config-scan-keys "$@"
+      ;;
     show)
       git-config-show "$@"
       ;;
@@ -553,7 +557,7 @@ keycutter-git-config() {
       ;;
     *)
       log "Unknown git-config subcommand: $subcmd"
-      log "Available subcommands: setup, show, add-org, remove-org, test"
+      log "Available subcommands: setup, scan, show, add-org, remove-org, test"
       return 1
       ;;
   esac
