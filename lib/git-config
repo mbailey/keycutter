@@ -281,6 +281,31 @@ git-config-add-org() {
     git-config-generate
 }
 
+# Add a user mapping
+git-config-add-user() {
+    local service="$1"
+    local user="$2"
+    local keytag="$3"
+    
+    if [[ -z "$service" || -z "$user" || -z "$keytag" ]]; then
+        log "Usage: keycutter git-config add-user <service> <username> <keytag>"
+        return 1
+    fi
+    
+    # Check if keytag exists
+    if [[ ! -f "$KEYCUTTER_SSH_KEY_DIR/${keytag}.pub" ]]; then
+        log "Error: Key '$keytag' not found"
+        return 1
+    fi
+    
+    # Add mapping
+    echo "user|${user}|${keytag}" >> "$KEYCUTTER_GIT_MAPPINGS"
+    log "Added user mapping: ${service}/${user} -> ${keytag}"
+    
+    # Regenerate config
+    git-config-generate
+}
+
 # Remove an organization mapping
 git-config-remove-org() {
     local org="$1"

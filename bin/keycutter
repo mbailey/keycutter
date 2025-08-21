@@ -231,6 +231,69 @@ keycutter-create() {
     log "DEBUG Skipping service-specific setup - SSH Keytag doesn't match known services."
   fi
 
+  # Offer to set up Git URL rewriting for GitHub keys
+  if [[ $service =~ github.com ]]; then
+    local username="${ssh_keytag#github.com_}"
+    username="${username%@*}"  # Remove @origin if present
+    
+    if [[ -n "$username" && "$username" != "github.com" ]]; then
+      echo
+      log "Git URL Rewriting Setup"
+      log "========================"
+      log "Keycutter can automatically configure Git to use this key for your GitHub repos."
+      log "This means you can use standard GitHub URLs (e.g., https://github.com/$username/repo)"
+      log "and Git will automatically use the correct SSH key."
+      echo
+      prompt "Set up automatic Git URL rewriting for github.com/$username? [Y/n] "
+      read -n 1 -r
+      echo
+      if ! [[ $REPLY =~ ^[Nn]$ ]]; then
+        # Initialize git-config if needed
+        git-config-init
+        
+        # Add the user mapping
+        git-config-add-user "github.com" "$username" "$ssh_keytag"
+        
+        # Check if gitconfig include is set up
+        if ! grep -q "path.*keycutter/gitconfig" ~/.gitconfig 2>/dev/null; then
+          echo
+          log "To enable Git URL rewriting, add this to your ~/.gitconfig:"
+          log ""
+          log "[include]"
+          log "    path = ~/.ssh/keycutter/gitconfig"
+          echo
+          prompt "Add this include directive automatically? [Y/n] "
+          read -n 1 -r
+          echo
+          if ! [[ $REPLY =~ ^[Nn]$ ]]; then
+            # Back up existing gitconfig
+            if [[ -f ~/.gitconfig ]]; then
+              cp ~/.gitconfig ~/.gitconfig.keycutter-backup
+              log "Backed up ~/.gitconfig to ~/.gitconfig.keycutter-backup"
+            fi
+            
+            # Add include directive
+            {
+              echo ""
+              echo "# Include keycutter Git URL rewriting configuration"
+              echo "[include]"
+              echo "    path = ~/.ssh/keycutter/gitconfig"
+            } >> ~/.gitconfig
+            
+            log "✓ Added include directive to ~/.gitconfig"
+            log ""
+            log "Git URL rewriting is now active! You can clone with:"
+            log "  git clone https://github.com/$username/your-repo"
+            log "And Git will automatically use the $ssh_keytag key."
+          fi
+        else
+          log "✓ Git URL rewriting is already configured in ~/.gitconfig"
+          log "You can clone with: git clone https://github.com/$username/your-repo"
+        fi
+      fi
+    fi
+  fi
+
   log "Success! Setup complete for key: $ssh_keytag"
 
   if [[ -n ${demo_message:-} ]]; then
