@@ -95,6 +95,13 @@ usage() {
   echo "       key agents <key>                                  List agents containing key"
   echo "       key hosts <key>                                   List hosts using key"
   echo
+  echo "Git config commands:"
+  echo "       git-config scan                                   Scan for keys and set up Git config"
+  echo "       git-config status                                 Show current Git config status"
+  echo "       git-config setup <keytag>                         Interactive setup for a key"
+  echo "       git-config add <keytag> <account>                 Add account mapping to a key"
+  echo "       git-config generate <keytag>                      Regenerate config for a key"
+  echo
   echo "For create command:"
   echo "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
   echo "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
@@ -1014,6 +1021,57 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   case "$cmd" in
   create | authorized-keys | push-keys | check-requirements | config | agents | hosts | keys)
     "keycutter-$cmd" "$@"
+    ;;
+  git-config)
+    # Handle git-config subcommands
+    if [[ $# -eq 0 ]]; then
+      # No subcommand - show status
+      git-config-status
+    else
+      subcmd="$1"
+      shift
+      case "$subcmd" in
+        scan)
+          git-config-init
+          git-config-scan "$@"
+          ;;
+        status)
+          git-config-status "$@"
+          ;;
+        setup)
+          if [[ $# -lt 1 ]]; then
+            echo "Error: keytag required for git-config setup"
+            echo "Usage: keycutter git-config setup <keytag>"
+            exit 1
+          fi
+          git-config-init
+          git-config-setup-interactive "$1"
+          ;;
+        add)
+          if [[ $# -lt 2 ]]; then
+            echo "Error: keytag and account required"
+            echo "Usage: keycutter git-config add <keytag> <account>"
+            exit 1
+          fi
+          git-config-init
+          git-config-add-mapping "$1" "$2"
+          ;;
+        generate)
+          if [[ $# -lt 1 ]]; then
+            echo "Error: keytag required for git-config generate"
+            echo "Usage: keycutter git-config generate <keytag>"
+            exit 1
+          fi
+          git-config-init
+          git-config-generate-for-key "$1"
+          ;;
+        *)
+          echo "Error: Unknown git-config subcommand: $subcmd"
+          echo "Available subcommands: scan, status, setup, add, generate"
+          exit 1
+          ;;
+      esac
+    fi
     ;;
   update)
     # Handle update subcommands
