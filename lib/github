@@ -7,7 +7,7 @@ github-ssh-key-add() {
 
     local ssh_key_path="$1"
     local ssh_keytag="$2"
-    local performed_login=false
+    local should_logout=false
 
     if [[ -z "$ssh_keytag" || -z "$ssh_key_path" ]]; then
         log "Error: ssh_keytag and ssh_key_path are required."
@@ -21,16 +21,18 @@ github-ssh-key-add() {
 
     log "Tip: You can authorise GitHub CLI from a trusted device by visiting https://github.com/login/device"
 
-    # Check if already logged in before calling github-auth
-    local was_logged_in=false
+    # Check authentication status and capture the current user if logged in
+    local initial_user=""
     if gh auth status -h github.com &> /dev/null; then
-        was_logged_in=true
+        initial_user=$(gh auth status -h github.com 2>/dev/null | grep 'account ' | awk '{print $7}')
     fi
 
+    # github-auth will handle login/token refresh and set GITHUB_AUTH_PERFORMED_LOGIN
+    GITHUB_AUTH_PERFORMED_LOGIN=false
     if github-auth; then
-        # If we weren't logged in before but are now, we performed a login
-        if [[ "$was_logged_in" == "false" ]] && gh auth status -h github.com &> /dev/null; then
-            performed_login=true
+        # If we performed a fresh login, we should logout after
+        if [[ "$GITHUB_AUTH_PERFORMED_LOGIN" == "true" ]]; then
+            should_logout=true
         fi
         
         log "Add SSH authentication key (${ssh_key_path}.pub) to GitHub"
@@ -39,10 +41,13 @@ github-ssh-key-add() {
         gh ssh-key add --type signing --title "${ssh_keytag}" "${ssh_key_path}.pub"
         log
         
-        # Log out if we performed a fresh login for this operation
-        if [[ "$performed_login" == "true" ]]; then
+        # Log out only if we performed a fresh login for this operation
+        # Never log out users who were already authenticated
+        if [[ "$should_logout" == "true" ]]; then
             log "Logging out of GitHub CLI (session was created for this key upload only)"
             gh auth logout -h github.com
+        elif [[ -n "$initial_user" ]]; then
+            log "Keeping existing GitHub CLI session for user: ${initial_user}"
         fi
         
         log "Note: You will need to authorise this key for any GitHub Orgs that enforce SAML SSO."
@@ -54,6 +59,9 @@ github-ssh-key-add() {
 }
 
 github-auth() {
+  # Export variable to track if we perform a fresh login
+  export GITHUB_AUTH_PERFORMED_LOGIN=false
+  
   # Check if GitHub CLI is installed
   if ! command -v gh &> /dev/null; then
     log >&2 "Error: GitHub CLI (gh) is not installed or not in PATH."
@@ -66,6 +74,11 @@ github-auth() {
         log "Installing GitHub CLI..."
         if brew install gh; then
           log "GitHub CLI installed successfully."
+          # Verify installation
+          if ! command -v gh &> /dev/null; then
+            log >&2 "GitHub CLI installed but not found in PATH. You may need to restart your terminal."
+            return 1
+          fi
         else
           log >&2 "Failed to install GitHub CLI."
           return 1
@@ -122,6 +135,8 @@ github-auth() {
       log >&2 "Error: Failed to log in to GitHub account."
       return 1
     fi
+    # Mark that we performed a fresh login
+    export GITHUB_AUTH_PERFORMED_LOGIN=true
   fi
 
   return 0
