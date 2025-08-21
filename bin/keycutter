@@ -64,6 +64,8 @@ usage() {
   echo "       check-requirements                                Check if all required software is installed"
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
   echo "       push-keys <hostname>                             Push public keys to remote host"
+  echo "       git-config setup                                  Set up Git URL rewriting for automatic key selection"
+  echo "       git-config show                                   Show current Git URL mappings"
   echo "       update                                            Update all: git, config, requirements, touch-detector"
   echo "       update git                                        Pull latest changes from git repository"
   echo "       update config                                     Update SSH config files from current installation"
@@ -464,6 +466,34 @@ keycutter-update-touch-detector() {
 
 keycutter-check-requirements() {
   check_requirements
+}
+
+keycutter-git-config() {
+  local subcmd="${1:-setup}"
+  shift || true
+  
+  case "$subcmd" in
+    setup)
+      git-config-setup "$@"
+      ;;
+    show)
+      git-config-show "$@"
+      ;;
+    add-org)
+      git-config-add-org "$@"
+      ;;
+    remove-org)
+      git-config-remove-org "$@"
+      ;;
+    test)
+      git-config-test "$@"
+      ;;
+    *)
+      log "Unknown git-config subcommand: $subcmd"
+      log "Available subcommands: setup, show, add-org, remove-org, test"
+      return 1
+      ;;
+  esac
 }
 
 keycutter-config() {
@@ -1014,6 +1044,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   case "$cmd" in
   create | authorized-keys | push-keys | check-requirements | config | agents | hosts | keys)
     "keycutter-$cmd" "$@"
+    ;;
+  git-config)
+    # Handle git-config subcommands
+    keycutter-git-config "$@"
     ;;
   update)
     # Handle update subcommands
