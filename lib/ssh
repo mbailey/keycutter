@@ -42,13 +42,23 @@ ssh-authorized-keys() {
         if [[ -f "$id_file" ]]; then
           # Try extracting the public key without a passphrase
           if ssh-keygen -y -P '' -f "$id_file" >/dev/null 2>&1; then
-            ssh-keygen -y -P '' -f "$id_file"
+            local public_key=$(ssh-keygen -y -P '' -f "$id_file")
+            echo "$public_key"
+            # Save the generated public key to .pub file
+            echo "$public_key" > "$pub_file"
+            chmod 0600 "$pub_file"
+            echo >&2 "Info: Saved generated public key to $pub_file"
           else
             # Prompt the user for a passphrase if required
             prompt "The private key $id_file requires a passphrase. Do you want to enter it? (yes/no)"
             read -r answer
             if [[ "$answer" == "yes" ]]; then
-              ssh-keygen -y -f "$id_file"
+              local public_key=$(ssh-keygen -y -f "$id_file")
+              echo "$public_key"
+              # Save the generated public key to .pub file
+              echo "$public_key" > "$pub_file"
+              chmod 0600 "$pub_file"
+              echo >&2 "Info: Saved generated public key to $pub_file"
             else
               echo "Skipping key $id_file due to missing passphrase."
             fi
