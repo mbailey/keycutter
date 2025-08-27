@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Automatic saving of generated SSH public keys to `.pub` files when extracted from private keys
 - Automatic GitHub CLI installation prompt on macOS when missing
 - Interactive dependency installation during requirements check
 - Color-coded dependency status display with version information
