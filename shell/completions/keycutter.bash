@@ -135,9 +135,10 @@ _keycutter_completion() {
       return
       ;;
     remove|fix)
-      # Complete with host names
+      # Complete with host names (excluding README files)
       if [[ -f "$HOME/.ssh/config" ]] || [[ -f "$HOME/.ssh/keycutter/keycutter.conf" ]]; then
-        local hosts=$(grep -h "^Host " "$HOME/.ssh/config" "$HOME/.ssh/keycutter/keycutter.conf" "$HOME/.ssh/keycutter/hosts"/* 2>/dev/null | awk '{for(i=2;i<=NF;i++) print $i}' | grep -v '\*' | sort -u)
+        local config_files=$(find "$HOME/.ssh/keycutter/hosts" -name "*.conf" 2>/dev/null)
+        local hosts=$(grep -h "^Host " "$HOME/.ssh/config" "$HOME/.ssh/keycutter/keycutter.conf" $config_files 2>/dev/null | awk '{for(i=2;i<=NF;i++) print $i}' | grep -v '\*' | sort -u)
         COMPREPLY=($(compgen -W "$hosts" -- "$cur"))
       fi
       return
