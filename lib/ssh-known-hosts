@@ -1,0 +1,312 @@
+#!/usr/bin/env bash
+# keycutter/lib/ssh-known-hosts - Functions to manage SSH known_hosts entries
+
+KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
+source "${KEYCUTTER_ROOT}/lib/utils"
+
+# Default known_hosts file location
+: "${KNOWN_HOSTS_FILE:=${HOME}/.ssh/known_hosts}"
+
+# Backup directory for known_hosts files
+: "${KNOWN_HOSTS_BACKUP_DIR:=${HOME}/.ssh/known_hosts_backups}"
+
+# Create backup of known_hosts file
+ssh-known-hosts-backup() {
+  local backup_dir="${KNOWN_HOSTS_BACKUP_DIR}"
+  local timestamp
+  timestamp=$(date +%Y%m%d_%H%M%S)
+  local backup_file="${backup_dir}/known_hosts.${timestamp}"
+
+  # Create backup directory if it doesn't exist
+  dir-ensure "$backup_dir" 0700
+
+  if [[ -f "$KNOWN_HOSTS_FILE" ]]; then
+    cp "$KNOWN_HOSTS_FILE" "$backup_file"
+    chmod 600 "$backup_file"
+    log "Backed up known_hosts to: $backup_file"
+    echo "$backup_file"
+  else
+    log "Warning: known_hosts file not found at $KNOWN_HOSTS_FILE"
+    return 1
+  fi
+}
+
+# Delete a specific line from known_hosts
+ssh-known-hosts-delete-line() {
+  local line_number="$1"
+
+  if [[ -z "$line_number" ]]; then
+    log "Error: Line number required"
+    echo "Usage: keycutter ssh-known-hosts delete-line <line_number>"
+    return 1
+  fi
+
+  # Validate line number is a positive integer
+  if ! [[ "$line_number" =~ ^[1-9][0-9]*$ ]]; then
+    log "Error: Invalid line number: $line_number"
+    return 1
+  fi
+
+  if [[ ! -f "$KNOWN_HOSTS_FILE" ]]; then
+    log "Error: known_hosts file not found at $KNOWN_HOSTS_FILE"
+    return 1
+  fi
+
+  # Get total number of lines
+  local total_lines
+  total_lines=$(wc -l < "$KNOWN_HOSTS_FILE")
+
+  if [[ "$line_number" -gt "$total_lines" ]]; then
+    log "Error: Line $line_number does not exist (file has $total_lines lines)"
+    return 1
+  fi
+
+  # Create backup first
+  local backup_file
+  if ! backup_file=$(ssh-known-hosts-backup); then
+    log "Error: Failed to create backup"
+    return 1
+  fi
+
+  # Show the line that will be deleted
+  log "Deleting line $line_number:"
+  sed -n "${line_number}p" "$KNOWN_HOSTS_FILE"
+
+  # Delete the line
+  sed -i.tmp "${line_number}d" "$KNOWN_HOSTS_FILE"
+  rm -f "${KNOWN_HOSTS_FILE}.tmp"
+
+  log "Successfully deleted line $line_number from known_hosts"
+  log "Backup saved to: $backup_file"
+}
+
+# Remove all entries for a specific host
+ssh-known-hosts-remove() {
+  local host="$1"
+
+  if [[ -z "$host" ]]; then
+    log "Error: Host name required"
+    echo "Usage: keycutter ssh-known-hosts remove <hostname>"
+    return 1
+  fi
+
+  if [[ ! -f "$KNOWN_HOSTS_FILE" ]]; then
+    log "Error: known_hosts file not found at $KNOWN_HOSTS_FILE"
+    return 1
+  fi
+
+  # Find all matching entries
+  local matching_lines
+  matching_lines=$(grep -n "^${host}[, ]" "$KNOWN_HOSTS_FILE" 2>/dev/null)
+
+  # Also search for hashed entries if HashKnownHosts is enabled
+  # Note: We can't directly match hashed entries, but we can look for patterns
+  local ssh_hash_setting
+  ssh_hash_setting=$(ssh -G "$host" 2>/dev/null | grep "^hashknownhosts" | awk '{print $2}')
+
+  if [[ -z "$matching_lines" ]]; then
+    # Try to match entries with port numbers
+    matching_lines=$(grep -n "^\[${host}\]" "$KNOWN_HOSTS_FILE" 2>/dev/null)
+  fi
+
+  if [[ -z "$matching_lines" ]]; then
+    log "No entries found for host: $host"
+
+    if [[ "$ssh_hash_setting" == "yes" ]]; then
+      log "Note: HashKnownHosts is enabled. Entries may be hashed."
+      log "You may need to use 'ssh-keygen -F $host' to find hashed entries."
+    fi
+    return 1
+  fi
+
+  # Count the number of entries
+  local entry_count
+  entry_count=$(echo "$matching_lines" | wc -l)
+
+  log "Found $entry_count entries for $host:"
+  echo "$matching_lines" | while IFS=: read -r line_num content; do
+    echo "  Line $line_num: $(echo "$content" | cut -c1-80)..."
+  done
+
+  # Confirm deletion
+  echo -n "Remove all entries for $host? (y/n): "
+  read -r response
+
+  if [[ "$response" != "y" && "$response" != "Y" ]]; then
+    log "Cancelled"
+    return 0
+  fi
+
+  # Create backup first
+  local backup_file
+  if ! backup_file=$(ssh-known-hosts-backup); then
+    log "Error: Failed to create backup"
+    return 1
+  fi
+
+  # Delete lines in reverse order to maintain line numbers
+  echo "$matching_lines" | awk -F: '{print $1}' | sort -rn | while read -r line_num; do
+    sed -i.tmp "${line_num}d" "$KNOWN_HOSTS_FILE"
+  done
+  rm -f "${KNOWN_HOSTS_FILE}.tmp"
+
+  log "Successfully removed $entry_count entries for $host"
+  log "Backup saved to: $backup_file"
+}
+
+# Fix known_hosts for a specific host (interactive)
+ssh-known-hosts-fix() {
+  local host="$1"
+
+  if [[ -z "$host" ]]; then
+    log "Error: Host name required"
+    echo "Usage: keycutter ssh-known-hosts fix <hostname>"
+    return 1
+  fi
+
+  log "Fixing known_hosts entries for: $host"
+
+  # First, show current entries
+  log "Current entries for $host:"
+  local existing_entries
+  existing_entries=$(ssh-keygen -F "$host" 2>/dev/null)
+
+  if [[ -n "$existing_entries" ]]; then
+    echo "$existing_entries"
+  else
+    log "No existing entries found for $host"
+  fi
+
+  # Try to get new fingerprint
+  log "Fetching new SSH fingerprint for $host..."
+  local new_fingerprint
+  new_fingerprint=$(ssh-keyscan -H "$host" 2>/dev/null)
+
+  if [[ -z "$new_fingerprint" ]]; then
+    log "Error: Could not connect to $host to retrieve fingerprint"
+    return 1
+  fi
+
+  log "New fingerprint retrieved:"
+  echo "$new_fingerprint" | ssh-keygen -lf - 2>/dev/null || echo "$new_fingerprint"
+
+  echo -n "Replace existing entries with new fingerprint? (y/n): "
+  read -r response
+
+  if [[ "$response" != "y" && "$response" != "Y" ]]; then
+    log "Cancelled"
+    return 0
+  fi
+
+  # Remove old entries
+  ssh-known-hosts-remove "$host"
+
+  # Add new fingerprint
+  echo "$new_fingerprint" >> "$KNOWN_HOSTS_FILE"
+  log "New fingerprint added to known_hosts"
+
+  # Verify the connection
+  log "Verifying connection to $host..."
+  if ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" exit 2>/dev/null; then
+    log "Connection successful!"
+  else
+    log "Note: Connection test failed. This might be due to authentication requirements."
+  fi
+}
+
+# List recent backups
+ssh-known-hosts-list-backups() {
+  local backup_dir="${KNOWN_HOSTS_BACKUP_DIR}"
+
+  if [[ ! -d "$backup_dir" ]]; then
+    log "No backups found (backup directory does not exist)"
+    return 0
+  fi
+
+  local backups
+  backups=$(find "$backup_dir" -name "known_hosts.*" -type f 2>/dev/null | sort -r | head -10)
+
+  if [[ -z "$backups" ]]; then
+    log "No backups found"
+    return 0
+  fi
+
+  log "Recent known_hosts backups:"
+  echo "$backups" | while read -r backup; do
+    local timestamp size
+    timestamp=$(basename "$backup" | sed 's/known_hosts\.//')
+    size=$(wc -l < "$backup" 2>/dev/null || echo "0")
+    echo "  $(basename "$backup") - $size lines"
+  done
+}
+
+# Restore from a backup
+ssh-known-hosts-restore() {
+  local backup_file="$1"
+
+  if [[ -z "$backup_file" ]]; then
+    # Show available backups
+    ssh-known-hosts-list-backups
+    echo ""
+    echo "Usage: keycutter ssh-known-hosts restore <backup_file>"
+    return 1
+  fi
+
+  # If only filename provided, look in backup directory
+  if [[ ! -f "$backup_file" ]]; then
+    backup_file="${KNOWN_HOSTS_BACKUP_DIR}/$backup_file"
+  fi
+
+  if [[ ! -f "$backup_file" ]]; then
+    log "Error: Backup file not found: $backup_file"
+    return 1
+  fi
+
+  # Create backup of current file before restoring
+  log "Backing up current known_hosts before restore..."
+  ssh-known-hosts-backup
+
+  # Restore from backup
+  cp "$backup_file" "$KNOWN_HOSTS_FILE"
+  chmod 600 "$KNOWN_HOSTS_FILE"
+
+  log "Successfully restored known_hosts from: $backup_file"
+}
+
+# Main entry point for ssh-known-hosts commands
+keycutter-ssh-known-hosts() {
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    delete-line)
+      ssh-known-hosts-delete-line "$@"
+      ;;
+    remove)
+      ssh-known-hosts-remove "$@"
+      ;;
+    fix)
+      ssh-known-hosts-fix "$@"
+      ;;
+    backup)
+      ssh-known-hosts-backup "$@"
+      ;;
+    list-backups)
+      ssh-known-hosts-list-backups "$@"
+      ;;
+    restore)
+      ssh-known-hosts-restore "$@"
+      ;;
+    *)
+      log "Error: Unknown ssh-known-hosts subcommand: $subcmd"
+      echo "Available subcommands:"
+      echo "  delete-line <line_number>  - Delete a specific line number"
+      echo "  remove <hostname>          - Remove all entries for a host"
+      echo "  fix <hostname>             - Interactively fix entries for a host"
+      echo "  backup                     - Create a backup of known_hosts"
+      echo "  list-backups               - List available backups"
+      echo "  restore <backup_file>      - Restore from a backup"
+      return 1
+      ;;
+  esac
+}

@@ -76,6 +76,14 @@ usage() {
   echo "       hosts edit <filename>                             Edit host configuration file"
   echo "       keys                                              List all keys"
   echo
+  echo "SSH known_hosts management:"
+  echo "       ssh-known-hosts delete-line <line_number>         Delete a specific line from known_hosts"
+  echo "       ssh-known-hosts remove <hostname>                 Remove all entries for a host"
+  echo "       ssh-known-hosts fix <hostname>                    Interactively fix entries for a host"
+  echo "       ssh-known-hosts backup                            Create a backup of known_hosts"
+  echo "       ssh-known-hosts list-backups                      List available backups"
+  echo "       ssh-known-hosts restore <backup_file>             Restore from a backup"
+  echo
   echo "Agent commands:"
   echo "       agent show <agent>                                Show agent details"
   echo "       agent keys <agent>                                List keys in agent"
@@ -242,52 +250,122 @@ keycutter-authorized-keys() {
 
 keycutter-push-keys() {
   local host="$1"
-  
+
   if [[ -z "$host" ]]; then
     log "Error: Host required"
     return 1
   fi
-  
+
   # Get the authorized keys for this host
   local authorized_keys=$(keycutter authorized-keys "$host")
-  
+
   if [[ -z "$authorized_keys" ]]; then
     log "Error: No authorized keys found for host: $host"
     return 1
   fi
-  
+
   # Create a temporary file with .pub extension as ssh-copy-id expects
   local temp_key_file=$(mktemp --suffix=.pub)
   echo "$authorized_keys" > "$temp_key_file"
-  
+
+  # Create temp file for capturing stderr
+  local error_output=$(mktemp)
+
   # First try with existing key authentication (BatchMode=yes prevents password prompts)
   log "Attempting to push keys to $host..."
-  
+
   if ssh-copy-id \
     -f \
     -o BatchMode=yes \
     -o RemoteCommand=none \
     -o ConnectTimeout=5 \
     -i "$temp_key_file" \
-    "$host" 2>/dev/null; then
+    "$host" 2>"$error_output"; then
     log "Successfully pushed keys to $host using existing authentication"
-    rm -f "$temp_key_file"
+    rm -f "$temp_key_file" "$error_output"
     return 0
   fi
-  
+
+  # Check if the error is due to host key verification failure
+  if grep -q "REMOTE HOST IDENTIFICATION HAS CHANGED" "$error_output"; then
+    log "⚠️  Host key verification failed for $host"
+
+    # Extract the line number from the error message
+    local offending_line=$(grep "Offending.*key in" "$error_output" | sed -n 's/.*:\([0-9]*\)$/\1/p')
+
+    if [[ -n "$offending_line" ]]; then
+      log "The offending key is on line $offending_line of ~/.ssh/known_hosts"
+
+      # Ask user if they want to remove the old key
+      echo -n "Do you want to remove the old host key and retry? (y/n): "
+      read -r response
+
+      if [[ "$response" == "y" || "$response" == "Y" ]]; then
+        # Use our new ssh-known-hosts function
+        if ssh-known-hosts-delete-line "$offending_line"; then
+          log "Old host key removed. Retrying push-keys..."
+          rm -f "$error_output"
+
+          # Retry the push-keys operation
+          keycutter-push-keys "$host"
+          local retry_result=$?
+          rm -f "$temp_key_file"
+          return $retry_result
+        else
+          log "Error: Failed to remove old host key"
+          rm -f "$temp_key_file" "$error_output"
+          return 1
+        fi
+      else
+        log "Cancelled. You can manually fix this with: keycutter ssh-known-hosts delete-line $offending_line"
+        rm -f "$temp_key_file" "$error_output"
+        return 1
+      fi
+    else
+      # Couldn't extract line number, try removing by hostname
+      log "Could not determine specific line. Checking for all entries for $host..."
+
+      echo -n "Do you want to remove all known_hosts entries for $host and retry? (y/n): "
+      read -r response
+
+      if [[ "$response" == "y" || "$response" == "Y" ]]; then
+        if ssh-known-hosts-remove "$host"; then
+          log "Old host keys removed. Retrying push-keys..."
+          rm -f "$error_output"
+
+          # Retry the push-keys operation
+          keycutter-push-keys "$host"
+          local retry_result=$?
+          rm -f "$temp_key_file"
+          return $retry_result
+        else
+          log "Error: Failed to remove old host keys"
+          rm -f "$temp_key_file" "$error_output"
+          return 1
+        fi
+      else
+        log "Cancelled. You can manually fix this with: keycutter ssh-known-hosts remove $host"
+        rm -f "$temp_key_file" "$error_output"
+        return 1
+      fi
+    fi
+  fi
+
+  rm -f "$error_output"
+
   # Fall back to password authentication
   log "Key authentication failed, trying password authentication..."
-  
+
   ssh-copy-id \
     -f \
     -o PreferredAuthentications=password \
     -o RemoteCommand=none \
     -i "$temp_key_file" \
     "$host"
-  
+
   local result=$?
   rm -f "$temp_key_file"
-  
+
   if [[ $result -eq 0 ]]; then
     log "Successfully pushed keys to $host"
   else
@@ -1012,7 +1090,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   shift
 
   case "$cmd" in
-  create | authorized-keys | push-keys | check-requirements | config | agents | hosts | keys)
+  create | authorized-keys | push-keys | check-requirements | config | agents | hosts | keys | ssh-known-hosts)
     "keycutter-$cmd" "$@"
     ;;
   update)
