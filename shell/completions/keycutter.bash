@@ -4,12 +4,13 @@ _keycutter_completion() {
   local cur prev words cword
   _init_completion || return
 
-  local commands="create authorized-keys push-keys update install-touch-detector config check-requirements agents hosts keys tokens agent host key"
+  local commands="create authorized-keys push-keys update install-touch-detector config check-requirements agents hosts keys tokens agent host key ssh-known-hosts"
   local agent_subcommands="show keys hosts add-key remove-key"
   local host_subcommands="show agent keys config edit"
   local key_subcommands="show agents hosts"
   local hosts_subcommands="edit"
   local update_subcommands="git config requirements touch-detector"
+  local ssh_known_hosts_subcommands="delete-line remove fix backup list-backups restore"
 
   # Get the command (first argument after keycutter)
   local cmd=""
@@ -55,6 +56,10 @@ _keycutter_completion() {
     ;;
   update)
     COMPREPLY=($(compgen -W "$update_subcommands" -- "$cur"))
+    return
+    ;;
+  ssh-known-hosts)
+    COMPREPLY=($(compgen -W "$ssh_known_hosts_subcommands" -- "$cur"))
     return
     ;;
   esac
@@ -122,6 +127,35 @@ _keycutter_completion() {
     fi
     return
     ;;
+  ssh-known-hosts)
+    case "$subcmd" in
+    delete-line)
+      # No completion for line numbers
+      return
+      ;;
+    remove|fix)
+      # Complete with host names
+      if [[ -f "$HOME/.ssh/config" ]] || [[ -f "$HOME/.ssh/keycutter/keycutter.conf" ]]; then
+        local hosts=$(grep -h "^Host " "$HOME/.ssh/config" "$HOME/.ssh/keycutter/keycutter.conf" "$HOME/.ssh/keycutter/hosts"/* 2>/dev/null | awk '{for(i=2;i<=NF;i++) print $i}' | grep -v '\*' | sort -u)
+        COMPREPLY=($(compgen -W "$hosts" -- "$cur"))
+      fi
+      return
+      ;;
+    restore)
+      # Complete with backup files
+      if [[ -d "$HOME/.ssh/known_hosts_backups" ]]; then
+        local backups=$(ls -1 "$HOME/.ssh/known_hosts_backups" 2>/dev/null | grep '^known_hosts\.')
+        COMPREPLY=($(compgen -W "$backups" -- "$cur"))
+      fi
+      return
+      ;;
+    *)
+      # Show subcommands if no valid subcommand is specified
+      COMPREPLY=($(compgen -W "$ssh_known_hosts_subcommands" -- "$cur"))
+      return
+      ;;
+    esac
+    ;;
   esac
 
   # Handle agent add-key/remove-key second argument (key name)
@@ -134,8 +168,9 @@ _keycutter_completion() {
     return
   fi
 
-  # Default to filename completion
-  COMPREPLY=($(compgen -f -- "$cur"))
+  # Don't provide any completion if we don't recognize the context
+  # This prevents showing random file contents
+  return
 }
 
 complete -F _keycutter_completion keycutter
