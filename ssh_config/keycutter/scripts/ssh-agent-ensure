@@ -10,6 +10,9 @@ export SSH_AUTH_SOCK=$(ssh -G "$host" 2>/dev/null | awk '/^identityagent / {prin
 
 agent_dir=$(dirname "$SSH_AUTH_SOCK")
 
+# Ensure the agent directory exists
+mkdir -p "$agent_dir"
+
 if [[ ! -S "$SSH_AUTH_SOCK" ]] || ! ssh-add -l &>/dev/null; then
     rm -f "$SSH_AUTH_SOCK"
     ssh-agent -a "$SSH_AUTH_SOCK" > /dev/null
