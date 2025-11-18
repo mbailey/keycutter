@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+# Git commit signing support for keycutter
+
+# Get the effective git remote URL (after insteadOf rewrites)
+# Usage: git-remote-url-effective [remote-name]
+# Returns: The effective URL that git would use
+git-remote-url-effective() {
+    local remote="${1:-origin}"
+    local url
+
+    url=$(git ls-remote --get-url "$remote" 2>/dev/null) || return 1
+
+    # If git ls-remote --get-url returns just the remote name,
+    # it means the remote doesn't exist or we're not in a git repo
+    if [[ "$url" == "$remote" ]]; then
+        return 1
+    fi
+
+    echo "$url"
+    return 0
+}
+
+# Extract SSH host from a git remote URL
+# Usage: git-remote-ssh-host <url>
+# Returns: The SSH hostname (e.g., github.com_mbailey)
+git-remote-ssh-host() {
+    local url="$1"
+    local ssh_host
+
+    # Check if it's an SSH URL (either ssh:// or SCP-style user@host:path)
+    if [[ ! "$url" =~ ^ssh:// && ! "$url" =~ @.*: ]]; then
+        return 1
+    fi
+
+    # Extract SSH host from URL
+    # Handle both formats:
+    #   - SCP-style: user@host:path -> host
+    #   - ssh:// URL: ssh://user@host/path -> host
+    if [[ "$url" =~ ^ssh:// ]]; then
+        # ssh://user@host/path format
+        ssh_host=$(echo "$url" | sed -n 's|ssh://[^@]*@\([^/]*\).*|\1|p')
+    else
+        # user@host:path format (SCP-style)
+        ssh_host=$(echo "$url" | sed -n 's|[^@]*@\([^:]*\):.*|\1|p')
+    fi
+
+    if [[ -n "$ssh_host" ]]; then
+        echo "$ssh_host"
+        return 0
+    fi
+
+    return 1
+}
+
+# Resolve which SSH key would be used for a given SSH host
+# Usage: ssh-key-for-host <ssh-host>
+# Returns: Path to the public key file that would be used
+ssh-key-for-host() {
+    local ssh_host="$1"
+    local local_host expanded_path key_path
+    local -a identity_patterns
+
+    # Get local hostname for %L expansion
+    local_host=$(hostname -s)
+
+    # Get identity file patterns from SSH config
+    # ssh -G returns config after evaluating Host/Match blocks but with unexpanded tokens
+    mapfile -t identity_patterns < <(ssh -G "$ssh_host" | grep '^identityfile ' | awk '{print $2}')
+
+    if [[ ${#identity_patterns[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    # Try each identity file pattern in order
+    for pattern in "${identity_patterns[@]}"; do
+        # Expand tokens in the pattern
+        expanded_path="$pattern"
+
+        # Expand tilde to home directory
+        expanded_path="${expanded_path/#\~/$HOME}"
+
+        # Expand %n (hostname)
+        expanded_path="${expanded_path//%n/$ssh_host}"
+
+        # Expand %L (local hostname)
+        expanded_path="${expanded_path//%L/$local_host}"
+
+        # Expand ${KEYCUTTER_ORIGIN} environment variable
+        if [[ "$expanded_path" =~ \$\{KEYCUTTER_ORIGIN\} ]]; then
+            if [[ -n "${KEYCUTTER_ORIGIN:-}" ]]; then
+                expanded_path="${expanded_path//\$\{KEYCUTTER_ORIGIN\}/$KEYCUTTER_ORIGIN}"
+            else
+                # Skip patterns with KEYCUTTER_ORIGIN if it's not set
+                continue
+            fi
+        fi
+
+        # For git signing, we need the public key
+        # If the pattern doesn't end in .pub, try adding it
+        if [[ ! "$expanded_path" =~ \.pub$ ]]; then
+            key_path="${expanded_path}.pub"
+        else
+            key_path="$expanded_path"
+        fi
+
+        # Check if public key exists
+        if [[ -f "$key_path" ]]; then
+            echo "$key_path"
+            return 0
+        fi
+    done
+
+    # No matching key found
+    return 1
+}
+
+# Detect which SSH key should be used for git commit signing
+# Based on which key SSH would use for authentication
+# Usage: git-signing-detect-key
+# Returns: Path to the public key to use for signing
+git-signing-detect-key() {
+    local remote_url ssh_host key_path
+
+    # Get effective remote URL (after git's insteadOf rewrites)
+    remote_url=$(git-remote-url-effective) || {
+        log "Error: Not in a git repository or no origin remote configured"
+        return 1
+    }
+
+    # Extract SSH host
+    ssh_host=$(git-remote-ssh-host "$remote_url") || {
+        log "Error: Remote URL is not SSH: $remote_url"
+        log "Git SSH signing auto-detection requires an SSH remote URL"
+        log "Configure signing key manually: git config user.signingkey <path-to-key.pub>"
+        return 1
+    }
+
+    # Resolve which key would be used
+    key_path=$(ssh-key-for-host "$ssh_host") || {
+        log "Error: No matching SSH key found for host: $ssh_host"
+        log "  Local hostname: $(hostname -s)"
+        log "  KEYCUTTER_ORIGIN: ${KEYCUTTER_ORIGIN:-<not set>}"
+        return 1
+    }
+
+    echo "$key_path"
+    return 0
+}
+
+# Enable git commit signing
+# Usage: git-signing-enable [--global] [key-path]
+git-signing-enable() {
+    local scope="local"
+    local key_path=""
+    local raw_url effective_url ssh_host
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --global)
+                scope="global"
+                shift
+                ;;
+            *)
+                key_path="$1"
+                shift
+                ;;
+        esac
+    done
+
+    # If key not specified, auto-detect
+    if [[ -z "$key_path" ]]; then
+        # Get URLs for display
+        raw_url=$(git config --get remote.origin.url 2>/dev/null)
+        effective_url=$(git-remote-url-effective)
+        ssh_host=$(git-remote-ssh-host "$effective_url")
+
+        echo "Git commit signing setup"
+        echo "========================"
+        echo
+        if [[ "$raw_url" != "$effective_url" ]]; then
+            echo "Repository URL (configured): $raw_url"
+            echo "Repository URL (effective):  $effective_url"
+        else
+            echo "Repository URL: $effective_url"
+        fi
+
+        # Detect key
+        key_path=$(git-signing-detect-key) || {
+            echo
+            log "Error: Could not auto-detect SSH key"
+            return 1
+        }
+
+        echo "SSH host:                    $ssh_host"
+        echo "Signing key:                 $key_path"
+        echo
+
+        # Ask for confirmation
+        prompt "Use this key for signing commits? [Y/n] "
+        read -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            log "Signing setup cancelled"
+            return 1
+        fi
+    fi
+
+    # Verify key exists
+    if [[ ! -f "$key_path" ]]; then
+        log "Error: Key file not found: $key_path"
+        return 1
+    fi
+
+    # Configure git
+    local config_flag=""
+    [[ "$scope" == "global" ]] && config_flag="--global"
+
+    git config $config_flag gpg.format ssh
+    git config $config_flag user.signingkey "$key_path"
+    git config $config_flag commit.gpgsign true
+
+    log "✓ Git commit signing enabled ($scope scope)"
+    log "  Key: $key_path"
+
+    return 0
+}
+
+# Disable git commit signing
+# Usage: git-signing-disable [--global]
+git-signing-disable() {
+    local scope="local"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --global)
+                scope="global"
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local config_flag=""
+    [[ "$scope" == "global" ]] && config_flag="--global"
+
+    git config $config_flag --unset commit.gpgsign 2>/dev/null || true
+
+    log "✓ Git commit signing disabled ($scope scope)"
+    return 0
+}
+
+# Show git signing configuration status
+# Usage: git-signing-status
+git-signing-status() {
+    local gpg_format user_signingkey commit_gpgsign
+    local global_gpgsign local_gpgsign
+
+    echo "Git commit signing status"
+    echo "========================="
+    echo
+
+    # Get values
+    gpg_format=$(git config --get gpg.format 2>/dev/null)
+    user_signingkey=$(git config --get user.signingkey 2>/dev/null)
+    global_gpgsign=$(git config --global --get commit.gpgsign 2>/dev/null)
+    local_gpgsign=$(git config --local --get commit.gpgsign 2>/dev/null)
+
+    # Determine effective value
+    if [[ -n "$local_gpgsign" ]]; then
+        commit_gpgsign="$local_gpgsign (local)"
+    elif [[ -n "$global_gpgsign" ]]; then
+        commit_gpgsign="$global_gpgsign (global)"
+    else
+        commit_gpgsign="not set"
+    fi
+
+    echo "GPG format:        ${gpg_format:-not set}"
+    echo "Signing key:       ${user_signingkey:-not set}"
+    echo "Auto-sign commits: $commit_gpgsign"
+
+    if [[ -n "$user_signingkey" && -f "$user_signingkey" ]]; then
+        echo
+        echo "Key details:"
+        ssh-keygen -lf "$user_signingkey" 2>/dev/null || echo "  (Unable to read key)"
+    fi
+
+    return 0
+}

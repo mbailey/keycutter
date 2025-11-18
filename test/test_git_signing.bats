@@ -1,0 +1,286 @@
+#!/usr/bin/env bats
+
+load test_helper
+
+# Test setup
+setup() {
+    setup_test_environment
+    mock_keycutter_environment
+    init_mock_log
+
+    # Remove git mock - we need real git for these tests
+    rm -f "$BATS_TMPDIR/mock_bin/git"
+
+    # Create a test git repository
+    export TEST_GIT_REPO="$TEST_HOME/test-repo"
+    mkdir -p "$TEST_GIT_REPO"
+    cd "$TEST_GIT_REPO"
+    git init -q
+    git config user.name "Test User"
+    git config user.email "test@example.com"
+
+    # Create a mock SSH key for testing
+    export TEST_KEY_DIR="$KEYCUTTER_SSH_KEY_DIR"
+    mkdir -p "$TEST_KEY_DIR"
+    echo "ssh-ed25519-sk AAAAC3... test@host" > "$TEST_KEY_DIR/github.com_testuser@testhost.pub"
+}
+
+# Test cleanup
+teardown() {
+    cleanup_test_environment
+}
+
+# Test git-remote-url-effective function
+
+@test "git-remote-url-effective returns origin URL" {
+    cd "$TEST_GIT_REPO"
+    git remote add origin "https://github.com/user/repo.git"
+
+    run bash -c "cd '$TEST_GIT_REPO' && source $KEYCUTTER_ROOT/lib/git && git-remote-url-effective"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "https://github.com/user/repo.git" ]]
+}
+
+@test "git-remote-url-effective fails without git repo" {
+    local non_git_dir="$TEST_HOME/non-git"
+    mkdir -p "$non_git_dir"
+
+    run bash -c "cd '$non_git_dir' && source $KEYCUTTER_ROOT/lib/git && git-remote-url-effective"
+    # git ls-remote exits 128 when not in a git repo, but because we redirect to /dev/null
+    # and bash returns the exit status of the last command, we get 128
+    [ "$status" -ne 0 ]
+}
+
+# Test git-remote-ssh-host function
+
+@test "git-remote-ssh-host extracts host from SCP-style URL" {
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && git-remote-ssh-host 'git@github.com_user:owner/repo.git'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "github.com_user" ]]
+}
+
+@test "git-remote-ssh-host extracts host from ssh:// URL" {
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && git-remote-ssh-host 'ssh://git@github.com_user/owner/repo.git'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "github.com_user" ]]
+}
+
+@test "git-remote-ssh-host fails on HTTPS URL" {
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && git-remote-ssh-host 'https://github.com/user/repo.git'"
+    [ "$status" -eq 1 ]
+}
+
+@test "git-remote-ssh-host fails on invalid URL" {
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && git-remote-ssh-host 'not-a-url'"
+    [ "$status" -eq 1 ]
+}
+
+# Test ssh-key-for-host function
+
+@test "ssh-key-for-host finds existing key" {
+    # Mock ssh -G to return our test key pattern
+    create_mock_command "ssh" 0 "identityfile ~/.ssh/keycutter/keys/%n@%L"
+    create_mock_command "hostname" 0 "testhost"
+
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && ssh-key-for-host 'github.com_testuser'"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "github.com_testuser@testhost.pub" ]]
+}
+
+@test "ssh-key-for-host fails when no key exists" {
+    create_mock_command "ssh" 0 "identityfile ~/.ssh/keycutter/keys/%n@%L"
+    create_mock_command "hostname" 0 "testhost"
+
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && ssh-key-for-host 'nonexistent_host'"
+    [ "$status" -eq 1 ]
+}
+
+@test "ssh-key-for-host expands KEYCUTTER_ORIGIN" {
+    export KEYCUTTER_ORIGIN="origin-host"
+    create_mock_command "ssh" 0 "identityfile ~/.ssh/keycutter/keys/%n@\${KEYCUTTER_ORIGIN}"
+    echo "ssh-ed25519-sk AAAAC3... test@origin" > "$TEST_KEY_DIR/github.com_testuser@origin-host.pub"
+
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && ssh-key-for-host 'github.com_testuser'"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "github.com_testuser@origin-host.pub" ]]
+}
+
+# Test git-signing-detect-key function
+
+@test "git-signing-detect-key detects key for SSH remote" {
+    cd "$TEST_GIT_REPO"
+    git remote add origin "git@github.com_testuser:owner/repo.git"
+
+    create_mock_command "ssh" 0 "identityfile ~/.ssh/keycutter/keys/%n@%L"
+    create_mock_command "hostname" 0 "testhost"
+
+    run bash -c "source $KEYCUTTER_ROOT/lib/functions && git-signing-detect-key 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "github.com_testuser@testhost.pub" ]]
+}
+
+@test "git-signing-detect-key fails for HTTPS remote" {
+    cd "$TEST_GIT_REPO"
+    git remote add origin "https://github.com/user/repo.git"
+
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && git-signing-detect-key 2>/dev/null"
+    [ "$status" -eq 1 ]
+}
+
+@test "git-signing-detect-key fails without remote" {
+    cd "$TEST_GIT_REPO"
+
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && git-signing-detect-key 2>/dev/null"
+    [ "$status" -eq 1 ]
+}
+
+# Test git-signing-enable function
+
+@test "git-signing-enable configures git for signing" {
+    cd "$TEST_GIT_REPO"
+    git remote add origin "git@github.com_testuser:owner/repo.git"
+
+    create_mock_command "ssh" 0 "identityfile ~/.ssh/keycutter/keys/%n@%L"
+    create_mock_command "hostname" 0 "testhost"
+
+    run bash -c "cd '$TEST_GIT_REPO' && source $KEYCUTTER_ROOT/lib/functions && echo 'y' | git-signing-enable 2>/dev/null"
+    [ "$status" -eq 0 ]
+
+    # Check git config was set
+    gpg_format=$(cd "$TEST_GIT_REPO" && git config --get gpg.format)
+    signing_key=$(cd "$TEST_GIT_REPO" && git config --get user.signingkey)
+    commit_gpgsign=$(cd "$TEST_GIT_REPO" && git config --get commit.gpgsign)
+
+    [[ "$gpg_format" == "ssh" ]]
+    [[ "$signing_key" =~ "github.com_testuser@testhost.pub" ]]
+    [[ "$commit_gpgsign" == "true" ]]
+}
+
+@test "git-signing-enable respects --global flag" {
+    cd "$TEST_GIT_REPO"
+    git remote add origin "git@github.com_testuser:owner/repo.git"
+
+    create_mock_command "ssh" 0 "identityfile ~/.ssh/keycutter/keys/%n@%L"
+    create_mock_command "hostname" 0 "testhost"
+
+    run bash -c "cd '$TEST_GIT_REPO' && source $KEYCUTTER_ROOT/lib/functions && echo 'y' | git-signing-enable --global 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "global scope" ]]
+}
+
+@test "git-signing-enable accepts explicit key path" {
+    cd "$TEST_GIT_REPO"
+
+    explicit_key="$TEST_KEY_DIR/explicit-key.pub"
+    echo "ssh-ed25519-sk AAAAC3... explicit" > "$explicit_key"
+
+    run bash -c "cd '$TEST_GIT_REPO' && source $KEYCUTTER_ROOT/lib/functions && git-signing-enable '$explicit_key' 2>/dev/null"
+    [ "$status" -eq 0 ]
+
+    signing_key=$(cd "$TEST_GIT_REPO" && git config --get user.signingkey)
+    [[ "$signing_key" == "$explicit_key" ]]
+}
+
+@test "git-signing-enable fails when user declines" {
+    cd "$TEST_GIT_REPO"
+    git remote add origin "git@github.com_testuser:owner/repo.git"
+
+    create_mock_command "ssh" 0 "identityfile ~/.ssh/keycutter/keys/%n@%L"
+    create_mock_command "hostname" 0 "testhost"
+
+    run bash -c "cd '$TEST_GIT_REPO' && source $KEYCUTTER_ROOT/lib/functions && echo 'n' | git-signing-enable 2>/dev/null"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "cancelled" ]]
+}
+
+# Test git-signing-disable function
+
+@test "git-signing-disable unsets commit.gpgsign" {
+    cd "$TEST_GIT_REPO"
+    git config commit.gpgsign true
+
+    run bash -c "cd '$TEST_GIT_REPO' && source $KEYCUTTER_ROOT/lib/functions && git-signing-disable 2>/dev/null"
+    [ "$status" -eq 0 ]
+
+    run bash -c "cd '$TEST_GIT_REPO' && git config --get commit.gpgsign"
+    [ "$status" -eq 1 ]  # Config key should not exist
+}
+
+@test "git-signing-disable works when nothing configured" {
+    cd "$TEST_GIT_REPO"
+
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && git-signing-disable 2>/dev/null"
+    [ "$status" -eq 0 ]
+}
+
+# Test git-signing-status function
+
+@test "git-signing-status shows not configured" {
+    cd "$TEST_GIT_REPO"
+
+    run bash -c "source $KEYCUTTER_ROOT/lib/git && git-signing-status 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "not set" ]]
+}
+
+@test "git-signing-status shows configuration when enabled" {
+    cd "$TEST_GIT_REPO"
+    git config gpg.format ssh
+    git config user.signingkey "$TEST_KEY_DIR/github.com_testuser@testhost.pub"
+    git config commit.gpgsign true
+
+    create_mock_command "ssh-keygen" 0 "256 SHA256:test github.com_testuser@testhost (ED25519-SK)"
+
+    run bash -c "cd '$TEST_GIT_REPO' && source $KEYCUTTER_ROOT/lib/functions && git-signing-status 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "GPG format" ]]
+    [[ "$output" =~ "ssh" ]]
+    [[ "$output" =~ "Signing key" ]]
+    [[ "$output" =~ "github.com_testuser@testhost.pub" ]]
+}
+
+# Test keycutter git-signing command
+
+@test "keycutter git-signing shows help without subcommand" {
+    run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter git-signing 2>/dev/null"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Usage:" ]]
+    [[ "$output" =~ "enable" ]]
+    [[ "$output" =~ "disable" ]]
+    [[ "$output" =~ "status" ]]
+}
+
+@test "keycutter git-signing enable works" {
+    cd "$TEST_GIT_REPO"
+    git remote add origin "git@github.com_testuser:owner/repo.git"
+
+    create_mock_command "ssh" 0 "identityfile ~/.ssh/keycutter/keys/%n@%L"
+    create_mock_command "hostname" 0 "testhost"
+
+    run bash -c "cd '$TEST_GIT_REPO' && echo 'y' | $KEYCUTTER_ROOT/bin/keycutter git-signing enable 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "enabled" ]]
+}
+
+@test "keycutter git-signing disable works" {
+    cd "$TEST_GIT_REPO"
+    git config commit.gpgsign true
+
+    run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter git-signing disable 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "disabled" ]]
+}
+
+@test "keycutter git-signing status works" {
+    cd "$TEST_GIT_REPO"
+
+    run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter git-signing status 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Git commit signing status" ]]
+}
+
+@test "keycutter git-signing shows error for unknown subcommand" {
+    run bash -c "echo | $KEYCUTTER_ROOT/bin/keycutter git-signing invalid 2>&1"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown git-signing subcommand" ]]
+}

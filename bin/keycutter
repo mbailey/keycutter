@@ -76,6 +76,11 @@ usage() {
   echo "       hosts edit <filename>                             Edit host configuration file"
   echo "       keys                                              List all keys"
   echo
+  echo "Git commit signing:"
+  echo "       git-signing enable [--global] [key-path]          Enable SSH commit signing with auto-detected key"
+  echo "       git-signing disable [--global]                    Disable SSH commit signing"
+  echo "       git-signing status                                Show current signing configuration"
+  echo
   echo "SSH known_hosts management:"
   echo "       ssh-known-hosts delete-line <line_number>         Delete a specific line from known_hosts"
   echo "       ssh-known-hosts remove <hostname>                 Remove all entries for a host"
@@ -1078,6 +1083,50 @@ keycutter-install-touch-detector() {
   "$installer_script"
 }
 
+# Git signing subcommands
+
+keycutter-git-signing() {
+  # Show help for no args or explicit help flag
+  if [[ $# -eq 0 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]] || [[ "$1" == "help" ]]; then
+    echo "Usage: keycutter git-signing <subcommand>"
+    echo
+    echo "Configure git to sign commits with your SSH key."
+    echo
+    echo "Subcommands:"
+    echo "  enable [--global] [key-path]   Enable commit signing with auto-detected SSH key"
+    echo "  disable [--global]              Disable commit signing"
+    echo "  status                          Show signing configuration"
+    echo
+    echo "Examples:"
+    echo "  keycutter git-signing enable            # Enable for current repository"
+    echo "  keycutter git-signing enable --global   # Enable globally for all repositories"
+    echo "  keycutter git-signing disable           # Disable for current repository"
+    echo "  keycutter git-signing status            # Show current configuration"
+    echo
+    [[ $# -eq 0 ]] && return 1 || return 0
+  fi
+
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    enable)
+      git-signing-enable "$@"
+      ;;
+    disable)
+      git-signing-disable "$@"
+      ;;
+    status)
+      git-signing-status "$@"
+      ;;
+    *)
+      log "Error: Unknown git-signing subcommand: $subcmd"
+      echo "Available subcommands: enable, disable, status"
+      return 1
+      ;;
+  esac
+}
+
 # YubiKey subcommands
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
@@ -1092,6 +1141,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   case "$cmd" in
   create | authorized-keys | push-keys | check-requirements | config | agents | hosts | keys | ssh-known-hosts)
     "keycutter-$cmd" "$@"
+    ;;
+  git-signing)
+    "keycutter-git-signing" "$@"
     ;;
   update)
     # Handle update subcommands

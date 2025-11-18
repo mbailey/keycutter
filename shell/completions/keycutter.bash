@@ -4,13 +4,14 @@ _keycutter_completion() {
   local cur prev words cword
   _init_completion || return
 
-  local commands="create authorized-keys push-keys update install-touch-detector config check-requirements agents hosts keys tokens agent host key ssh-known-hosts"
+  local commands="create authorized-keys push-keys update install-touch-detector config check-requirements agents hosts keys tokens agent host key ssh-known-hosts git-signing"
   local agent_subcommands="show keys hosts add-key remove-key"
   local host_subcommands="show agent keys config edit"
   local key_subcommands="show agents hosts"
   local hosts_subcommands="edit"
   local update_subcommands="git config requirements touch-detector"
   local ssh_known_hosts_subcommands="delete-line remove fix backup list-backups restore"
+  local git_signing_subcommands="enable disable status help"
 
   # Get the command (first argument after keycutter)
   local cmd=""
@@ -60,6 +61,10 @@ _keycutter_completion() {
     ;;
   ssh-known-hosts)
     COMPREPLY=($(compgen -W "$ssh_known_hosts_subcommands" -- "$cur"))
+    return
+    ;;
+  git-signing)
+    COMPREPLY=($(compgen -W "$git_signing_subcommands" -- "$cur"))
     return
     ;;
   esac
@@ -154,6 +159,31 @@ _keycutter_completion() {
     *)
       # Show subcommands if no valid subcommand is specified
       COMPREPLY=($(compgen -W "$ssh_known_hosts_subcommands" -- "$cur"))
+      return
+      ;;
+    esac
+    ;;
+  git-signing)
+    case "$subcmd" in
+    enable)
+      # Complete with --global flag or key files
+      if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "--global" -- "$cur"))
+      elif [[ -d "$HOME/.ssh/keycutter/keys" ]]; then
+        local keys=$(ls -1 "$HOME/.ssh/keycutter/keys" 2>/dev/null | grep '\.pub$')
+        COMPREPLY=($(compgen -W "$keys" -- "$cur"))
+        # Also support file path completion
+        _filedir
+      fi
+      return
+      ;;
+    disable)
+      # Complete with --global flag
+      COMPREPLY=($(compgen -W "--global" -- "$cur"))
+      return
+      ;;
+    status)
+      # No additional completion for status
       return
       ;;
     esac
