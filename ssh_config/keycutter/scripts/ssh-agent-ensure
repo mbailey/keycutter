@@ -21,7 +21,7 @@ fi
 ssh-add -D 2> /dev/null
 
 shopt -s nullglob
-for key in "$agent_dir"/keys/*@${KEYCUTTER_ORIGIN:-"$(hostname -s)"}; do
+for key in "$agent_dir"/*@${KEYCUTTER_ORIGIN:-"$(hostname -s)"}; do
     if [[ -f "$key" && "$key" != *.pub ]]; then
         ssh-add "$key" &>/dev/null
     fi
