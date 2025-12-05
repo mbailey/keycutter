@@ -145,3 +145,79 @@ _ssh-keytag-identity() {
   local identity="${ssh_keytag_service_identity#*_}" # remove shortest match from start
   echo "$identity"
 }
+
+## SSH Key Symlinks - Create portable symlinks for machine-specific keys
+
+ssh-keys-create-symlinks() {
+  # Create generic symlinks for machine-specific keys
+  # e.g., github.com_alex@laptop -> github.com_alex (symlink)
+  #
+  # Usage: ssh-keys-create-symlinks [--dry-run]
+
+  local dry_run=false
+  local created=0
+  local skipped=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  local keys_dir="${KEYCUTTER_SSH_KEY_DIR:-${HOME}/.ssh/keycutter/keys}"
+  local origin="${KEYCUTTER_ORIGIN:-$(hostname -s)}"
+
+  if [[ ! -d "$keys_dir" ]]; then
+    log "Keys directory not found: $keys_dir"
+    return 1
+  fi
+
+  # Find machine-specific keys (those ending with @$origin)
+  for key_file in "$keys_dir"/*@"$origin"; do
+    # Skip if no matches (glob didn't expand)
+    [[ -e "$key_file" ]] || continue
+
+    # Skip public keys - we'll create symlinks for both together
+    [[ "$key_file" =~ \.pub$ ]] && continue
+
+    local key_name=$(basename "$key_file")
+    local generic_name="${key_name%@${origin}}"
+    local generic_path="${keys_dir}/${generic_name}"
+
+    # Check if generic symlink already exists
+    if [[ -L "$generic_path" ]]; then
+      local current_target=$(readlink "$generic_path")
+      if [[ "$current_target" == "$key_name" ]]; then
+        ((skipped++))
+        continue
+      fi
+      log "Updating symlink: $generic_name -> $key_name (was: $current_target)"
+    elif [[ -e "$generic_path" ]]; then
+      log "Warning: $generic_path exists and is not a symlink, skipping"
+      continue
+    else
+      log "Creating symlink: $generic_name -> $key_name"
+    fi
+
+    if [[ "$dry_run" == "true" ]]; then
+      log "[dry-run] Would create: $generic_name -> $key_name"
+    else
+      # Create symlinks for private and public key
+      ln -sf "$key_name" "$generic_path"
+      ln -sf "${key_name}.pub" "${generic_path}.pub"
+      ((created++))
+    fi
+  done
+
+  if [[ "$dry_run" == "true" ]]; then
+    log "Dry run complete"
+  else
+    log "Created $created symlink(s), skipped $skipped (already up to date)"
+  fi
+}

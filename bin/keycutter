@@ -107,6 +107,7 @@ usage() {
   echo "       key show <key>                                    Show key details"
   echo "       key agents <key>                                  List agents containing key"
   echo "       key hosts <key>                                   List hosts using key"
+  echo "       key link [--dry-run]                              Create portable symlinks for machine-specific keys"
   echo
   echo "For create command:"
   echo "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
@@ -219,6 +220,17 @@ keycutter-create() {
   fi
 
   chmod 0600 "${ssh_key_path}.pub"
+
+  # Create portable symlink (e.g., github.com_alex -> github.com_alex@laptop)
+  # This enables portable git config that references the generic path
+  local service_identity="$(_ssh-keytag-service-identity "$ssh_keytag")"
+  local generic_path="${KEYCUTTER_CONFIG_DIR}/keys/${service_identity}"
+  if [[ ! -e "$generic_path" && "$ssh_keytag" =~ @ ]]; then
+    local key_basename=$(basename "$ssh_key_path")
+    ln -sf "$key_basename" "$generic_path"
+    ln -sf "${key_basename}.pub" "${generic_path}.pub"
+    log "Created portable symlinks: ${service_identity}"
+  fi
 
   # If the SSH Keytag includes github.com
   local service="$(_ssh-keytag-service "$ssh_keytag")"
@@ -1040,6 +1052,9 @@ keycutter-key() {
   hosts)
     keycutter-key-hosts "$@"
     ;;
+  link)
+    keycutter-key-link "$@"
+    ;;
   *)
     log "Error: Unknown key subcommand: $subcmd"
     usage
@@ -1110,6 +1125,15 @@ keycutter-key-hosts() {
     while read -r host; do
       echo "  $host"
     done
+}
+
+keycutter-key-link() {
+  # Create portable symlinks for machine-specific keys
+  # e.g., github.com_alex@laptop -> github.com_alex (symlink)
+  #
+  # This enables portable git config that references the generic path
+  # while actual keys are machine-specific.
+  ssh-keys-create-symlinks "$@"
 }
 
 keycutter-install-touch-detector() {
