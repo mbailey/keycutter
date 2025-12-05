@@ -61,6 +61,7 @@ usage() {
   echo
   echo "Commands:"
   echo "       create <ssh-keytag> [--resident] [--type <value>] Create a new SSH key"
+  echo "       setup                                             Bootstrap keycutter on a new machine"
   echo "       check-requirements                                Check if all required software is installed"
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
   echo "       push-keys <hostname>                             Push public keys to remote host"
@@ -80,6 +81,11 @@ usage() {
   echo "       git-signing enable [--global] [key-path]          Enable SSH commit signing with auto-detected key"
   echo "       git-signing disable [--global]                    Disable SSH commit signing"
   echo "       git-signing status                                Show current signing configuration"
+  echo
+  echo "Git identity management:"
+  echo "       git-identity create <keytag>                      Create portable identity config for a key"
+  echo "       git-identity list                                 List all identity configs"
+  echo "       git-config setup                                  Generate master config with includeIf rules"
   echo
   echo "SSH known_hosts management:"
   echo "       ssh-known-hosts delete-line <line_number>         Delete a specific line from known_hosts"
@@ -1191,6 +1197,131 @@ keycutter-git-signing() {
   esac
 }
 
+# Setup command - bootstrap keycutter on a new machine
+
+keycutter-setup() {
+  echo "Keycutter Setup"
+  echo "==============="
+  echo
+  echo "This command bootstraps keycutter on a new machine."
+  echo
+
+  # Step 1: Check requirements
+  log "Step 1: Checking requirements..."
+  check_requirements
+
+  # Step 2: Create key symlinks
+  log ""
+  log "Step 2: Creating portable key symlinks..."
+  ssh-keys-create-symlinks
+
+  # Step 3: Set up git config include
+  log ""
+  log "Step 3: Setting up git config..."
+  local git_dir="${KEYCUTTER_CONFIG_DIR}/git"
+  local master_config="${git_dir}/config"
+  local home_gitconfig="${HOME}/.gitconfig"
+
+  if [[ -f "$master_config" ]]; then
+    # Check if already included
+    if grep -q "path = ~/.ssh/keycutter/git/config\|path = ${git_dir}/config" "$home_gitconfig" 2>/dev/null; then
+      log "~/.gitconfig already includes keycutter git config"
+    else
+      prompt "Add keycutter git config include to ~/.gitconfig? [Y/n] "
+      read -n 1 -r
+      echo
+      if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        git config --global --add include.path "~/.ssh/keycutter/git/config"
+        log "Added include to ~/.gitconfig"
+      fi
+    fi
+  else
+    log "No git identity configs found."
+    log "Create some with 'keycutter git-identity create <keytag>'"
+    log "Then run 'keycutter git-config setup' to generate the master config."
+  fi
+
+  echo
+  log "Setup complete!"
+  echo
+  echo "Next steps:"
+  echo "  1. Create keys:           keycutter create github.com_yourname"
+  echo "  2. Create git identity:   keycutter git-identity create github.com_yourname"
+  echo "  3. Generate git config:   keycutter git-config setup"
+}
+
+# Git config subcommands
+
+keycutter-git-config() {
+  # Show help for no args or explicit help flag
+  if [[ $# -eq 0 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]] || [[ "$1" == "help" ]]; then
+    echo "Usage: keycutter git-config <subcommand>"
+    echo
+    echo "Manage keycutter git configuration."
+    echo
+    echo "Subcommands:"
+    echo "  setup    Generate master git config with includeIf rules"
+    echo
+    echo "Examples:"
+    echo "  keycutter git-config setup    # Interactive setup of master config"
+    echo
+    [[ $# -eq 0 ]] && return 1 || return 0
+  fi
+
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    setup)
+      git-config-setup "$@"
+      ;;
+    *)
+      log "Error: Unknown git-config subcommand: $subcmd"
+      echo "Available subcommands: setup"
+      return 1
+      ;;
+  esac
+}
+
+# Git identity subcommands
+
+keycutter-git-identity() {
+  # Show help for no args or explicit help flag
+  if [[ $# -eq 0 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]] || [[ "$1" == "help" ]]; then
+    echo "Usage: keycutter git-identity <subcommand>"
+    echo
+    echo "Manage portable git identity configs for per-key signing."
+    echo
+    echo "Subcommands:"
+    echo "  create <keytag> [--name <name>] [--email <email>]   Create identity config for a key"
+    echo "  list                                                 List all identity configs"
+    echo
+    echo "Examples:"
+    echo "  keycutter git-identity create github.com_alex       # Interactive prompts"
+    echo "  keycutter git-identity create github.com_alex --name 'Alex' --email 'alex@example.com'"
+    echo "  keycutter git-identity list"
+    echo
+    [[ $# -eq 0 ]] && return 1 || return 0
+  fi
+
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    create)
+      git-identity-create "$@"
+      ;;
+    list)
+      git-identity-list "$@"
+      ;;
+    *)
+      log "Error: Unknown git-identity subcommand: $subcmd"
+      echo "Available subcommands: create, list"
+      return 1
+      ;;
+  esac
+}
+
 # YubiKey subcommands
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
@@ -1203,11 +1334,17 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   shift
 
   case "$cmd" in
-  create | authorized-keys | push-keys | check-requirements | config | agents | hosts | keys | ssh-known-hosts)
+  create | authorized-keys | push-keys | check-requirements | config | agents | hosts | keys | ssh-known-hosts | setup)
     "keycutter-$cmd" "$@"
     ;;
   git-signing)
     "keycutter-git-signing" "$@"
+    ;;
+  git-identity)
+    "keycutter-git-identity" "$@"
+    ;;
+  git-config)
+    "keycutter-git-config" "$@"
     ;;
   update)
     # Handle update subcommands
