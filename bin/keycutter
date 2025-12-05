@@ -89,6 +89,13 @@ usage() {
   echo "       ssh-known-hosts list-backups                      List available backups"
   echo "       ssh-known-hosts restore <backup_file>             Restore from a backup"
   echo
+  echo "GPG key management:"
+  echo "       gpg key list [--all]                              List GPG keys on YubiKey and masters"
+  echo "       gpg key create [--yes]                            Create master key + subkeys"
+  echo "       gpg key install [--master KEY_ID]                 Install subkeys to YubiKey"
+  echo "       gpg setup                                         Configure host for GPG/YubiKey"
+  echo "       gpg backup                                        Backup master key to encrypted storage"
+  echo
   echo "Agent commands:"
   echo "       agent show <agent>                                Show agent details"
   echo "       agent keys <agent>                                List keys in agent"
@@ -1167,7 +1174,118 @@ keycutter-git-signing() {
   esac
 }
 
-# YubiKey subcommands
+# GPG subcommands
+
+keycutter-gpg() {
+  if [[ $# -eq 0 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]] || [[ "$1" == "help" ]]; then
+    echo "Usage: keycutter gpg <subcommand>"
+    echo
+    echo "Manage GPG keys with YubiKey support."
+    echo
+    echo "Subcommands:"
+    echo "  key list [--all]               List GPG keys on current YubiKey"
+    echo "  key create [--yes]             Create master key + subkeys (Sign, Encrypt, Auth)"
+    echo "  key install [--master KEY_ID]  Install subkeys from master to YubiKey"
+    echo "  setup                          Configure host for GPG/YubiKey operation"
+    echo "  backup                         Backup master key to encrypted storage"
+    echo
+    echo "Examples:"
+    echo "  keycutter gpg key list           # Show keys on current YubiKey"
+    echo "  keycutter gpg key create         # Interactive master + subkey creation"
+    echo "  keycutter gpg key create --yes   # Non-interactive with config defaults"
+    echo "  keycutter gpg setup              # Configure this host for GPG/YubiKey"
+    echo
+    [[ $# -eq 0 ]] && return 1 || return 0
+  fi
+
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    key)
+      keycutter-gpg-key "$@"
+      ;;
+    setup)
+      keycutter-gpg-setup "$@"
+      ;;
+    backup)
+      keycutter-gpg-backup "$@"
+      ;;
+    *)
+      log "Error: Unknown gpg subcommand: $subcmd"
+      echo "Available subcommands: key, setup, backup"
+      return 1
+      ;;
+  esac
+}
+
+keycutter-gpg-key() {
+  if [[ $# -eq 0 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]] || [[ "$1" == "help" ]]; then
+    echo "Usage: keycutter gpg key <subcommand>"
+    echo
+    echo "Manage GPG keys."
+    echo
+    echo "Subcommands:"
+    echo "  list [--all]               List GPG keys on current YubiKey"
+    echo "                             With --all, also show available master keys"
+    echo "  create [--yes]             Create master key + subkeys"
+    echo "                             With --yes, use config file defaults"
+    echo "  install [--master KEY_ID]  Install subkeys from master to YubiKey"
+    echo
+    [[ $# -eq 0 ]] && return 1 || return 0
+  fi
+
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    list)
+      keycutter-gpg-key-list "$@"
+      ;;
+    create)
+      keycutter-gpg-key-create "$@"
+      ;;
+    install)
+      keycutter-gpg-key-install "$@"
+      ;;
+    *)
+      log "Error: Unknown gpg key subcommand: $subcmd"
+      echo "Available subcommands: list, create, install"
+      return 1
+      ;;
+  esac
+}
+
+# Placeholder functions - will be implemented in subsequent features
+keycutter-gpg-key-list() {
+  log "Error: GPG key list not yet implemented"
+  log "See: https://github.com/mbailey/keycutter/issues/KC-15"
+  return 1
+}
+
+keycutter-gpg-key-create() {
+  log "Error: GPG key create not yet implemented"
+  log "See: https://github.com/mbailey/keycutter/issues/KC-15"
+  return 1
+}
+
+keycutter-gpg-key-install() {
+  log "Error: GPG key install not yet implemented"
+  log "See: https://github.com/mbailey/keycutter/issues/KC-15"
+  return 1
+}
+
+keycutter-gpg-setup() {
+  log "Error: GPG setup not yet implemented"
+  log "See: https://github.com/mbailey/keycutter/issues/KC-15"
+  return 1
+}
+
+keycutter-gpg-backup() {
+  log "Error: GPG backup not yet implemented"
+  log "See: https://github.com/mbailey/keycutter/issues/KC-15"
+  return 1
+}
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
@@ -1184,6 +1302,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     ;;
   git-signing)
     "keycutter-git-signing" "$@"
+    ;;
+  gpg)
+    "keycutter-gpg" "$@"
     ;;
   update)
     # Handle update subcommands

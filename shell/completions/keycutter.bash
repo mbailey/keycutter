@@ -4,7 +4,7 @@ _keycutter_completion() {
   local cur prev words cword
   _init_completion || return
 
-  local commands="create authorized-keys push-keys update install-touch-detector config check-requirements agents hosts keys tokens agent host key ssh-known-hosts git-signing"
+  local commands="create authorized-keys push-keys update install-touch-detector config check-requirements agents hosts keys tokens agent host key ssh-known-hosts git-signing gpg"
   local agent_subcommands="show keys hosts add-key remove-key"
   local host_subcommands="show agent keys config edit"
   local key_subcommands="show agents hosts"
@@ -12,6 +12,8 @@ _keycutter_completion() {
   local update_subcommands="git config requirements touch-detector"
   local ssh_known_hosts_subcommands="delete-line remove fix backup list-backups restore"
   local git_signing_subcommands="enable disable status help"
+  local gpg_subcommands="key setup backup help"
+  local gpg_key_subcommands="list create install help"
 
   # Get the command (first argument after keycutter)
   local cmd=""
@@ -65,6 +67,10 @@ _keycutter_completion() {
     ;;
   git-signing)
     COMPREPLY=($(compgen -W "$git_signing_subcommands" -- "$cur"))
+    return
+    ;;
+  gpg)
+    COMPREPLY=($(compgen -W "$gpg_subcommands" -- "$cur"))
     return
     ;;
   esac
@@ -184,6 +190,27 @@ _keycutter_completion() {
       ;;
     status)
       # No additional completion for status
+      return
+      ;;
+    esac
+    ;;
+  gpg)
+    case "$subcmd" in
+    key)
+      # Complete with gpg key subcommands
+      if [[ $cword -eq 3 ]]; then
+        COMPREPLY=($(compgen -W "$gpg_key_subcommands" -- "$cur"))
+      elif [[ ${words[3]} == "list" && "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "--all" -- "$cur"))
+      elif [[ ${words[3]} == "create" && "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "--yes" -- "$cur"))
+      elif [[ ${words[3]} == "install" && "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "--master" -- "$cur"))
+      fi
+      return
+      ;;
+    setup|backup)
+      # No additional completion needed
       return
       ;;
     esac
