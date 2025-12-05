@@ -15,6 +15,13 @@ A practical guide to using Keycutter for SSH key management and authentication.
 - Create a new FIDO SSH key: `keycutter create <ssh-keytag>`
 - [SSH to a remote host](recipes/ssh-to-host.md)
 - [Add SSH key to GitHub](../README.md#quick-start)
+- Create portable key symlinks: `keycutter key link`
+
+### Git Commit Signing
+
+- [Git commit signing with SSH keys](git-signing.md)
+- Configure per-identity signing: `keycutter git-identity create <keytag>`
+- Set up automatic identity switching: `keycutter git-config setup`
 
 ## Configuration and Analysis
 
