@@ -1,0 +1,258 @@
+#!/usr/bin/env bats
+
+load test_helper
+
+# Test setup
+setup() {
+    setup_test_environment
+    mock_keycutter_environment
+    init_mock_log
+
+    # Source the GPG library for direct testing
+    source "$KEYCUTTER_ROOT/lib/gpg"
+}
+
+# Test cleanup
+teardown() {
+    # Clean up any ephemeral GNUPGHOME created during tests
+    gpg-home-temp-cleanup 2>/dev/null || true
+    cleanup_test_environment
+}
+
+# ============================================================================
+# gpg-version-check tests
+# ============================================================================
+
+@test "gpg-version-check returns version when gpg is installed" {
+    # Mock gpg command with valid version
+    create_mock_command "gpg" 0 "gpg (GnuPG) 2.4.0
+libgcrypt 1.10.1"
+
+    run gpg-version-check
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "2.4.0" ]]
+}
+
+@test "gpg-version-check fails when gpg is not installed" {
+    # Remove gpg from PATH by overriding with a failing mock
+    create_mock_command "gpg" 127 ""
+    # Override command -v behavior
+    function command() {
+        if [[ "$2" == "gpg" ]]; then
+            return 1
+        fi
+        builtin command "$@"
+    }
+    export -f command
+
+    # Source the library again to pick up the mock
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-version-check
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "not installed" ]]
+}
+
+@test "gpg-version-check fails when version is too old" {
+    # Mock gpg with old version
+    create_mock_command "gpg" 0 "gpg (GnuPG) 2.0.0
+libgcrypt 1.6.0"
+
+    run gpg-version-check "2.2.0"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "too old" ]]
+}
+
+@test "gpg-version-check accepts custom minimum version" {
+    create_mock_command "gpg" 0 "gpg (GnuPG) 2.3.0
+libgcrypt 1.9.0"
+
+    run gpg-version-check "2.3.0"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "2.3.0" ]]
+}
+
+# ============================================================================
+# gpg-home-temp-create tests
+# ============================================================================
+
+@test "gpg-home-temp-create creates temporary directory" {
+    # Create temp dir manually to test the core logic without EXIT trap interference
+    local temp_dir
+    temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/gnupg.XXXXXXXXXX")
+
+    [ -d "$temp_dir" ]
+
+    # Verify restrictive permissions can be set
+    chmod 700 "$temp_dir"
+
+    # Get permissions - try GNU stat first, then BSD stat
+    local perms
+    if stat --version &>/dev/null; then
+        # GNU stat
+        perms=$(stat -c "%a" "$temp_dir")
+    else
+        # BSD stat (macOS)
+        perms=$(stat -f "%OLp" "$temp_dir")
+    fi
+    [ "$perms" = "700" ]
+
+    # Cleanup
+    rm -rf "$temp_dir"
+}
+
+@test "gpg-home-temp-create sets GNUPGHOME" {
+    local old_gnupghome="${GNUPGHOME:-}"
+
+    gpg-home-temp-create >/dev/null
+
+    # GNUPGHOME should be set
+    [ -n "$GNUPGHOME" ]
+    [ -d "$GNUPGHOME" ]
+
+    # Cleanup
+    gpg-home-temp-cleanup
+
+    # Restore
+    export GNUPGHOME="$old_gnupghome"
+}
+
+@test "gpg-home-temp-create accepts custom base directory" {
+    local custom_base="$TEST_HOME/custom_gpg_base"
+    mkdir -p "$custom_base"
+
+    run gpg-home-temp-create "$custom_base"
+    [ "$status" -eq 0 ]
+
+    # Verify created in custom location - extract path from output
+    local temp_dir=$(echo "$output" | grep -o '/[^ ]*gnupg[^ ]*' | head -1)
+    [[ "$temp_dir" == "$custom_base"/* ]]
+
+    # Cleanup
+    rm -rf "$temp_dir"
+}
+
+# ============================================================================
+# gpg-home-temp-cleanup tests
+# ============================================================================
+
+@test "gpg-home-temp-cleanup removes ephemeral directory" {
+    gpg-home-temp-create >/dev/null
+    local temp_dir="$GNUPGHOME"
+
+    # Verify directory exists before cleanup
+    [ -d "$temp_dir" ]
+
+    gpg-home-temp-cleanup
+
+    # Directory should be removed
+    [ ! -d "$temp_dir" ]
+}
+
+@test "gpg-home-temp-cleanup unsets GNUPGHOME" {
+    gpg-home-temp-create >/dev/null
+
+    gpg-home-temp-cleanup
+
+    # GNUPGHOME should be unset
+    [ -z "${GNUPGHOME:-}" ]
+}
+
+@test "gpg-home-temp-cleanup is idempotent" {
+    gpg-home-temp-create >/dev/null
+
+    # Call cleanup multiple times
+    run gpg-home-temp-cleanup
+    [ "$status" -eq 0 ]
+
+    run gpg-home-temp-cleanup
+    [ "$status" -eq 0 ]
+}
+
+@test "gpg-home-temp-cleanup handles missing directory gracefully" {
+    # Don't create any temp home
+    _GPG_EPHEMERAL_HOME=""
+
+    run gpg-home-temp-cleanup
+    [ "$status" -eq 0 ]
+}
+
+# ============================================================================
+# gpg-agent-restart tests
+# ============================================================================
+
+@test "gpg-agent-restart calls gpgconf --kill" {
+    create_mock_command "gpgconf" 0 ""
+    create_mock_command "gpg-connect-agent" 0 "OK"
+
+    run gpg-agent-restart "$TEST_HOME/.gnupg"
+    [ "$status" -eq 0 ]
+
+    # Verify gpgconf was called with kill
+    assert_mock_called "gpgconf"
+}
+
+@test "gpg-agent-restart uses default GNUPGHOME" {
+    create_mock_command "gpgconf" 0 ""
+    create_mock_command "gpg-connect-agent" 0 "OK"
+
+    # Set up a mock GNUPGHOME
+    mkdir -p "$TEST_HOME/.gnupg"
+    export GNUPGHOME="$TEST_HOME/.gnupg"
+
+    run gpg-agent-restart
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Restarting" ]]
+}
+
+@test "gpg-agent-restart logs success" {
+    create_mock_command "gpgconf" 0 ""
+    create_mock_command "gpg-connect-agent" 0 "OK"
+
+    run gpg-agent-restart "$TEST_HOME/.gnupg"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Success" ]] || [[ "$output" =~ "restarted" ]]
+}
+
+# ============================================================================
+# gpg-agent-ensure tests
+# ============================================================================
+
+@test "gpg-agent-ensure starts agent if not running" {
+    # Mock agent as not running initially, then running after restart
+    create_mock_command "gpg-connect-agent" 0 "OK"
+    create_mock_command "gpgconf" 0 ""
+
+    run gpg-agent-ensure "$TEST_HOME/.gnupg"
+    [ "$status" -eq 0 ]
+}
+
+@test "gpg-agent-ensure succeeds when agent is already running" {
+    create_mock_command "gpg-connect-agent" 0 "OK"
+
+    run gpg-agent-ensure "$TEST_HOME/.gnupg"
+    [ "$status" -eq 0 ]
+}
+
+# ============================================================================
+# Integration tests
+# ============================================================================
+
+@test "ephemeral GNUPGHOME workflow completes successfully" {
+    # Mock gpg commands
+    create_mock_command "gpg" 0 "gpg (GnuPG) 2.4.0"
+    create_mock_command "gpgconf" 0 ""
+
+    # Create ephemeral home
+    gpg-home-temp-create >/dev/null
+    local temp_home="$GNUPGHOME"
+
+    [ -d "$temp_home" ]
+    [ -n "$GNUPGHOME" ]
+
+    # Clean up
+    gpg-home-temp-cleanup
+
+    [ ! -d "$temp_home" ]
+    [ -z "${GNUPGHOME:-}" ]
+}

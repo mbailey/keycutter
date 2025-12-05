@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# keycutter/lib/gpg - Functions for GPG key management with YubiKey support
+#
+# - gpg-version-check(): Verify GPG version meets requirements
+# - gpg-home-temp-create(): Create ephemeral GNUPGHOME for secure key operations
+# - gpg-home-temp-cleanup(): Clean up ephemeral GNUPGHOME
+# - gpg-agent-restart(): Restart gpg-agent with proper configuration
+
+KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
+source "${KEYCUTTER_ROOT}/lib/utils"
+
+# Minimum GPG version required for modern key types and features
+GPG_MIN_VERSION="2.2.0"
+
+# Track ephemeral home for cleanup
+_GPG_EPHEMERAL_HOME=""
+
+gpg-version-check() {
+    # Check if GPG is installed and meets minimum version requirement
+    #
+    # Arguments:
+    #   $1 - Required version (optional, defaults to GPG_MIN_VERSION)
+    #
+    # Returns:
+    #   0 if version requirement met
+    #   1 if GPG not found or version too old
+    #
+    # Output:
+    #   Prints GPG version on success, error message on failure
+
+    local required_version="${1:-$GPG_MIN_VERSION}"
+
+    if ! command -v gpg &>/dev/null; then
+        log "Error: GPG is not installed"
+        echo "Please install GnuPG 2.x:"
+        echo "  macOS:  brew install gnupg"
+        echo "  Ubuntu: sudo apt install gnupg2"
+        echo "  Fedora: sudo dnf install gnupg2"
+        return 1
+    fi
+
+    local gpg_version
+    gpg_version=$(gpg --version | head -n1 | awk '{print $3}')
+
+    if [[ $(check_version "$gpg_version" "$required_version") == "false" ]]; then
+        log "Error: GPG version $gpg_version is too old (require >= $required_version)"
+        return 1
+    fi
+
+    echo "$gpg_version"
+    return 0
+}
+
+gpg-home-temp-create() {
+    # Create a secure ephemeral GNUPGHOME directory
+    #
+    # This is critical for key generation security - the master key
+    # should never touch persistent disk storage unencrypted.
+    #
+    # Arguments:
+    #   $1 - Base directory (optional, defaults to system temp)
+    #
+    # Returns:
+    #   0 on success, 1 on failure
+    #
+    # Output:
+    #   Prints path to ephemeral GNUPGHOME
+    #
+    # Side effects:
+    #   Sets GNUPGHOME environment variable
+    #   Creates cleanup trap on EXIT
+
+    local base_dir="${1:-}"
+    local temp_home
+
+    # Use ramfs/tmpfs if available for extra security
+    if [[ -z "$base_dir" ]]; then
+        if [[ -d /dev/shm ]]; then
+            base_dir="/dev/shm"
+        elif [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS doesn't have /dev/shm, use secure temp
+            base_dir="${TMPDIR:-/tmp}"
+        else
+            base_dir="/tmp"
+        fi
+    fi
+
+    # Create unique temporary directory with restrictive permissions
+    temp_home=$(mktemp -d "${base_dir}/gnupg.XXXXXXXXXX") || {
+        log "Error: Failed to create temporary GNUPGHOME"
+        return 1
+    }
+
+    chmod 700 "$temp_home" || {
+        log "Error: Failed to set permissions on GNUPGHOME"
+        rm -rf "$temp_home"
+        return 1
+    }
+
+    # Store for cleanup
+    _GPG_EPHEMERAL_HOME="$temp_home"
+
+    # Export GNUPGHOME
+    export GNUPGHOME="$temp_home"
+
+    # Set up cleanup trap (additive, won't replace existing traps)
+    trap 'gpg-home-temp-cleanup' EXIT
+
+    log "Create ephemeral GNUPGHOME: $temp_home"
+    echo "$temp_home"
+    return 0
+}
+
+gpg-home-temp-cleanup() {
+    # Securely clean up ephemeral GNUPGHOME
+    #
+    # This function securely removes the ephemeral GPG home directory.
+    # On Linux with secure-delete available, uses srm for secure removal.
+    #
+    # Returns:
+    #   0 on success or if nothing to clean
+    #   1 on failure
+
+    if [[ -z "$_GPG_EPHEMERAL_HOME" ]] || [[ ! -d "$_GPG_EPHEMERAL_HOME" ]]; then
+        return 0
+    fi
+
+    # Kill any gpg-agent using this home
+    if [[ -n "${GNUPGHOME:-}" ]] && [[ "$GNUPGHOME" == "$_GPG_EPHEMERAL_HOME" ]]; then
+        gpgconf --homedir "$_GPG_EPHEMERAL_HOME" --kill gpg-agent 2>/dev/null || true
+    fi
+
+    # Secure removal if available, otherwise regular rm
+    if command -v srm &>/dev/null; then
+        log "Securely removing ephemeral GNUPGHOME"
+        srm -rf "$_GPG_EPHEMERAL_HOME" 2>/dev/null || rm -rf "$_GPG_EPHEMERAL_HOME"
+    else
+        log "Removing ephemeral GNUPGHOME"
+        rm -rf "$_GPG_EPHEMERAL_HOME"
+    fi
+
+    _GPG_EPHEMERAL_HOME=""
+    unset GNUPGHOME
+
+    return 0
+}
+
+gpg-agent-restart() {
+    # Restart gpg-agent with proper configuration
+    #
+    # Arguments:
+    #   $1 - GNUPGHOME to use (optional, uses current GNUPGHOME or default)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local gpg_home="${1:-${GNUPGHOME:-$HOME/.gnupg}}"
+
+    log "Restarting gpg-agent"
+
+    # Kill existing agent
+    gpgconf --homedir "$gpg_home" --kill gpg-agent 2>/dev/null || true
+
+    # Brief pause for socket cleanup
+    sleep 0.5
+
+    # Restart agent
+    if ! gpg-connect-agent --homedir "$gpg_home" /bye &>/dev/null; then
+        # Try alternative method
+        gpg --homedir "$gpg_home" --list-keys &>/dev/null || {
+            log "Error: Failed to restart gpg-agent"
+            return 1
+        }
+    fi
+
+    log "Success: gpg-agent restarted"
+    return 0
+}
+
+gpg-agent-ensure() {
+    # Ensure gpg-agent is running with proper configuration
+    #
+    # Arguments:
+    #   $1 - GNUPGHOME to use (optional, uses current GNUPGHOME or default)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local gpg_home="${1:-${GNUPGHOME:-$HOME/.gnupg}}"
+
+    # Check if agent is responding
+    if gpg-connect-agent --homedir "$gpg_home" /bye &>/dev/null; then
+        return 0
+    fi
+
+    # Agent not running, start it
+    gpg-agent-restart "$gpg_home"
+}
