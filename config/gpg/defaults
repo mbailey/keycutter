@@ -1,0 +1,89 @@
+# Keycutter GPG Defaults
+#
+# These defaults are used when creating GPG keys with 'keycutter gpg key create'.
+# Override any value with environment variables or CLI flags.
+#
+# See docs/gpg-configuration.md for full documentation.
+
+# -----------------------------------------------------------------------------
+# Key Settings
+# -----------------------------------------------------------------------------
+
+# Key algorithm and size
+# Options: rsa4096, ed25519 (recommended for new keys, requires GPG 2.2.x+)
+GPG_KEY_TYPE="ed25519"
+
+# Expiration period for subkeys (master key never expires by default)
+# Format: Ny (years), Nm (months), Nd (days), or 0 for never
+# Recommended: 1-2 years, requiring periodic renewal with master key
+GPG_EXPIRATION="2y"
+
+# Master key expiration (0 means never expires - recommended)
+# The master key is stored securely offline; no need to expire it
+GPG_MASTER_EXPIRATION="0"
+
+# -----------------------------------------------------------------------------
+# Identity Settings
+# -----------------------------------------------------------------------------
+
+# Default identity for key creation (can be overridden with --identity)
+# Format: "Real Name <email@example.com>"
+# GPG_IDENTITY=""
+
+# Comment to embed in the key (optional)
+# GPG_COMMENT=""
+
+# -----------------------------------------------------------------------------
+# Cipher Preferences
+# -----------------------------------------------------------------------------
+
+# Personal cipher preferences (in order of preference)
+GPG_CIPHER_PREFS="AES256 AES192 AES"
+
+# Personal digest (hash) preferences
+GPG_DIGEST_PREFS="SHA512 SHA384 SHA256"
+
+# Personal compression preferences
+GPG_COMPRESS_PREFS="ZLIB BZIP2 ZIP Uncompressed"
+
+# Default preference list for new keys
+GPG_DEFAULT_PREFS="SHA512 SHA384 SHA256 AES256 AES192 AES ZLIB BZIP2 ZIP Uncompressed"
+
+# Certificate digest algorithm
+GPG_CERT_DIGEST="SHA512"
+
+# -----------------------------------------------------------------------------
+# YubiKey Settings
+# -----------------------------------------------------------------------------
+
+# Touch policy for YubiKey operations
+# Options: on, off, fixed, cached, cached-fixed
+# 'on' = require touch for every operation (most secure)
+# 'cached' = touch cached for 15 seconds
+YUBIKEY_TOUCH_POLICY="on"
+
+# PIN retry count before card is blocked (default: 3)
+YUBIKEY_PIN_RETRIES="3"
+
+# Admin PIN retry count before card is permanently blocked (default: 3)
+YUBIKEY_ADMIN_PIN_RETRIES="3"
+
+# -----------------------------------------------------------------------------
+# Backup Settings
+# -----------------------------------------------------------------------------
+
+# Default backup directory (will prompt if not set)
+# GPG_BACKUP_DIR=""
+
+# Backup format: gpg (encrypted with symmetric key) or luks (Linux encrypted volume)
+GPG_BACKUP_FORMAT="gpg"
+
+# -----------------------------------------------------------------------------
+# Keyserver Settings (optional)
+# -----------------------------------------------------------------------------
+
+# Keyserver URL for publishing public keys
+GPG_KEYSERVER="hkps://keys.openpgp.org"
+
+# Automatically fetch unknown keys from keyserver
+# GPG_AUTO_KEY_RETRIEVE="false"

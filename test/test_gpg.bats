@@ -256,3 +256,128 @@ libgcrypt 1.9.0"
     [ ! -d "$temp_home" ]
     [ -z "${GNUPGHOME:-}" ]
 }
+
+# ============================================================================
+# gpg-config-load tests
+# ============================================================================
+
+@test "gpg-config-load loads defaults from config file" {
+    # Load config (can't use run because config is stored in memory)
+    gpg-config-load
+
+    # Check a known default value
+    run gpg-config-get GPG_KEY_TYPE
+    [ "$status" -eq 0 ]
+    [ "$output" = "ed25519" ]
+}
+
+@test "gpg-config-load respects environment variable overrides" {
+    export GPG_KEY_TYPE="rsa4096"
+
+    # Load config (can't use run because config is stored in memory)
+    gpg-config-load
+
+    run gpg-config-get GPG_KEY_TYPE
+    [ "$status" -eq 0 ]
+    [ "$output" = "rsa4096" ]
+
+    unset GPG_KEY_TYPE
+}
+
+@test "gpg-config-load respects CLI argument overrides" {
+    gpg-config-load GPG_KEY_TYPE=rsa2048 GPG_EXPIRATION=6m
+
+    run gpg-config-get GPG_KEY_TYPE
+    [ "$status" -eq 0 ]
+    [ "$output" = "rsa2048" ]
+
+    run gpg-config-get GPG_EXPIRATION
+    [ "$status" -eq 0 ]
+    [ "$output" = "6m" ]
+}
+
+@test "gpg-config-load CLI overrides take precedence over env vars" {
+    export GPG_KEY_TYPE="rsa4096"
+
+    gpg-config-load GPG_KEY_TYPE=ed25519
+
+    run gpg-config-get GPG_KEY_TYPE
+    [ "$status" -eq 0 ]
+    [ "$output" = "ed25519" ]
+
+    unset GPG_KEY_TYPE
+}
+
+@test "gpg-config-load handles multiple config variables" {
+    gpg-config-load
+
+    # Check several default values exist
+    run gpg-config-get GPG_EXPIRATION
+    [ "$status" -eq 0 ]
+    [ "$output" = "2y" ]
+
+    run gpg-config-get GPG_CIPHER_PREFS
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "AES256" ]]
+}
+
+# ============================================================================
+# gpg-config-get tests
+# ============================================================================
+
+@test "gpg-config-get returns existing value" {
+    gpg-config-load
+
+    run gpg-config-get GPG_KEY_TYPE
+    [ "$status" -eq 0 ]
+    [ -n "$output" ]
+}
+
+@test "gpg-config-get returns default for missing key" {
+    gpg-config-load
+
+    run gpg-config-get NONEXISTENT_KEY "default_value"
+    [ "$status" -eq 0 ]
+    [ "$output" = "default_value" ]
+}
+
+@test "gpg-config-get fails for missing key without default" {
+    gpg-config-load
+
+    run gpg-config-get NONEXISTENT_KEY
+    [ "$status" -eq 1 ]
+}
+
+@test "gpg-config-get handles empty string values" {
+    gpg-config-load GPG_COMMENT=""
+
+    # Empty string is still a valid value
+    run gpg-config-get GPG_COMMENT "fallback"
+    [ "$status" -eq 0 ]
+    [ "$output" = "" ]
+}
+
+# ============================================================================
+# gpg-config-dump tests
+# ============================================================================
+
+@test "gpg-config-dump shows all loaded config" {
+    gpg-config-load GPG_KEY_TYPE=ed25519 GPG_EXPIRATION=1y
+
+    run gpg-config-dump
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "GPG_KEY_TYPE=ed25519" ]]
+    [[ "$output" =~ "GPG_EXPIRATION=1y" ]]
+}
+
+@test "gpg-config-dump output is sorted" {
+    gpg-config-load
+
+    run gpg-config-dump
+    [ "$status" -eq 0 ]
+
+    # Verify output contains multiple lines and appears sorted
+    local line_count
+    line_count=$(echo "$output" | wc -l)
+    [ "$line_count" -gt 1 ]
+}

@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # keycutter/lib/gpg - Functions for GPG key management with YubiKey support
 #
+# Configuration:
+# - gpg-config-load(): Load GPG configuration with precedence handling
+# - gpg-config-get(): Get a specific configuration value
+#
+# Version and Environment:
 # - gpg-version-check(): Verify GPG version meets requirements
 # - gpg-home-temp-create(): Create ephemeral GNUPGHOME for secure key operations
 # - gpg-home-temp-cleanup(): Clean up ephemeral GNUPGHOME
 # - gpg-agent-restart(): Restart gpg-agent with proper configuration
+# - gpg-agent-ensure(): Ensure gpg-agent is running
 
 KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/utils"
@@ -14,6 +20,138 @@ GPG_MIN_VERSION="2.2.0"
 
 # Track ephemeral home for cleanup
 _GPG_EPHEMERAL_HOME=""
+
+# Configuration storage (associative array)
+declare -gA _GPG_CONFIG
+
+gpg-config-load() {
+    # Load GPG configuration from defaults and environment
+    #
+    # Configuration precedence (highest to lowest):
+    #   1. CLI arguments (passed as name=value pairs)
+    #   2. Environment variables (GPG_* prefix)
+    #   3. User config file (~/.config/keycutter/gpg.conf)
+    #   4. Default values (config/gpg/defaults)
+    #
+    # Arguments:
+    #   $@ - Optional CLI overrides as name=value pairs
+    #
+    # Returns:
+    #   0 on success
+    #   1 if defaults file is missing
+    #
+    # Example:
+    #   gpg-config-load GPG_KEY_TYPE=rsa4096 GPG_EXPIRATION=1y
+
+    local defaults_file="${KEYCUTTER_ROOT}/config/gpg/defaults"
+    local user_config="${XDG_CONFIG_HOME:-$HOME/.config}/keycutter/gpg.conf"
+
+    # Reset config
+    _GPG_CONFIG=()
+
+    # 1. Load defaults (lowest precedence)
+    if [[ -f "$defaults_file" ]]; then
+        local line key value
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            # Skip comments and empty lines
+            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+            # Parse key=value (handling quoted values)
+            if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+                # Remove surrounding quotes if present
+                value="${value#\"}"
+                value="${value%\"}"
+                _GPG_CONFIG["$key"]="$value"
+            fi
+        done < "$defaults_file"
+    else
+        log "Warning: GPG defaults file not found: $defaults_file"
+    fi
+
+    # 2. Load user config file (if exists)
+    if [[ -f "$user_config" ]]; then
+        local line key value
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+            if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+                value="${value#\"}"
+                value="${value%\"}"
+                _GPG_CONFIG["$key"]="$value"
+            fi
+        done < "$user_config"
+    fi
+
+    # 3. Apply environment variable overrides
+    local var
+    for var in GPG_KEY_TYPE GPG_EXPIRATION GPG_MASTER_EXPIRATION GPG_IDENTITY \
+               GPG_COMMENT GPG_CIPHER_PREFS GPG_DIGEST_PREFS GPG_COMPRESS_PREFS \
+               GPG_DEFAULT_PREFS GPG_CERT_DIGEST GPG_BACKUP_DIR GPG_BACKUP_FORMAT \
+               GPG_KEYSERVER YUBIKEY_TOUCH_POLICY YUBIKEY_PIN_RETRIES \
+               YUBIKEY_ADMIN_PIN_RETRIES; do
+        if [[ -n "${!var:-}" ]]; then
+            _GPG_CONFIG["$var"]="${!var}"
+        fi
+    done
+
+    # 4. Apply CLI argument overrides (highest precedence)
+    local arg key value
+    for arg in "$@"; do
+        if [[ "$arg" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+            key="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+            _GPG_CONFIG["$key"]="$value"
+        fi
+    done
+
+    return 0
+}
+
+gpg-config-get() {
+    # Get a configuration value
+    #
+    # Arguments:
+    #   $1 - Configuration key (e.g., GPG_KEY_TYPE)
+    #   $2 - Default value if not set (optional)
+    #
+    # Returns:
+    #   0 if key exists
+    #   1 if key doesn't exist and no default provided
+    #
+    # Output:
+    #   Prints the configuration value
+
+    local key="$1"
+    local default="${2:-}"
+
+    if [[ -v "_GPG_CONFIG[$key]" ]]; then
+        echo "${_GPG_CONFIG[$key]}"
+        return 0
+    elif [[ -n "$default" ]]; then
+        echo "$default"
+        return 0
+    else
+        return 1
+    fi
+}
+
+gpg-config-dump() {
+    # Dump all loaded configuration (for debugging)
+    #
+    # Returns:
+    #   0 always
+    #
+    # Output:
+    #   Prints all configuration key=value pairs
+
+    local key
+    for key in "${!_GPG_CONFIG[@]}"; do
+        echo "${key}=${_GPG_CONFIG[$key]}"
+    done | sort
+}
 
 gpg-version-check() {
     # Check if GPG is installed and meets minimum version requirement
