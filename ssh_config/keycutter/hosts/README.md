@@ -26,8 +26,9 @@ Files in this directory are loaded via the Include directive in keycutter.conf:
 Each file can contain standard SSH configuration directives for one or more Host patterns:
 
     hosts/
-    ├── personal     # Personal servers and services
-    └── work        # Work-related hosts
+    ├── controlmaster.conf  # SSH connection multiplexing (reduces YubiKey touches)
+    ├── personal.conf       # Personal servers and services
+    └── work.conf           # Work-related hosts
 
 ## CONFIGURATION
 
