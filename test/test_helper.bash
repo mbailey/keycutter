@@ -16,6 +16,14 @@ setup_test_environment() {
     # Prevent actual git operations during tests
     export GIT_CONFIG_GLOBAL=/dev/null
     export GIT_CONFIG_SYSTEM=/dev/null
+
+    # Clear any git command-line config overrides from parent environment
+    # (GIT_CONFIG_COUNT, GIT_CONFIG_KEY_*, GIT_CONFIG_VALUE_* override all config)
+    unset GIT_CONFIG_COUNT
+    for i in $(seq 0 10); do
+        unset "GIT_CONFIG_KEY_$i" 2>/dev/null || true
+        unset "GIT_CONFIG_VALUE_$i" 2>/dev/null || true
+    done
     
     # Create test directories
     mkdir -p "$TEST_HOME/.ssh/keycutter/"{keys,agents,hosts,scripts}
