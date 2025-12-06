@@ -1964,9 +1964,197 @@ keycutter-gpg-key-install() {
 }
 
 keycutter-gpg-setup() {
-  log "Error: GPG setup not yet implemented"
-  log "See: https://github.com/mbailey/keycutter/issues/KC-15"
-  return 1
+  # Configure host for GPG/YubiKey usage
+  #
+  # Usage: keycutter gpg setup [options]
+  #
+  # Options:
+  #   --enable-ssh          Enable SSH support in gpg-agent
+  #   --skip-packages       Skip package installation
+  #   --skip-config         Skip GPG configuration
+  #   --skip-launchagent    Skip macOS LaunchAgent setup (macOS only)
+  #   --yes, -y             Non-interactive mode
+  #   -h, --help            Show this help message
+  #
+  # This command configures the host for GPG and YubiKey usage:
+  #   1. Checks and installs required packages (gnupg, pinentry, ykman, pcscd)
+  #   2. Configures gpg-agent with pinentry and optional SSH support
+  #   3. Installs hardened gpg.conf from keycutter templates
+  #   4. On macOS, installs LaunchAgents for gpg-agent
+  #   5. Tests the configuration
+  #   6. Shows shell configuration recommendations
+  #
+  # Supported platforms: macOS, Ubuntu, Debian, Fedora, RHEL
+
+  local enable_ssh=false
+  local skip_packages=false
+  local skip_config=false
+  local skip_launchagent=false
+  local non_interactive=false
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --enable-ssh)
+        enable_ssh=true
+        shift
+        ;;
+      --skip-packages)
+        skip_packages=true
+        shift
+        ;;
+      --skip-config)
+        skip_config=true
+        shift
+        ;;
+      --skip-launchagent)
+        skip_launchagent=true
+        shift
+        ;;
+      --yes|-y)
+        non_interactive=true
+        shift
+        ;;
+      -h|--help)
+        echo "Usage: keycutter gpg setup [options]"
+        echo
+        echo "Configure host for GPG/YubiKey usage."
+        echo
+        echo "Options:"
+        echo "  --enable-ssh          Enable SSH support in gpg-agent"
+        echo "  --skip-packages       Skip package installation"
+        echo "  --skip-config         Skip GPG configuration"
+        echo "  --skip-launchagent    Skip macOS LaunchAgent setup (macOS only)"
+        echo "  --yes, -y             Non-interactive mode"
+        echo "  -h, --help            Show this help message"
+        echo
+        echo "This command:"
+        echo "  1. Checks and installs required packages"
+        echo "  2. Configures gpg-agent with pinentry"
+        echo "  3. Installs hardened gpg.conf"
+        echo "  4. On macOS, installs LaunchAgents for gpg-agent"
+        echo "  5. Tests the configuration"
+        echo "  6. Shows shell configuration recommendations"
+        echo
+        echo "Supported platforms: macOS, Ubuntu, Debian, Fedora, RHEL"
+        return 0
+        ;;
+      *)
+        log "Error: Unknown option: $1"
+        echo "Use --help for usage information"
+        return 1
+        ;;
+    esac
+  done
+
+  # Source GPG library for setup functions
+  source "${KEYCUTTER_ROOT}/lib/gpg"
+
+  # Detect OS
+  local os
+  os=$(gpg-setup-detect-os)
+
+  log "Starting GPG setup for $os..."
+  echo
+
+  # Step 1: Check and install packages
+  if [[ "$skip_packages" != "true" ]]; then
+    log "Step 1: Checking required packages..."
+
+    local missing
+    missing=$(gpg-setup-check-packages --os "$os" 2>/dev/null) || true
+
+    if [[ -n "$missing" ]]; then
+      log "Missing packages: $(echo "$missing" | tr '\n' ' ')"
+
+      if [[ "$non_interactive" == "true" ]]; then
+        gpg-setup-install-packages --os "$os" --yes || {
+          log "Error: Package installation failed"
+          return 1
+        }
+      else
+        gpg-setup-install-packages --os "$os" || {
+          log "Warning: Package installation skipped or failed"
+          # Continue anyway - user might have packages installed differently
+        }
+      fi
+    else
+      log "All required packages are installed"
+    fi
+    echo
+  fi
+
+  # Step 2: Configure GPG
+  if [[ "$skip_config" != "true" ]]; then
+    log "Step 2: Configuring GPG..."
+
+    # Configure gpg-agent
+    local agent_args=(--backup)
+    if [[ "$enable_ssh" == "true" ]]; then
+      agent_args+=(--enable-ssh)
+    fi
+
+    gpg-setup-gpg-agent-conf "${agent_args[@]}" || {
+      log "Error: Failed to configure gpg-agent"
+      return 1
+    }
+
+    # Install gpg.conf
+    gpg-setup-gpg-conf --backup || {
+      log "Error: Failed to install gpg.conf"
+      return 1
+    }
+
+    # Restart gpg-agent to pick up new config
+    log "Restarting gpg-agent..."
+    gpg-agent-restart "${GNUPGHOME:-$HOME/.gnupg}" >/dev/null 2>&1 || true
+
+    echo
+  fi
+
+  # Step 3: macOS LaunchAgents
+  if [[ "$os" == "macos" ]] && [[ "$skip_launchagent" != "true" ]]; then
+    log "Step 3: Installing macOS LaunchAgents..."
+    gpg-setup-macos-launchagent || {
+      log "Warning: Failed to install LaunchAgents"
+    }
+    echo
+  fi
+
+  # Step 4: Start pcscd if on Linux
+  if [[ "$os" != "macos" ]]; then
+    log "Ensuring pcscd service is running..."
+    gpg-pcscd-ensure || {
+      log "Warning: Could not start pcscd service"
+    }
+  fi
+
+  # Step 5: Test configuration
+  log "Testing configuration..."
+  echo
+  gpg-setup-test || {
+    log "Warning: Some tests failed - see above for details"
+  }
+
+  # Step 6: Show shell configuration
+  log "Shell configuration recommendations:"
+  gpg-setup-shell-config --os "$os"
+
+  # Summary
+  echo
+  log "GPG setup complete!"
+  echo
+  echo "Next steps:"
+  echo "  1. Add the shell configuration above to your ~/.bashrc or ~/.zshrc"
+  echo "  2. Restart your shell or run: source ~/.bashrc"
+  if [[ "$enable_ssh" == "true" ]]; then
+    echo "  3. Uncomment the SSH_AUTH_SOCK line to use GPG for SSH authentication"
+  fi
+  echo "  4. Create GPG keys: keycutter gpg key create"
+  echo "  5. Install keys to YubiKey: keycutter gpg key install"
+  echo
+
+  return 0
 }
 
 keycutter-gpg-backup() {

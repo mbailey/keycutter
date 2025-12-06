@@ -3,8 +3,8 @@
   "task_id": "KC-15",
   "started": "2025-12-06",
   "current_phase": "implementation",
-  "current_feature": "gpg-013",
-  "features_completed": 12,
+  "current_feature": "gpg-014",
+  "features_completed": 13,
   "features_total": 20,
   "sessions": [
     {
@@ -90,6 +90,13 @@
         "gpg-012"
       ],
       "notes": "Implemented 'keycutter gpg key install' command for installing subkeys from backup to YubiKey. Added gpg-backup-list function to list available backups in GPG_BACKUP_DIR, gpg-backup-restore function to decrypt and import keys from .tar.gz.gpg archives into ephemeral GNUPGHOME. CLI supports --backup, --backup-pass, --passphrase, --admin-pin, --force, and --yes flags. Interactive mode lists backups and prompts for selection. Added 18 BATS tests for backup list, restore, and install command validation."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-013"
+      ],
+      "notes": "Implemented 'keycutter gpg setup' command for host configuration. Added lib/gpg functions: gpg-setup-detect-os (macOS/Ubuntu/Debian/Fedora/RHEL), gpg-setup-check-packages, gpg-setup-install-packages (brew/apt/dnf), gpg-setup-pinentry-path, gpg-setup-gpg-agent-conf (with --enable-ssh, --backup), gpg-setup-gpg-conf, gpg-setup-test, gpg-setup-macos-launchagent, gpg-setup-shell-config. CLI supports --enable-ssh, --skip-packages, --skip-config, --skip-launchagent, --yes flags. Added 17 BATS tests for setup functions."
     }
   ],
   "context_summaries": {

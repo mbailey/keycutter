@@ -1989,6 +1989,726 @@ EOF
 }
 
 # =============================================================================
+# Host Setup Functions (gpg-013)
+# =============================================================================
+
+gpg-setup-detect-os() {
+    # Detect the operating system for package installation
+    #
+    # Returns:
+    #   0 always
+    #
+    # Output:
+    #   Prints one of: macos, ubuntu, debian, fedora, rhel, unknown
+
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    elif [[ -f /etc/os-release ]]; then
+        # Source the file to get distro info
+        local id
+        id=$(grep "^ID=" /etc/os-release | cut -d= -f2 | tr -d '"')
+        case "$id" in
+            ubuntu)     echo "ubuntu" ;;
+            debian)     echo "debian" ;;
+            fedora)     echo "fedora" ;;
+            rhel|centos|rocky|alma) echo "rhel" ;;
+            *)          echo "unknown" ;;
+        esac
+    else
+        echo "unknown"
+    fi
+}
+
+gpg-setup-check-packages() {
+    # Check if required GPG packages are installed
+    #
+    # Arguments:
+    #   --os OS    Operating system (auto-detected if not provided)
+    #
+    # Returns:
+    #   0 if all packages installed
+    #   1 if some packages missing
+    #
+    # Output:
+    #   Prints missing packages (one per line)
+
+    local os=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --os)
+                os="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Auto-detect OS if not provided
+    if [[ -z "$os" ]]; then
+        os=$(gpg-setup-detect-os)
+    fi
+
+    local missing=()
+
+    case "$os" in
+        macos)
+            # Check for Homebrew packages
+            command -v gpg &>/dev/null || missing+=("gnupg")
+            command -v ykman &>/dev/null || missing+=("ykman")
+            # Check for pinentry-mac
+            if [[ ! -f "/opt/homebrew/bin/pinentry-mac" ]] && \
+               [[ ! -f "/usr/local/bin/pinentry-mac" ]]; then
+                missing+=("pinentry-mac")
+            fi
+            ;;
+        ubuntu|debian)
+            # Check for apt packages
+            command -v gpg &>/dev/null || missing+=("gnupg2")
+            command -v gpg-agent &>/dev/null || missing+=("gnupg-agent")
+            command -v scdaemon &>/dev/null || missing+=("scdaemon")
+            command -v pcscd &>/dev/null || missing+=("pcscd")
+            command -v ykman &>/dev/null || missing+=("yubikey-manager")
+            # Check for pinentry
+            if ! command -v pinentry &>/dev/null && \
+               ! command -v pinentry-gnome3 &>/dev/null && \
+               ! command -v pinentry-curses &>/dev/null; then
+                missing+=("pinentry-gnome3")
+            fi
+            ;;
+        fedora|rhel)
+            # Check for dnf packages
+            command -v gpg &>/dev/null || missing+=("gnupg2")
+            command -v scdaemon &>/dev/null || missing+=("gnupg2-smime")
+            command -v pcscd &>/dev/null || missing+=("pcsc-lite")
+            command -v ykman &>/dev/null || missing+=("yubikey-manager")
+            # Check for pinentry
+            if ! command -v pinentry &>/dev/null && \
+               ! command -v pinentry-gnome3 &>/dev/null; then
+                missing+=("pinentry")
+            fi
+            ;;
+        *)
+            log "Warning: Unknown OS, cannot check packages"
+            return 1
+            ;;
+    esac
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        for pkg in "${missing[@]}"; do
+            echo "$pkg"
+        done
+        return 1
+    fi
+
+    return 0
+}
+
+gpg-setup-install-packages() {
+    # Install required GPG packages for the current OS
+    #
+    # Arguments:
+    #   --os OS      Operating system (auto-detected if not provided)
+    #   --yes        Skip confirmation prompts
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local os=""
+    local auto_confirm=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --os)
+                os="$2"
+                shift 2
+                ;;
+            --yes)
+                auto_confirm=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Auto-detect OS if not provided
+    if [[ -z "$os" ]]; then
+        os=$(gpg-setup-detect-os)
+    fi
+
+    # Check what's missing
+    local missing
+    missing=$(gpg-setup-check-packages --os "$os" 2>/dev/null) || true
+
+    if [[ -z "$missing" ]]; then
+        log "All required packages are already installed"
+        return 0
+    fi
+
+    log "Missing packages: $(echo "$missing" | tr '\n' ' ')"
+
+    # Confirm installation
+    if [[ "$auto_confirm" != "true" ]]; then
+        read -rp "Install missing packages? [Y/n] " confirm
+        if [[ "$confirm" =~ ^[Nn] ]]; then
+            log "Package installation skipped"
+            return 1
+        fi
+    fi
+
+    case "$os" in
+        macos)
+            if ! command -v brew &>/dev/null; then
+                log "Error: Homebrew not installed"
+                echo "Install Homebrew first: https://brew.sh"
+                return 1
+            fi
+
+            log "Installing packages via Homebrew..."
+            local pkg
+            for pkg in $(echo "$missing"); do
+                log "Installing $pkg..."
+                if ! brew install "$pkg"; then
+                    log "Error: Failed to install $pkg"
+                    return 1
+                fi
+            done
+            ;;
+
+        ubuntu|debian)
+            log "Installing packages via apt..."
+            if ! sudo apt-get update; then
+                log "Error: apt-get update failed"
+                return 1
+            fi
+            local packages
+            packages=$(echo "$missing" | tr '\n' ' ')
+            if ! sudo apt-get install -y $packages; then
+                log "Error: apt-get install failed"
+                return 1
+            fi
+            ;;
+
+        fedora|rhel)
+            log "Installing packages via dnf..."
+            local packages
+            packages=$(echo "$missing" | tr '\n' ' ')
+            if ! sudo dnf install -y $packages; then
+                log "Error: dnf install failed"
+                return 1
+            fi
+            ;;
+
+        *)
+            log "Error: Unsupported OS for automatic package installation"
+            return 1
+            ;;
+    esac
+
+    log "Success: Packages installed"
+    return 0
+}
+
+gpg-setup-pinentry-path() {
+    # Get the path to the appropriate pinentry program
+    #
+    # Arguments:
+    #   --os OS    Operating system (auto-detected if not provided)
+    #
+    # Returns:
+    #   0 on success
+    #   1 if no pinentry found
+    #
+    # Output:
+    #   Prints the path to pinentry program
+
+    local os=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --os)
+                os="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Auto-detect OS if not provided
+    if [[ -z "$os" ]]; then
+        os=$(gpg-setup-detect-os)
+    fi
+
+    case "$os" in
+        macos)
+            # Prefer Apple Silicon path, fall back to Intel
+            if [[ -f "/opt/homebrew/bin/pinentry-mac" ]]; then
+                echo "/opt/homebrew/bin/pinentry-mac"
+            elif [[ -f "/usr/local/bin/pinentry-mac" ]]; then
+                echo "/usr/local/bin/pinentry-mac"
+            else
+                log "Error: pinentry-mac not found"
+                return 1
+            fi
+            ;;
+
+        ubuntu|debian|fedora|rhel)
+            # Try various pinentry options in order of preference
+            if command -v pinentry-gnome3 &>/dev/null; then
+                command -v pinentry-gnome3
+            elif command -v pinentry-gtk-2 &>/dev/null; then
+                command -v pinentry-gtk-2
+            elif command -v pinentry-curses &>/dev/null; then
+                command -v pinentry-curses
+            elif command -v pinentry &>/dev/null; then
+                command -v pinentry
+            else
+                log "Error: No pinentry program found"
+                return 1
+            fi
+            ;;
+
+        *)
+            # Fall back to generic pinentry search
+            if command -v pinentry &>/dev/null; then
+                command -v pinentry
+            else
+                log "Error: pinentry not found"
+                return 1
+            fi
+            ;;
+    esac
+
+    return 0
+}
+
+gpg-setup-gpg-agent-conf() {
+    # Configure gpg-agent with recommended settings
+    #
+    # Arguments:
+    #   --enable-ssh    Enable SSH support in gpg-agent
+    #   --pinentry PATH Path to pinentry program (auto-detected if not provided)
+    #   --backup        Backup existing config before overwriting
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Creates/updates ~/.gnupg/gpg-agent.conf with:
+    #   - pinentry-program
+    #   - enable-ssh-support (if --enable-ssh)
+    #   - allow-loopback-pinentry (for batch operations)
+    #   - default-cache-ttl and max-cache-ttl settings
+
+    local enable_ssh=false
+    local pinentry_path=""
+    local backup=false
+    local gpg_home="${GNUPGHOME:-$HOME/.gnupg}"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --enable-ssh)
+                enable_ssh=true
+                shift
+                ;;
+            --pinentry)
+                pinentry_path="$2"
+                shift 2
+                ;;
+            --backup)
+                backup=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Ensure gpg home directory exists
+    if [[ ! -d "$gpg_home" ]]; then
+        mkdir -p "$gpg_home"
+        chmod 700 "$gpg_home"
+    fi
+
+    # Auto-detect pinentry if not provided
+    if [[ -z "$pinentry_path" ]]; then
+        pinentry_path=$(gpg-setup-pinentry-path 2>/dev/null) || {
+            log "Warning: Could not detect pinentry program"
+            pinentry_path=""
+        }
+    fi
+
+    local agent_conf="$gpg_home/gpg-agent.conf"
+
+    # Backup existing config
+    if [[ "$backup" == "true" ]] && [[ -f "$agent_conf" ]]; then
+        local backup_file="${agent_conf}.backup.$(date +%Y%m%d%H%M%S)"
+        cp "$agent_conf" "$backup_file"
+        log "Backed up existing config to: $backup_file"
+    fi
+
+    log "Configuring gpg-agent..."
+
+    # Write new configuration
+    {
+        echo "# gpg-agent configuration"
+        echo "# Generated by keycutter gpg setup"
+        echo ""
+
+        if [[ -n "$pinentry_path" ]]; then
+            echo "# Pinentry program for passphrase prompts"
+            echo "pinentry-program $pinentry_path"
+            echo ""
+        fi
+
+        if [[ "$enable_ssh" == "true" ]]; then
+            echo "# Enable SSH key support"
+            echo "enable-ssh-support"
+            echo ""
+        fi
+
+        echo "# Allow passphrase input via loopback for scripted operations"
+        echo "allow-loopback-pinentry"
+        echo ""
+
+        echo "# Cache settings (in seconds)"
+        echo "# Note: These don't apply when using YubiKey (PIN caching is handled by the card)"
+        echo "default-cache-ttl 600"
+        echo "max-cache-ttl 7200"
+        echo ""
+
+        echo "# Cache settings for SSH keys"
+        echo "default-cache-ttl-ssh 600"
+        echo "max-cache-ttl-ssh 7200"
+    } > "$agent_conf"
+
+    chmod 600 "$agent_conf"
+    log "Success: gpg-agent.conf configured at $agent_conf"
+
+    return 0
+}
+
+gpg-setup-gpg-conf() {
+    # Install hardened gpg.conf from keycutter templates
+    #
+    # Arguments:
+    #   --backup    Backup existing config before overwriting
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local backup=false
+    local gpg_home="${GNUPGHOME:-$HOME/.gnupg}"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --backup)
+                backup=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Ensure gpg home directory exists
+    if [[ ! -d "$gpg_home" ]]; then
+        mkdir -p "$gpg_home"
+        chmod 700 "$gpg_home"
+    fi
+
+    local gpg_conf="$gpg_home/gpg.conf"
+    local template="${KEYCUTTER_ROOT}/config/gpg/gpg.conf"
+
+    if [[ ! -f "$template" ]]; then
+        log "Error: GPG config template not found: $template"
+        return 1
+    fi
+
+    # Backup existing config
+    if [[ "$backup" == "true" ]] && [[ -f "$gpg_conf" ]]; then
+        local backup_file="${gpg_conf}.backup.$(date +%Y%m%d%H%M%S)"
+        cp "$gpg_conf" "$backup_file"
+        log "Backed up existing config to: $backup_file"
+    fi
+
+    log "Installing hardened gpg.conf..."
+
+    # Copy template to gpg home
+    cp "$template" "$gpg_conf"
+    chmod 600 "$gpg_conf"
+
+    log "Success: gpg.conf installed at $gpg_conf"
+    return 0
+}
+
+gpg-setup-test() {
+    # Test that GPG setup is working correctly
+    #
+    # Returns:
+    #   0 if all tests pass
+    #   1 if any test fails
+    #
+    # Tests:
+    #   1. GPG version check
+    #   2. gpg-agent connectivity
+    #   3. YubiKey detection (optional)
+    #   4. SSH socket available (if SSH support enabled)
+
+    local all_passed=true
+    local gpg_home="${GNUPGHOME:-$HOME/.gnupg}"
+
+    log "Testing GPG setup..."
+    echo
+
+    # Test 1: GPG version
+    echo -n "  [1/4] GPG version: "
+    local gpg_version
+    if gpg_version=$(gpg-version-check 2>/dev/null); then
+        echo "✓ $gpg_version"
+    else
+        echo "✗ GPG not found or version too old"
+        all_passed=false
+    fi
+
+    # Test 2: gpg-agent connectivity
+    echo -n "  [2/4] gpg-agent: "
+    if gpg-connect-agent /bye &>/dev/null; then
+        echo "✓ running"
+    else
+        echo "✗ not running"
+        all_passed=false
+    fi
+
+    # Test 3: YubiKey detection (optional - don't fail if not present)
+    echo -n "  [3/4] YubiKey: "
+    if gpg --card-status &>/dev/null; then
+        local serial
+        serial=$(gpg --card-status 2>/dev/null | grep "^Serial number" | awk '{print $NF}')
+        echo "✓ detected ($serial)"
+    else
+        echo "- not detected (optional)"
+    fi
+
+    # Test 4: SSH socket
+    echo -n "  [4/4] SSH socket: "
+    local ssh_socket
+    ssh_socket=$(gpgconf --list-dirs agent-ssh-socket 2>/dev/null)
+    if [[ -S "$ssh_socket" ]]; then
+        echo "✓ $ssh_socket"
+    elif [[ -n "$ssh_socket" ]]; then
+        echo "- configured but not active"
+    else
+        echo "- not configured"
+    fi
+
+    echo
+
+    if [[ "$all_passed" == "true" ]]; then
+        log "All tests passed"
+        return 0
+    else
+        log "Some tests failed - GPG may not work correctly"
+        return 1
+    fi
+}
+
+gpg-setup-macos-launchagent() {
+    # Set up macOS LaunchAgents for gpg-agent
+    #
+    # Creates LaunchAgent plists to:
+    #   1. Start gpg-agent at login
+    #   2. Create SSH socket symlink for compatibility
+    #
+    # Arguments:
+    #   --uninstall    Remove LaunchAgents instead of installing
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local uninstall=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --uninstall)
+                uninstall=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    local launch_agents_dir="$HOME/Library/LaunchAgents"
+    local agent_plist="$launch_agents_dir/gnupg.gpg-agent.plist"
+    local symlink_plist="$launch_agents_dir/gnupg.gpg-agent-symlink.plist"
+
+    if [[ "$uninstall" == "true" ]]; then
+        log "Removing LaunchAgents..."
+        launchctl unload "$agent_plist" 2>/dev/null || true
+        launchctl unload "$symlink_plist" 2>/dev/null || true
+        rm -f "$agent_plist" "$symlink_plist"
+        log "Success: LaunchAgents removed"
+        return 0
+    fi
+
+    # Create LaunchAgents directory if needed
+    mkdir -p "$launch_agents_dir"
+
+    log "Installing macOS LaunchAgents..."
+
+    # LaunchAgent for gpg-agent startup
+    cat > "$agent_plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>gnupg.gpg-agent</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>gpg-connect-agent /bye</string>
+    </array>
+</dict>
+</plist>
+EOF
+
+    # LaunchAgent for SSH socket symlink (for graphical apps)
+    cat > "$symlink_plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>gnupg.gpg-agent-symlink</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>/bin/ln -sf "\$(gpgconf --list-dirs agent-ssh-socket)" "\$HOME/.gnupg/S.gpg-agent.ssh"</string>
+    </array>
+</dict>
+</plist>
+EOF
+
+    # Load the agents
+    launchctl unload "$agent_plist" 2>/dev/null || true
+    launchctl unload "$symlink_plist" 2>/dev/null || true
+    launchctl load "$agent_plist"
+    launchctl load "$symlink_plist"
+
+    log "Success: LaunchAgents installed"
+    return 0
+}
+
+gpg-setup-shell-config() {
+    # Show shell configuration recommendations
+    #
+    # Arguments:
+    #   --os OS    Operating system (auto-detected if not provided)
+    #
+    # Returns:
+    #   0 always
+    #
+    # Output:
+    #   Prints shell configuration commands for the user's shell
+
+    local os=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --os)
+                os="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Auto-detect OS if not provided
+    if [[ -z "$os" ]]; then
+        os=$(gpg-setup-detect-os)
+    fi
+
+    echo
+    echo "Add the following to your shell profile (~/.bashrc or ~/.zshrc):"
+    echo
+
+    case "$os" in
+        macos)
+            cat <<'EOF'
+# GPG Agent configuration
+export GPG_TTY=$(tty)
+
+# Use gpg-agent for SSH (optional - uncomment if you want GPG to handle SSH keys)
+# export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
+EOF
+            ;;
+
+        ubuntu|debian|fedora|rhel)
+            cat <<'EOF'
+# GPG Agent configuration
+export GPG_TTY=$(tty)
+
+# Ensure gpg-agent is running
+gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+
+# Use gpg-agent for SSH (optional - uncomment if you want GPG to handle SSH keys)
+# export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
+EOF
+            ;;
+
+        *)
+            cat <<'EOF'
+# GPG Agent configuration
+export GPG_TTY=$(tty)
+EOF
+            ;;
+    esac
+
+    echo
+    return 0
+}
+
+# =============================================================================
 # Backup Listing and Restoration (gpg-012)
 # =============================================================================
 

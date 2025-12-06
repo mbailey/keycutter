@@ -202,8 +202,8 @@
         "Test configuration works",
         "Support macOS, Ubuntu, Fedora"
       ],
-      "status": "failing",
-      "last_updated": null
+      "status": "passing",
+      "last_updated": "2025-12-06"
     },
     {
       "id": "gpg-014",
