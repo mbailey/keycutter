@@ -247,8 +247,8 @@
         "Test key listing functions",
         "Mock YubiKey operations for CI"
       ],
-      "status": "failing",
-      "last_updated": null
+      "status": "passing",
+      "last_updated": "2025-12-06"
     },
     {
       "id": "gpg-017",
