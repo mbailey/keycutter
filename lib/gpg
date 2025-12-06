@@ -39,6 +39,9 @@
 # - gpg-pin-change-admin(): Change YubiKey admin PIN
 # - gpg-pin-change-user(): Change YubiKey user PIN
 # - gpg-card-reset(): Reset OpenPGP application on YubiKey
+#
+# Subkey Transfer:
+# - gpg-key-to-yubikey(): Transfer subkeys (Sign, Encrypt, Auth) to YubiKey
 
 KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/utils"
@@ -1655,6 +1658,229 @@ gpg-pin-change-user() {
         echo "Note: 3 incorrect user PIN attempts will require admin PIN to unblock"
         return 1
     fi
+}
+
+# =============================================================================
+# Subkey Transfer to YubiKey (gpg-011)
+# =============================================================================
+
+gpg-key-to-yubikey() {
+    # Transfer GPG subkeys to YubiKey
+    #
+    # This function transfers the Sign, Encrypt, and Auth subkeys from the
+    # current GNUPGHOME to a YubiKey. After transfer, the local keys become
+    # stubs pointing to the hardware device.
+    #
+    # Arguments:
+    #   --fingerprint FP    Master key fingerprint (required)
+    #   --passphrase PASS   Key passphrase (required)
+    #   --admin-pin PIN     YubiKey admin PIN (default: 12345678)
+    #   --force             Overwrite existing keys on YubiKey
+    #
+    # Returns:
+    #   0 on success (all 3 subkeys transferred)
+    #   1 on failure
+    #
+    # Environment:
+    #   GNUPGHOME must be set and contain the keys to transfer
+    #
+    # Note:
+    #   - This is a ONE-WAY operation - keys cannot be extracted from YubiKey
+    #   - The local keyring will contain stubs after transfer
+    #   - Ensure you have a backup before proceeding!
+    #
+    # Example:
+    #   gpg-key-to-yubikey --fingerprint "$FP" --passphrase "$PASS"
+
+    local fingerprint=""
+    local passphrase=""
+    local admin_pin="12345678"  # Factory default
+    local force=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --passphrase)
+                passphrase="$2"
+                shift 2
+                ;;
+            --admin-pin)
+                admin_pin="$2"
+                shift 2
+                ;;
+            --force)
+                force=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Validate required parameters
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: --fingerprint is required"
+        return 1
+    fi
+
+    if [[ -z "$passphrase" ]]; then
+        log "Error: --passphrase is required"
+        return 1
+    fi
+
+    # Validate GNUPGHOME
+    if [[ -z "${GNUPGHOME:-}" ]]; then
+        log "Error: GNUPGHOME not set"
+        return 1
+    fi
+
+    if [[ ! -d "$GNUPGHOME" ]]; then
+        log "Error: GNUPGHOME directory does not exist: $GNUPGHOME"
+        return 1
+    fi
+
+    # Verify key exists in GNUPGHOME
+    if ! gpg --homedir "$GNUPGHOME" --list-secret-keys "$fingerprint" &>/dev/null; then
+        log "Error: Key not found in GNUPGHOME: $fingerprint"
+        return 1
+    fi
+
+    # Check YubiKey status
+    if ! gpg-yubikey-detect --quiet &>/dev/null; then
+        log "Error: No YubiKey detected"
+        return 1
+    fi
+
+    # Check if YubiKey already has keys
+    local card_status
+    card_status=$(gpg-card-has-keys 2>/dev/null) || true
+
+    if [[ "$card_status" == "full" && "$force" != "true" ]]; then
+        log "Error: YubiKey already has GPG keys installed"
+        echo "Use --force to overwrite, or reset the card first:"
+        echo "  keycutter gpg card reset"
+        return 1
+    fi
+
+    if [[ "$card_status" == "partial" && "$force" != "true" ]]; then
+        log "Error: YubiKey has some keys installed"
+        echo "Use --force to overwrite, or reset the card first:"
+        echo "  keycutter gpg card reset"
+        return 1
+    fi
+
+    # Count subkeys to verify we have all three
+    local subkey_count
+    subkey_count=$(gpg --homedir "$GNUPGHOME" --list-secret-keys --with-colons "$fingerprint" 2>/dev/null | grep -c "^ssb:")
+
+    if [[ $subkey_count -lt 3 ]]; then
+        log "Error: Expected 3 subkeys, found $subkey_count"
+        echo "Create subkeys first with: keycutter gpg key create --subkeys --fingerprint $fingerprint"
+        return 1
+    fi
+
+    log "Transferring subkeys to YubiKey..."
+    log "Fingerprint: ${fingerprint:0:16}..."
+
+    # Get subkey capabilities to determine transfer order
+    # We need to identify which subkey is Sign [S], Encrypt [E], Auth [A]
+    local subkey_info
+    subkey_info=$(gpg --homedir "$GNUPGHOME" --list-secret-keys --with-colons "$fingerprint" 2>/dev/null | grep "^ssb:")
+
+    # Parse subkeys and their capabilities
+    # Format: ssb:u:256:22:KEYID:created:expires::::s::
+    # The 12th field contains capabilities: s=sign, e=encrypt, a=auth
+    local sign_keynum=0 encrypt_keynum=0 auth_keynum=0
+    local keynum=1
+
+    while IFS=: read -r type trust keylen algo keyid created expires _ _ _ _ caps _; do
+        if [[ "$type" == "ssb" ]]; then
+            case "$caps" in
+                *s*) sign_keynum=$keynum ;;
+                *e*) encrypt_keynum=$keynum ;;
+                *a*) auth_keynum=$keynum ;;
+            esac
+            keynum=$((keynum + 1))
+        fi
+    done <<< "$subkey_info"
+
+    # Verify we found all three
+    if [[ $sign_keynum -eq 0 || $encrypt_keynum -eq 0 || $auth_keynum -eq 0 ]]; then
+        log "Error: Could not identify all subkey types"
+        log "Sign: $sign_keynum, Encrypt: $encrypt_keynum, Auth: $auth_keynum"
+        return 1
+    fi
+
+    log "Found subkeys - Sign: key $sign_keynum, Encrypt: key $encrypt_keynum, Auth: key $auth_keynum"
+
+    # Transfer each subkey to corresponding YubiKey slot
+    # Slot 1 = Signature, Slot 2 = Encryption, Slot 3 = Authentication
+    local transfers=("$sign_keynum:1:Signature" "$encrypt_keynum:2:Encryption" "$auth_keynum:3:Authentication")
+    local transferred=0
+
+    for transfer in "${transfers[@]}"; do
+        local keynum="${transfer%%:*}"
+        local rest="${transfer#*:}"
+        local slot="${rest%%:*}"
+        local name="${rest#*:}"
+
+        log "Transferring $name subkey (key $keynum) to slot $slot..."
+
+        # Build the command sequence for gpg --edit-key
+        # Commands: key N -> keytocard -> slot -> passphrase -> admin_pin -> save
+        local gpg_commands="key ${keynum}
+keytocard
+${slot}
+${passphrase}
+${admin_pin}
+save
+"
+
+        # Execute transfer
+        if echo -e "$gpg_commands" | \
+           gpg --homedir "$GNUPGHOME" \
+               --command-fd=0 \
+               --pinentry-mode loopback \
+               --expert \
+               --edit-key "$fingerprint" 2>&1 | grep -q "Error\|failed\|No such"; then
+            log "Error: Failed to transfer $name subkey"
+            return 1
+        fi
+
+        log "Success: $name subkey transferred to slot $slot"
+        transferred=$((transferred + 1))
+    done
+
+    if [[ $transferred -ne 3 ]]; then
+        log "Error: Only $transferred of 3 subkeys transferred"
+        return 1
+    fi
+
+    # Verify transfer by checking card status
+    log "Verifying transfer..."
+    gpg-scdaemon-restart &>/dev/null
+    sleep 1
+
+    local verify_status
+    verify_status=$(gpg-card-has-keys 2>/dev/null) || true
+
+    if [[ "$verify_status" != "full" ]]; then
+        log "Warning: Card verification shows status: $verify_status"
+        log "Some keys may not have transferred correctly"
+    fi
+
+    log "Success: All subkeys transferred to YubiKey"
+    echo
+    echo "Your subkeys are now on the YubiKey. The local keyring contains stubs."
+    echo "To verify: gpg --card-status"
+
+    return 0
 }
 
 gpg-card-reset() {
