@@ -3,8 +3,8 @@
   "task_id": "KC-15",
   "started": "2025-12-06",
   "current_phase": "implementation",
-  "current_feature": "gpg-015",
-  "features_completed": 14,
+  "current_feature": "gpg-016",
+  "features_completed": 15,
   "features_total": 20,
   "sessions": [
     {
@@ -104,6 +104,13 @@
         "gpg-014"
       ],
       "notes": "Implemented WSL-specific GPG configuration for 'keycutter gpg setup'. Added lib/gpg functions: gpg-wsl-detect (WSL1/WSL2 detection via /proc/version), gpg-wsl-windows-user-profile, gpg-wsl-windows-gpg-path, gpg-wsl-check-prerequisites (socat, Windows GPG), gpg-wsl-install-npiperelay (downloads wsl-ssh-pageant), gpg-wsl-mask-systemd-sockets, gpg-wsl-relay-install (generates relay script with gpg_relay_start/stop/status/restart functions), gpg-wsl-shell-config, gpg-wsl-setup. Updated keycutter-gpg-setup to auto-detect WSL and use relay-based setup. Added --skip-wsl-relay flag. Added 12 BATS tests for WSL functions."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-015"
+      ],
+      "notes": "Created comprehensive GPG documentation: docs/gpg-quickstart.md (getting started guide with 5-step workflow), docs/gpg-commands.md (full command reference with all options and examples), docs/gpg-security.md (security best practices for keys, PINs, backups, and threat model), docs/gpg-troubleshooting.md (common issues and solutions for YubiKey detection, agent, PIN, backup, and platform-specific problems). Updated README.md to feature GPG support in intro, features, and see-also sections."
     }
   ],
   "context_summaries": {

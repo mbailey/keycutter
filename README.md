@@ -13,6 +13,7 @@ Keycutter came out of an attempt to solve this problem but evolved into a tool t
 - **`keycutter`:** A CLI tool for creating FIDO SSH keys and managing SSH config
 - **[SSH Keytags](docs/ssh-keytags.md):** A naming convention that removes need for custom SSH configuration
 - **[SSH configuration](docs/config/README.md):** Modular config structure that doesn't require manual editing
+- **[GPG key management](docs/gpg-quickstart.md):** Create GPG keys and install to YubiKey for signing and encryption
 
 While initially created for use with YubiKeys and GitHub, Keycutter supports other FIDO devices and services.
 
@@ -34,6 +35,7 @@ While initially created for use with YubiKeys and GitHub, Keycutter supports oth
 - **[Multi-account SSH access to services](./docs/ssh-keytags.md#key-innovation-multi-account-ssh):** GitHub.com, Sourcehut (sr.ht), GitLab.com, etc.
 - **[Selective SSH Agent Forwarding](./ssh_config/keycutter/agents/README.md):** Enforce security boundaries.
 - **[Public SSH Key privacy](./docs/design/defense-layers-to-protect-against-key-misuse.md):** Only offer relevant keys to remote host.
+- **[GPG on YubiKey](./docs/gpg-quickstart.md):** Create GPG keys for signing and encryption, install to YubiKey.
 - **SSH over SSM (AWS):** Public key removed from remote host after login.
 - **OS Support**: Linux, MacOS, Windows ([WSL](docs/install.md#wsl-windows-subsystem-for-linux)), [VSCode](docs/vscode/README.md) Remote-SSH Extension
 
@@ -130,6 +132,7 @@ Keycutter SSH update complete.
 ## See also
 
 - **[Configuration Guide](docs/config/README.md):** Overview of keycutter's configuration structure
+- **[GPG Quick Start](docs/gpg-quickstart.md):** Getting started with GPG on YubiKey
 - **[Development Guide](docs/development.md):** How to develop and test Keycutter locally
 - **[Tips and tricks](docs/tips-and-tricks.md):** Undocumented features and cool tricks.
 
