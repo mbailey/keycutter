@@ -3691,3 +3691,368 @@ gpg-wsl-setup() {
 
     return 0
 }
+
+# ============================================================================
+# GPG SSH Integration Functions (gpg-017)
+# ============================================================================
+# These functions enable using GPG authentication keys with SSH via gpg-agent.
+
+# Get the keygrip for a GPG authentication subkey
+# Usage: gpg-ssh-keygrip [--fingerprint FP]
+# Returns: keygrip of the authentication subkey
+gpg-ssh-keygrip() {
+    local fingerprint=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # If no fingerprint specified, try to get from YubiKey
+    if [[ -z "$fingerprint" ]]; then
+        fingerprint=$(gpg --card-status 2>/dev/null | grep "Authentication key:" | awk -F': ' '{print $2}' | tr -d ' ')
+        if [[ -z "$fingerprint" ]]; then
+            log "Error: No authentication key found on YubiKey and no fingerprint specified"
+            return 1
+        fi
+    fi
+
+    # Get the keygrip for the auth subkey
+    local keygrip
+    keygrip=$(gpg --list-keys --with-keygrip "$fingerprint" 2>/dev/null | \
+        grep -A1 "\[A\]" | grep "Keygrip" | awk '{print $3}')
+
+    if [[ -z "$keygrip" ]]; then
+        log "Error: Could not find keygrip for authentication key"
+        return 1
+    fi
+
+    echo "$keygrip"
+}
+
+# Export GPG authentication key as SSH public key
+# Usage: gpg-ssh-pubkey-export [--fingerprint FP] [--comment COMMENT]
+# Outputs: SSH public key in authorized_keys format
+gpg-ssh-pubkey-export() {
+    local fingerprint=""
+    local comment=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --comment)
+                comment="$2"
+                shift 2
+                ;;
+            -*)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+            *)
+                # First positional arg is fingerprint if not specified
+                if [[ -z "$fingerprint" ]]; then
+                    fingerprint="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # If no fingerprint specified, try to get from YubiKey
+    if [[ -z "$fingerprint" ]]; then
+        fingerprint=$(gpg --card-status 2>/dev/null | grep "General key info" | grep -oE '[A-F0-9]{40}')
+        if [[ -z "$fingerprint" ]]; then
+            log "Error: No GPG key found on YubiKey and no fingerprint specified"
+            return 1
+        fi
+    fi
+
+    # Export the SSH public key using gpg --export-ssh-key
+    local ssh_pubkey
+    ssh_pubkey=$(gpg --export-ssh-key "$fingerprint" 2>/dev/null)
+
+    if [[ -z "$ssh_pubkey" ]]; then
+        log "Error: Failed to export SSH public key for fingerprint: $fingerprint"
+        log "Make sure the key has an authentication subkey [A]"
+        return 1
+    fi
+
+    # Add custom comment if provided, otherwise use the one from GPG
+    if [[ -n "$comment" ]]; then
+        # Replace the existing comment with the new one
+        echo "$ssh_pubkey" | awk -v comment="$comment" '{$NF=comment; print}'
+    else
+        echo "$ssh_pubkey"
+    fi
+}
+
+# Register a GPG SSH key with keycutter
+# Usage: gpg-ssh-key-register [--fingerprint FP] [--name NAME] [--output-dir DIR]
+# Creates a .pub file in keycutter's key directory for the GPG auth key
+gpg-ssh-key-register() {
+    local fingerprint=""
+    local key_name=""
+    local output_dir="${KEYCUTTER_SSH_KEY_DIR:-${HOME}/.ssh/keycutter/keys}"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --name)
+                key_name="$2"
+                shift 2
+                ;;
+            --output-dir)
+                output_dir="$2"
+                shift 2
+                ;;
+            -*)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Get the SSH public key
+    local ssh_pubkey
+    if [[ -n "$fingerprint" ]]; then
+        ssh_pubkey=$(gpg-ssh-pubkey-export --fingerprint "$fingerprint")
+    else
+        ssh_pubkey=$(gpg-ssh-pubkey-export)
+    fi
+
+    if [[ -z "$ssh_pubkey" ]]; then
+        log "Error: Failed to export SSH public key"
+        return 1
+    fi
+
+    # Extract email/uid from the key comment if no name specified
+    if [[ -z "$key_name" ]]; then
+        # Try to get identity from the key
+        local uid
+        if [[ -n "$fingerprint" ]]; then
+            uid=$(gpg --list-keys "$fingerprint" 2>/dev/null | grep "^uid" | head -1 | sed 's/^uid\s*\[.*\]\s*//')
+        else
+            uid=$(echo "$ssh_pubkey" | awk '{print $NF}')
+        fi
+
+        # Extract email from uid
+        local email
+        email=$(echo "$uid" | grep -oE '<[^>]+>' | tr -d '<>')
+
+        if [[ -n "$email" ]]; then
+            # Create keytag from email: user@domain -> domain_user@hostname
+            local user domain
+            user=$(echo "$email" | cut -d@ -f1)
+            domain=$(echo "$email" | cut -d@ -f2)
+            key_name="${domain}_${user}@${KEYCUTTER_ORIGIN:-$(hostname -s)}"
+        else
+            # Fallback to GPG fingerprint
+            if [[ -n "$fingerprint" ]]; then
+                key_name="gpg_${fingerprint:(-8)}@${KEYCUTTER_ORIGIN:-$(hostname -s)}"
+            else
+                log "Error: Could not determine key name. Use --name to specify."
+                return 1
+            fi
+        fi
+    fi
+
+    # Ensure output directory exists
+    mkdir -p "$output_dir"
+
+    # Add keytag comment to the key
+    local output_file="${output_dir}/${key_name}.pub"
+    local ssh_pubkey_with_comment
+    ssh_pubkey_with_comment=$(echo "$ssh_pubkey" | awk -v comment="$key_name" '{$NF=comment; print}')
+
+    echo "$ssh_pubkey_with_comment" > "$output_file"
+    chmod 644 "$output_file"
+
+    log "Registered GPG SSH key: $key_name"
+    log "Public key saved to: $output_file"
+
+    echo "$output_file"
+}
+
+# List GPG-backed SSH keys in keycutter
+# Usage: gpg-ssh-keys-list [--quiet]
+# Returns: List of GPG SSH public keys registered with keycutter
+gpg-ssh-keys-list() {
+    local quiet=""
+    local keys_dir="${KEYCUTTER_SSH_KEY_DIR:-${HOME}/.ssh/keycutter/keys}"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --quiet|-q)
+                quiet="true"
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [[ ! -d "$keys_dir" ]]; then
+        [[ -z "$quiet" ]] && log "No keys directory found at $keys_dir"
+        return 0
+    fi
+
+    local found_keys=0
+
+    # Look for .pub files that contain GPG SSH key signatures
+    for pubkey_file in "$keys_dir"/*.pub; do
+        [[ -f "$pubkey_file" ]] || continue
+
+        # GPG SSH keys start with specific key types
+        if grep -qE "^(ssh-ed25519|ssh-rsa|ecdsa-sha2)" "$pubkey_file" 2>/dev/null; then
+            local key_name
+            key_name=$(basename "$pubkey_file" .pub)
+
+            # Check if there's a corresponding private key file (FIDO2/OpenSSH)
+            # GPG-backed keys won't have a private key file
+            if [[ ! -f "$keys_dir/$key_name" ]]; then
+                ((found_keys++))
+                if [[ -z "$quiet" ]]; then
+                    echo "  $key_name (GPG)"
+                else
+                    echo "$key_name"
+                fi
+            fi
+        fi
+    done
+
+    if [[ $found_keys -eq 0 && -z "$quiet" ]]; then
+        log "No GPG-backed SSH keys found"
+    fi
+
+    return 0
+}
+
+# Check if gpg-agent SSH support is enabled and working
+# Usage: gpg-ssh-agent-check
+# Returns: 0 if gpg-agent SSH is working, 1 otherwise
+gpg-ssh-agent-check() {
+    # Check if gpg-agent.conf has enable-ssh-support
+    local gpg_home="${GNUPGHOME:-${HOME}/.gnupg}"
+    local agent_conf="$gpg_home/gpg-agent.conf"
+
+    if [[ ! -f "$agent_conf" ]]; then
+        log "Warning: gpg-agent.conf not found at $agent_conf"
+        return 1
+    fi
+
+    if ! grep -q "^enable-ssh-support" "$agent_conf" 2>/dev/null; then
+        log "Warning: SSH support not enabled in gpg-agent.conf"
+        log "Run 'keycutter gpg setup --enable-ssh' to enable it"
+        return 1
+    fi
+
+    # Check if the SSH socket exists
+    local ssh_socket
+    ssh_socket=$(gpgconf --list-dirs agent-ssh-socket 2>/dev/null)
+
+    if [[ -z "$ssh_socket" ]]; then
+        log "Warning: Could not determine gpg-agent SSH socket path"
+        return 1
+    fi
+
+    if [[ ! -S "$ssh_socket" ]]; then
+        log "Warning: gpg-agent SSH socket not found at $ssh_socket"
+        log "Try restarting gpg-agent: gpgconf --kill gpg-agent"
+        return 1
+    fi
+
+    # Verify we can communicate with the agent
+    if ! gpg-connect-agent /bye 2>/dev/null; then
+        log "Warning: Could not connect to gpg-agent"
+        return 1
+    fi
+
+    log "gpg-agent SSH support is enabled and working"
+    log "SSH socket: $ssh_socket"
+    return 0
+}
+
+# Add a GPG authentication keygrip to sshcontrol
+# This tells gpg-agent which keys to expose for SSH
+# Usage: gpg-ssh-sshcontrol-add [--keygrip KEYGRIP] [--fingerprint FP]
+gpg-ssh-sshcontrol-add() {
+    local keygrip=""
+    local fingerprint=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --keygrip)
+                keygrip="$2"
+                shift 2
+                ;;
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Get keygrip from fingerprint if not directly specified
+    if [[ -z "$keygrip" && -n "$fingerprint" ]]; then
+        keygrip=$(gpg-ssh-keygrip --fingerprint "$fingerprint")
+        if [[ -z "$keygrip" ]]; then
+            log "Error: Could not get keygrip for fingerprint: $fingerprint"
+            return 1
+        fi
+    fi
+
+    if [[ -z "$keygrip" ]]; then
+        # Try to get from YubiKey
+        keygrip=$(gpg-ssh-keygrip)
+        if [[ -z "$keygrip" ]]; then
+            log "Error: No keygrip specified and could not find authentication key"
+            return 1
+        fi
+    fi
+
+    local gpg_home="${GNUPGHOME:-${HOME}/.gnupg}"
+    local sshcontrol="$gpg_home/sshcontrol"
+
+    # Create sshcontrol file if it doesn't exist
+    if [[ ! -f "$sshcontrol" ]]; then
+        touch "$sshcontrol"
+        chmod 600 "$sshcontrol"
+    fi
+
+    # Check if keygrip is already in sshcontrol
+    if grep -q "^$keygrip\$" "$sshcontrol" 2>/dev/null; then
+        log "Keygrip already in sshcontrol: $keygrip"
+        return 0
+    fi
+
+    # Add keygrip to sshcontrol
+    echo "$keygrip" >> "$sshcontrol"
+    log "Added keygrip to sshcontrol: $keygrip"
+
+    # Restart agent to pick up changes
+    gpgconf --kill gpg-agent 2>/dev/null
+    gpgconf --launch gpg-agent 2>/dev/null
+
+    return 0
+}

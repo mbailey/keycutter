@@ -261,8 +261,8 @@
         "Register with keycutter's key management",
         "Support keycutter key list showing GPG-backed SSH keys"
       ],
-      "status": "failing",
-      "last_updated": null
+      "status": "passing",
+      "last_updated": "2025-12-06"
     },
     {
       "id": "gpg-018",

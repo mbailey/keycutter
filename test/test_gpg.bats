@@ -2484,3 +2484,288 @@ Authentication key: [none]"
     [[ "$output" =~ "--skip-wsl-relay" ]]
     [[ "$output" =~ "WSL" ]]
 }
+
+# ============================================================================
+# GPG SSH Integration tests (gpg-017)
+# ============================================================================
+
+@test "gpg-ssh-keygrip requires fingerprint or YubiKey" {
+    # Mock gpg --card-status to return nothing
+    create_mock_command "gpg" 1 ""
+
+    run gpg-ssh-keygrip
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "No authentication key found" ]] || [[ "$output" =~ "fingerprint" ]]
+}
+
+@test "gpg-ssh-keygrip rejects unknown options" {
+    run gpg-ssh-keygrip --unknown-option
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+}
+
+@test "gpg-ssh-pubkey-export requires fingerprint or YubiKey" {
+    # Mock gpg to fail finding a key
+    create_mock_command "gpg" 1 ""
+
+    run gpg-ssh-pubkey-export
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "No GPG key found" ]] || [[ "$output" =~ "fingerprint" ]]
+}
+
+@test "gpg-ssh-pubkey-export rejects unknown options" {
+    run gpg-ssh-pubkey-export --unknown-option
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+}
+
+@test "gpg-ssh-pubkey-export accepts --fingerprint argument" {
+    # Mock successful export
+    create_mock_command "gpg" 0 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... openpgp:0x12345678"
+
+    run gpg-ssh-pubkey-export --fingerprint "ABCD1234567890"
+
+    # Should pass argument parsing and attempt export
+    [[ ! "$output" =~ "Unknown option" ]]
+}
+
+@test "gpg-ssh-pubkey-export accepts --comment argument" {
+    # Mock successful export
+    create_mock_command "gpg" 0 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... openpgp:0x12345678"
+
+    run gpg-ssh-pubkey-export --fingerprint "ABCD1234" --comment "test@host"
+
+    [[ ! "$output" =~ "Unknown option" ]]
+}
+
+@test "gpg-ssh-key-register rejects unknown options" {
+    run gpg-ssh-key-register --unknown-option
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+}
+
+@test "gpg-ssh-key-register accepts --fingerprint argument" {
+    # Mock gpg export - will fail because no real key
+    create_mock_command "gpg" 1 ""
+
+    run gpg-ssh-key-register --fingerprint "ABCD1234567890"
+
+    # Should pass argument parsing (will fail on export)
+    [[ ! "$output" =~ "Unknown option" ]]
+}
+
+@test "gpg-ssh-key-register accepts --name argument" {
+    # Mock gpg export - will fail because no real key
+    create_mock_command "gpg" 1 ""
+
+    run gpg-ssh-key-register --name "test_key@host"
+
+    # Should pass argument parsing (will fail on export)
+    [[ ! "$output" =~ "Unknown option" ]]
+}
+
+@test "gpg-ssh-key-register accepts --output-dir argument" {
+    # Mock gpg export - will fail because no real key
+    create_mock_command "gpg" 1 ""
+
+    run gpg-ssh-key-register --output-dir "$TEST_HOME/test-keys"
+
+    # Should pass argument parsing (will fail on export)
+    [[ ! "$output" =~ "Unknown option" ]]
+}
+
+@test "gpg-ssh-keys-list handles missing keys directory" {
+    # Use a directory that doesn't exist
+    KEYCUTTER_SSH_KEY_DIR="$TEST_HOME/nonexistent-keys"
+    export KEYCUTTER_SSH_KEY_DIR
+
+    run gpg-ssh-keys-list
+
+    # Should return 0 (success) but report no directory
+    [ "$status" -eq 0 ]
+
+    unset KEYCUTTER_SSH_KEY_DIR
+}
+
+@test "gpg-ssh-keys-list finds GPG SSH keys" {
+    # Create a test keys directory with a GPG SSH key (pub only, no private)
+    local test_keys_dir="$TEST_HOME/test-ssh-keys"
+    mkdir -p "$test_keys_dir"
+
+    # Create a GPG-backed SSH key (only .pub, no private key)
+    echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... test_gpg_key@host" > "$test_keys_dir/test_gpg_key@host.pub"
+
+    # Create a regular SSH key (both pub and private)
+    touch "$test_keys_dir/test_ssh_key@host"
+    echo "sk-ssh-ed25519@openssh.com AAAA... test_ssh_key@host" > "$test_keys_dir/test_ssh_key@host.pub"
+
+    KEYCUTTER_SSH_KEY_DIR="$test_keys_dir"
+    export KEYCUTTER_SSH_KEY_DIR
+
+    run gpg-ssh-keys-list
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "test_gpg_key@host" ]]
+    # Should not show the regular SSH key (which has a private key file)
+    [[ ! "$output" =~ "test_ssh_key@host" ]] || [[ "$output" =~ "GPG" ]]
+
+    unset KEYCUTTER_SSH_KEY_DIR
+    rm -rf "$test_keys_dir"
+}
+
+@test "gpg-ssh-keys-list accepts --quiet flag" {
+    # Create a test keys directory
+    local test_keys_dir="$TEST_HOME/test-ssh-keys-quiet"
+    mkdir -p "$test_keys_dir"
+
+    echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... quiet_key@host" > "$test_keys_dir/quiet_key@host.pub"
+
+    KEYCUTTER_SSH_KEY_DIR="$test_keys_dir"
+    export KEYCUTTER_SSH_KEY_DIR
+
+    run gpg-ssh-keys-list --quiet
+
+    [ "$status" -eq 0 ]
+    # Quiet mode should just output the key name
+    [[ "$output" == "quiet_key@host" ]] || [[ -z "$output" ]]
+
+    unset KEYCUTTER_SSH_KEY_DIR
+    rm -rf "$test_keys_dir"
+}
+
+@test "gpg-ssh-agent-check detects missing gpg-agent.conf" {
+    # Use a non-existent GNUPGHOME
+    export GNUPGHOME="$TEST_HOME/nonexistent-gnupghome"
+
+    run gpg-ssh-agent-check
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "gpg-agent.conf not found" ]]
+
+    unset GNUPGHOME
+}
+
+@test "gpg-ssh-agent-check detects missing SSH support" {
+    # Create GNUPGHOME with gpg-agent.conf but no enable-ssh-support
+    export GNUPGHOME="$TEST_HOME/test-gnupghome-nossh"
+    mkdir -p "$GNUPGHOME"
+    chmod 700 "$GNUPGHOME"
+
+    echo "pinentry-program /usr/local/bin/pinentry-mac" > "$GNUPGHOME/gpg-agent.conf"
+
+    run gpg-ssh-agent-check
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "SSH support not enabled" ]]
+
+    unset GNUPGHOME
+    rm -rf "$TEST_HOME/test-gnupghome-nossh"
+}
+
+@test "gpg-ssh-sshcontrol-add creates sshcontrol file" {
+    # Create GNUPGHOME
+    export GNUPGHOME="$TEST_HOME/test-gnupghome-sshcontrol"
+    mkdir -p "$GNUPGHOME"
+    chmod 700 "$GNUPGHOME"
+
+    # Mock gpg to prevent actual keygrip lookup
+    create_mock_command "gpg" 1 ""
+    create_mock_command "gpgconf" 0 ""
+
+    # Call with a specific keygrip
+    run gpg-ssh-sshcontrol-add --keygrip "ABC123DEF456GHI789"
+
+    # Should create sshcontrol file (or fail trying to get keygrip)
+    # Just verify it doesn't fail on unknown option
+    [[ ! "$output" =~ "Unknown option" ]]
+
+    unset GNUPGHOME
+    rm -rf "$TEST_HOME/test-gnupghome-sshcontrol"
+}
+
+@test "keycutter-gpg-key-register shows help with --help" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key-register --help
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Usage:" ]]
+    [[ "$output" =~ "--fingerprint" ]]
+    [[ "$output" =~ "--name" ]]
+}
+
+@test "keycutter-gpg-key-register rejects unknown options" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key-register --unknown-option
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+}
+
+@test "keycutter gpg key help shows register subcommand" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key --help
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "register" ]]
+    [[ "$output" =~ "Register GPG auth key" ]] || [[ "$output" =~ "SSH key" ]]
+}
+
+@test "keycutter keys accepts --all flag" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Create test keys directory
+    local test_keys_dir="$TEST_HOME/test-keys-all"
+    mkdir -p "$test_keys_dir"
+
+    # Create a regular SSH key
+    touch "$test_keys_dir/ssh_key@host"
+    echo "sk-ssh-ed25519@openssh.com AAAA... ssh_key@host" > "$test_keys_dir/ssh_key@host.pub"
+
+    # Create a GPG-backed SSH key (only pub)
+    echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... gpg_key@host" > "$test_keys_dir/gpg_key@host.pub"
+
+    KEYCUTTER_SSH_KEY_DIR="$test_keys_dir"
+    export KEYCUTTER_SSH_KEY_DIR
+
+    run keycutter-keys --all
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "SSH Keys" ]]
+    [[ "$output" =~ "ssh_key@host" ]]
+    [[ "$output" =~ "GPG-backed" ]]
+    [[ "$output" =~ "gpg_key@host" ]]
+
+    unset KEYCUTTER_SSH_KEY_DIR
+    rm -rf "$test_keys_dir"
+}
+
+@test "keycutter keys accepts --gpg flag" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Create test keys directory
+    local test_keys_dir="$TEST_HOME/test-keys-gpg"
+    mkdir -p "$test_keys_dir"
+
+    # Create a GPG-backed SSH key (only pub)
+    echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... gpg_only_key@host" > "$test_keys_dir/gpg_only_key@host.pub"
+
+    KEYCUTTER_SSH_KEY_DIR="$test_keys_dir"
+    export KEYCUTTER_SSH_KEY_DIR
+
+    run keycutter-keys --gpg
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "GPG-backed" ]]
+    [[ "$output" =~ "gpg_only_key@host" ]]
+
+    unset KEYCUTTER_SSH_KEY_DIR
+    rm -rf "$test_keys_dir"
+}

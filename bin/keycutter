@@ -727,19 +727,70 @@ keycutter-hosts-edit() {
 
 keycutter-keys() {
   local keys_dir="${KEYCUTTER_SSH_KEY_DIR}"
+  local show_all=""
+  local show_gpg=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --all|-a)
+        show_all="true"
+        shift
+        ;;
+      --gpg)
+        show_gpg="true"
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
 
   if [[ ! -d "$keys_dir" ]]; then
     log "No keys directory found at $keys_dir"
     return 1
   fi
 
-  log "SSH Keys:"
-  for key_file in "$keys_dir"/*; do
-    if [[ -f "$key_file" && ! "$key_file" =~ \.pub$ && ! $(basename "$key_file") =~ ^\. ]]; then
-      local key_name=$(basename "$key_file")
-      echo "  $key_name"
+  # Show FIDO2/OpenSSH keys (those with private key files)
+  if [[ -z "$show_gpg" ]]; then
+    log "SSH Keys (FIDO2/OpenSSH):"
+    local found_ssh=0
+    for key_file in "$keys_dir"/*; do
+      if [[ -f "$key_file" && ! "$key_file" =~ \.pub$ && ! $(basename "$key_file") =~ ^\. ]]; then
+        local key_name=$(basename "$key_file")
+        echo "  $key_name"
+        ((found_ssh++))
+      fi
+    done
+    if [[ $found_ssh -eq 0 ]]; then
+      echo "  (none)"
     fi
-  done
+  fi
+
+  # Show GPG-backed SSH keys (those with only .pub files, no private key)
+  if [[ -n "$show_all" || -n "$show_gpg" ]]; then
+    echo
+    log "SSH Keys (GPG-backed):"
+    local found_gpg=0
+    for pubkey_file in "$keys_dir"/*.pub; do
+      [[ -f "$pubkey_file" ]] || continue
+
+      local key_name
+      key_name=$(basename "$pubkey_file" .pub)
+
+      # GPG-backed keys have .pub but no private key file
+      if [[ ! -f "$keys_dir/$key_name" ]]; then
+        # Verify it's a valid SSH public key format
+        if grep -qE "^(ssh-ed25519|ssh-rsa|ecdsa-sha2)" "$pubkey_file" 2>/dev/null; then
+          echo "  $key_name"
+          ((found_gpg++))
+        fi
+      fi
+    done
+    if [[ $found_gpg -eq 0 ]]; then
+      echo "  (none)"
+    fi
+  fi
 }
 
 # Agent subcommands
@@ -1232,6 +1283,8 @@ keycutter-gpg-key() {
     echo "                             With --yes, use config file defaults"
     echo "  install [--backup FILE]    Install subkeys from backup to YubiKey"
     echo "                             Lists available backups if no file specified"
+    echo "  register [--fingerprint]   Register GPG auth key as SSH key with keycutter"
+    echo "                             Exports public key for SSH and saves to keys directory"
     echo
     [[ $# -eq 0 ]] && return 1 || return 0
   fi
@@ -1249,9 +1302,12 @@ keycutter-gpg-key() {
     install)
       keycutter-gpg-key-install "$@"
       ;;
+    register)
+      keycutter-gpg-key-register "$@"
+      ;;
     *)
       log "Error: Unknown gpg key subcommand: $subcmd"
-      echo "Available subcommands: list, create, install"
+      echo "Available subcommands: list, create, install, register"
       return 1
       ;;
   esac
@@ -1959,6 +2015,125 @@ keycutter-gpg-key-install() {
   echo "  - File encryption/decryption"
   echo
   log "To configure host for GPG/YubiKey: keycutter gpg setup"
+
+  return 0
+}
+
+keycutter-gpg-key-register() {
+  # Register GPG authentication key as SSH key with keycutter
+  #
+  # Usage: keycutter gpg key register [options]
+  #
+  # Options:
+  #   --fingerprint FP     GPG key fingerprint (uses YubiKey if not specified)
+  #   --name NAME          Key name/keytag (auto-generated if not specified)
+  #   --enable-ssh         Also enable GPG SSH support if not already configured
+  #   --yes, -y            Non-interactive mode
+  #   -h, --help           Show this help message
+  #
+  # This command exports the GPG authentication subkey as an SSH public key
+  # and registers it with keycutter's key management, enabling:
+  #   - keycutter keys --all to show GPG-backed SSH keys
+  #   - Using GPG auth key for SSH via gpg-agent
+  #
+  # The key is saved as a .pub file in the keycutter keys directory.
+
+  local fingerprint=""
+  local key_name=""
+  local enable_ssh=false
+  local non_interactive=false
+
+  # Show help
+  if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
+    echo "Usage: keycutter gpg key register [options]"
+    echo
+    echo "Register GPG authentication key as SSH key with keycutter."
+    echo
+    echo "Options:"
+    echo "  --fingerprint FP     GPG key fingerprint (uses YubiKey if not specified)"
+    echo "  --name NAME          Key name/keytag (auto-generated from key UID)"
+    echo "  --enable-ssh         Also enable GPG SSH support if not configured"
+    echo "  --yes, -y            Non-interactive mode"
+    echo "  -h, --help           Show this help message"
+    echo
+    echo "Examples:"
+    echo "  keycutter gpg key register"
+    echo "  keycutter gpg key register --fingerprint ABC123"
+    echo "  keycutter gpg key register --name github.com_alice@laptop"
+    echo
+    return 0
+  fi
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --fingerprint)
+        fingerprint="$2"
+        shift 2
+        ;;
+      --name)
+        key_name="$2"
+        shift 2
+        ;;
+      --enable-ssh)
+        enable_ssh=true
+        shift
+        ;;
+      --yes|-y)
+        non_interactive=true
+        shift
+        ;;
+      *)
+        log "Error: Unknown option: $1"
+        return 1
+        ;;
+    esac
+  done
+
+  log "Registering GPG authentication key with keycutter..."
+  echo
+
+  # Check if gpg-agent SSH support should be enabled
+  if [[ "$enable_ssh" == true ]]; then
+    if ! gpg-ssh-agent-check &>/dev/null; then
+      log "Enabling SSH support in gpg-agent..."
+      gpg-setup-gpg-agent-conf --enable-ssh
+      gpgconf --kill gpg-agent
+      gpgconf --launch gpg-agent
+    fi
+  fi
+
+  # Build arguments for gpg-ssh-key-register
+  local register_args=()
+
+  if [[ -n "$fingerprint" ]]; then
+    register_args+=(--fingerprint "$fingerprint")
+  fi
+
+  if [[ -n "$key_name" ]]; then
+    register_args+=(--name "$key_name")
+  fi
+
+  # Register the key
+  local output_file
+  if ! output_file=$(gpg-ssh-key-register "${register_args[@]}"); then
+    log "Error: Failed to register GPG SSH key"
+    return 1
+  fi
+
+  echo
+  log "GPG SSH key registered successfully!"
+  echo
+  echo "  Public key: $output_file"
+  echo
+  echo "To view all keys including GPG-backed:"
+  echo "  keycutter keys --all"
+  echo
+  echo "To use this key for SSH, ensure:"
+  echo "  1. gpg-agent has SSH support: keycutter gpg setup --enable-ssh"
+  echo "  2. SSH_AUTH_SOCK points to gpg-agent socket"
+  echo "  3. YubiKey is inserted when connecting"
+  echo
 
   return 0
 }
