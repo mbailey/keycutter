@@ -1329,21 +1329,30 @@ keycutter-gpg-key-list() {
 }
 
 keycutter-gpg-key-create() {
-  # Create GPG master key (and optionally subkeys) for use with YubiKey
+  # Create GPG master key and subkeys for use with YubiKey
   #
   # Usage: keycutter gpg key create [options]
   #
   # Options:
-  #   --identity IDENTITY  User ID for the key (e.g., "Name <email>")
-  #   --key-type TYPE      Key algorithm: ed25519 (default) or rsa4096
-  #   --expiration PERIOD  Subkey expiration: 1y, 2y, etc. (default: 2y)
-  #   --yes, -y            Non-interactive mode using config defaults
-  #   --master-only        Create only the master key (no subkeys)
-  #   -h, --help           Show this help message
+  #   --identity IDENTITY    User ID for the key (e.g., "Name <email>")
+  #   --key-type TYPE        Key algorithm: ed25519 (default) or rsa4096
+  #   --expiration PERIOD    Subkey expiration: 1y, 2y, etc. (default: 2y)
+  #   --master-expiration P  Master key expiration: 0 (never, default), 1y, etc.
+  #   --passphrase PASS      Passphrase for key protection
+  #   --yes, -y              Non-interactive mode using config defaults
+  #   --master-only          Create only the master key (no subkeys)
+  #   --subkeys              Add subkeys to existing master (requires --fingerprint)
+  #   --fingerprint FP       Fingerprint of master key to add subkeys to
+  #   -h, --help             Show this help message
   #
-  # This command creates a GPG master key in a secure ephemeral environment.
-  # The master key never touches disk unencrypted - it must be backed up
-  # before the session ends.
+  # This command creates a GPG master key with Sign, Encrypt, and Auth subkeys
+  # in a secure ephemeral environment. The master key never touches disk
+  # unencrypted - it must be backed up before the session ends.
+  #
+  # Modes:
+  #   1. Default: Create master + all 3 subkeys in one flow
+  #   2. --master-only: Create just the Certify master key
+  #   3. --subkeys --fingerprint FP: Add subkeys to existing master in GNUPGHOME
   #
   # Interactive mode (default):
   #   - Prompts for identity if not provided
@@ -1357,9 +1366,12 @@ keycutter-gpg-key-create() {
   local identity=""
   local key_type=""
   local expiration=""
+  local master_expiration=""
   local passphrase=""
   local non_interactive=false
   local master_only=false
+  local subkeys_only=false
+  local fingerprint=""
 
   # Parse arguments
   while [[ $# -gt 0 ]]; do
@@ -1376,6 +1388,10 @@ keycutter-gpg-key-create() {
         expiration="$2"
         shift 2
         ;;
+      --master-expiration)
+        master_expiration="$2"
+        shift 2
+        ;;
       --passphrase)
         passphrase="$2"
         shift 2
@@ -1388,24 +1404,37 @@ keycutter-gpg-key-create() {
         master_only=true
         shift
         ;;
+      --subkeys)
+        subkeys_only=true
+        shift
+        ;;
+      --fingerprint)
+        fingerprint="$2"
+        shift 2
+        ;;
       -h|--help)
         echo "Usage: keycutter gpg key create [options]"
         echo
-        echo "Create a GPG master key for use with YubiKey"
+        echo "Create a GPG master key and subkeys for use with YubiKey"
         echo
         echo "Options:"
-        echo "  --identity IDENTITY  User ID (e.g., 'Name <email@example.com>')"
-        echo "  --key-type TYPE      Algorithm: ed25519 (default), rsa4096"
-        echo "  --expiration PERIOD  Master key expiration: 0 (never), 1y, 2y, etc."
-        echo "  --passphrase PASS    Passphrase (for non-interactive mode)"
-        echo "  --yes, -y            Non-interactive mode"
-        echo "  --master-only        Create only master key (no subkeys yet)"
-        echo "  -h, --help           Show this help"
+        echo "  --identity IDENTITY    User ID (e.g., 'Name <email@example.com>')"
+        echo "  --key-type TYPE        Algorithm: ed25519 (default), rsa4096"
+        echo "  --expiration PERIOD    Subkey expiration: 2y (default), 1y, etc."
+        echo "  --master-expiration P  Master key expiration: 0 (never, default)"
+        echo "  --passphrase PASS      Passphrase for key protection"
+        echo "  --yes, -y              Non-interactive mode"
+        echo "  --master-only          Create only master key (no subkeys)"
+        echo "  --subkeys              Add subkeys to existing master (use with --fingerprint)"
+        echo "  --fingerprint FP       Master key fingerprint (for --subkeys mode)"
+        echo "  -h, --help             Show this help"
         echo
         echo "Examples:"
         echo "  keycutter gpg key create"
         echo "  keycutter gpg key create --identity 'Alice <alice@example.com>'"
-        echo "  keycutter gpg key create --yes --passphrase 'secret123'"
+        echo "  keycutter gpg key create --yes --identity 'Bob <bob@example.com>' --passphrase 'secret123'"
+        echo "  keycutter gpg key create --master-only --identity 'Carol <carol@example.com>'"
+        echo "  keycutter gpg key create --subkeys --fingerprint ABCD1234 --passphrase 'secret'"
         return 0
         ;;
       *)
@@ -1422,9 +1451,35 @@ keycutter-gpg-key-create() {
   # Load config first (needed for defaults lookup)
   gpg-config-load
 
+  # Validate conflicting options
+  if [[ "$master_only" == true && "$subkeys_only" == true ]]; then
+    log "Error: --master-only and --subkeys cannot be used together"
+    return 1
+  fi
+
+  # Validate --subkeys mode requirements
+  if [[ "$subkeys_only" == true ]]; then
+    if [[ -z "$fingerprint" ]]; then
+      log "Error: --subkeys requires --fingerprint"
+      return 1
+    fi
+    if [[ -z "$passphrase" ]]; then
+      passphrase="${GPG_PASSPHRASE:-}"
+    fi
+    if [[ -z "$passphrase" ]]; then
+      log "Error: --passphrase required for --subkeys mode"
+      return 1
+    fi
+    # GNUPGHOME must already be set and contain the master key
+    if [[ -z "${GNUPGHOME:-}" ]]; then
+      log "Error: GNUPGHOME must be set and contain master key for --subkeys mode"
+      return 1
+    fi
+  fi
+
   # Validate parameters in non-interactive mode BEFORE checking GPG
   # This provides immediate feedback to users about missing parameters
-  if [[ "$non_interactive" == true ]]; then
+  if [[ "$non_interactive" == true && "$subkeys_only" == false ]]; then
     if [[ -z "$identity" ]]; then
       identity=$(gpg-config-get GPG_IDENTITY "")
     fi
@@ -1447,6 +1502,32 @@ keycutter-gpg-key-create() {
   if ! gpg-version-check >/dev/null 2>&1; then
     log "Error: GPG check failed"
     return 1
+  fi
+
+  # Handle --subkeys mode (add subkeys to existing master)
+  if [[ "$subkeys_only" == true ]]; then
+    log "Adding subkeys to existing master key: ${fingerprint:0:16}..."
+    echo
+
+    # Build arguments for gpg-subkeys-create
+    local subkey_args=(--fingerprint "$fingerprint" --passphrase "$passphrase")
+    [[ -n "$key_type" ]] && subkey_args+=(--key-type "$key_type")
+    [[ -n "$expiration" ]] && subkey_args+=(--expiration "$expiration")
+
+    # Create subkeys
+    if ! gpg-subkeys-create "${subkey_args[@]}"; then
+      log "Error: Failed to create subkeys"
+      return 1
+    fi
+
+    echo
+    log "Subkeys created successfully!"
+    echo
+
+    # Show key details
+    gpg --homedir "$GNUPGHOME" --list-keys --keyid-format LONG "$fingerprint"
+
+    return 0
   fi
 
   # Interactive mode: prompt for identity if not provided
@@ -1484,11 +1565,11 @@ keycutter-gpg-key-create() {
   # Build arguments for gpg-master-key-create
   local create_args=(--identity "$identity" --passphrase "$passphrase")
   [[ -n "$key_type" ]] && create_args+=(--key-type "$key_type")
-  [[ -n "$expiration" ]] && create_args+=(--expiration "$expiration")
+  [[ -n "$master_expiration" ]] && create_args+=(--expiration "$master_expiration")
 
   # Create master key
-  local fingerprint
-  fingerprint=$(gpg-master-key-create "${create_args[@]}") || {
+  local master_fingerprint
+  master_fingerprint=$(gpg-master-key-create "${create_args[@]}") || {
     log "Error: Failed to create master key"
     return 1
   }
@@ -1496,27 +1577,45 @@ keycutter-gpg-key-create() {
   echo
   log "Master key created successfully!"
   echo
-  echo "  Fingerprint: $fingerprint"
+  echo "  Fingerprint: $master_fingerprint"
   echo "  Identity:    $identity"
   echo
 
+  # Create subkeys unless --master-only was specified
+  if [[ "$master_only" == false ]]; then
+    echo
+    log "Creating subkeys (Sign, Encrypt, Auth)..."
+    echo
+
+    # Build arguments for gpg-subkeys-create
+    local subkey_args=(--fingerprint "$master_fingerprint" --passphrase "$passphrase")
+    [[ -n "$key_type" ]] && subkey_args+=(--key-type "$key_type")
+    [[ -n "$expiration" ]] && subkey_args+=(--expiration "$expiration")
+
+    # Create subkeys
+    if ! gpg-subkeys-create "${subkey_args[@]}"; then
+      log "Error: Failed to create subkeys"
+      log "Master key was created but subkeys failed."
+      log "You can retry with: keycutter gpg key create --subkeys --fingerprint $master_fingerprint"
+      return 1
+    fi
+
+    echo
+    log "All subkeys created successfully!"
+    echo
+  fi
+
   # Show key details
-  gpg --homedir "$GNUPGHOME" --list-keys --keyid-format LONG "$fingerprint"
+  gpg --homedir "$GNUPGHOME" --list-keys --keyid-format LONG "$master_fingerprint"
 
   echo
-  log "WARNING: The master key exists only in ephemeral memory!"
+  log "WARNING: The keys exist only in ephemeral memory!"
   log "You MUST backup this key before exiting or it will be lost."
   echo
   log "Next steps:"
   echo "  1. Run 'keycutter gpg backup' to save encrypted backup"
-  echo "  2. Run 'keycutter gpg key install' to transfer to YubiKey"
+  echo "  2. Run 'keycutter gpg key install' to transfer subkeys to YubiKey"
   echo
-
-  # TODO: In future, continue to subkey creation unless --master-only
-  if [[ "$master_only" == false ]]; then
-    log "Note: Subkey creation (gpg-006) not yet implemented"
-    log "Use 'gpg --edit-key' to add subkeys manually if needed"
-  fi
 
   return 0
 }

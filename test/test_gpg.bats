@@ -740,3 +740,58 @@ uid:::::::Test User <test@example.com>::::::::::0:"
 
     gpg-home-temp-cleanup
 }
+
+# ============================================================================
+# keycutter gpg key create unified command tests (gpg-007)
+# ============================================================================
+
+@test "keycutter gpg key create help shows --subkeys and --fingerprint options" {
+    run "$KEYCUTTER_ROOT/bin/keycutter" gpg key create --help
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "--subkeys" ]]
+    [[ "$output" =~ "--fingerprint" ]]
+    [[ "$output" =~ "--master-only" ]]
+    [[ "$output" =~ "--master-expiration" ]]
+}
+
+@test "keycutter gpg key create help shows examples" {
+    run "$KEYCUTTER_ROOT/bin/keycutter" gpg key create --help
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Examples:" ]]
+    [[ "$output" =~ "keycutter gpg key create" ]]
+    [[ "$output" =~ "--subkeys --fingerprint" ]]
+}
+
+@test "keycutter gpg key create rejects --master-only with --subkeys" {
+    run "$KEYCUTTER_ROOT/bin/keycutter" gpg key create --master-only --subkeys --fingerprint "ABC123" --passphrase "test"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--master-only and --subkeys cannot be used together" ]]
+}
+
+@test "keycutter gpg key create --subkeys requires --fingerprint" {
+    run "$KEYCUTTER_ROOT/bin/keycutter" gpg key create --subkeys --passphrase "testpass123"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--subkeys requires --fingerprint" ]]
+}
+
+@test "keycutter gpg key create --subkeys requires --passphrase" {
+    run "$KEYCUTTER_ROOT/bin/keycutter" gpg key create --subkeys --fingerprint "ABCD1234"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--passphrase required for --subkeys mode" ]]
+}
+
+@test "keycutter gpg key create --subkeys requires GNUPGHOME" {
+    unset GNUPGHOME
+
+    run "$KEYCUTTER_ROOT/bin/keycutter" gpg key create --subkeys --fingerprint "ABCD1234" --passphrase "testpass123"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "GNUPGHOME must be set" ]]
+}
+
+@test "keycutter gpg key create --master-expiration option is parsed" {
+    # Just verify the option is recognized (not rejected as unknown)
+    run "$KEYCUTTER_ROOT/bin/keycutter" gpg key create --master-expiration 5y --yes --identity "Test <test@example.com>" --passphrase "testpass"
+
+    # Should NOT fail with "Unknown option"
+    [[ ! "$output" =~ "Unknown option: --master-expiration" ]]
+}
