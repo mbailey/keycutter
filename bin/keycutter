@@ -1230,7 +1230,8 @@ keycutter-gpg-key() {
     echo "                             With --all, also show available master keys"
     echo "  create [--yes]             Create master key + subkeys"
     echo "                             With --yes, use config file defaults"
-    echo "  install [--master KEY_ID]  Install subkeys from master to YubiKey"
+    echo "  install [--backup FILE]    Install subkeys from backup to YubiKey"
+    echo "                             Lists available backups if no file specified"
     echo
     [[ $# -eq 0 ]] && return 1 || return 0
   fi
@@ -1621,9 +1622,345 @@ keycutter-gpg-key-create() {
 }
 
 keycutter-gpg-key-install() {
-  log "Error: GPG key install not yet implemented"
-  log "See: https://github.com/mbailey/keycutter/issues/KC-15"
-  return 1
+  # Install GPG subkeys from a master key backup to YubiKey
+  #
+  # Usage: keycutter gpg key install [options]
+  #
+  # Options:
+  #   --backup FILE         Path to encrypted backup file (prompts if not specified)
+  #   --backup-pass PASS    Passphrase for backup decryption (prompts if not specified)
+  #   --passphrase PASS     Key passphrase for subkey operations (prompts if not specified)
+  #   --admin-pin PIN       YubiKey admin PIN (default: 12345678)
+  #   --force               Overwrite existing keys on YubiKey
+  #   --yes, -y             Non-interactive mode (requires all passphrases)
+  #   -h, --help            Show this help message
+  #
+  # This command:
+  #   1. Lists available master key backups
+  #   2. Decrypts and loads the selected backup into ephemeral GNUPGHOME
+  #   3. Detects YubiKey and checks for existing keys
+  #   4. Transfers Sign, Encrypt, Auth subkeys to YubiKey
+  #
+  # After install, the YubiKey will hold your subkeys and can be used for:
+  #   - Git commit signing
+  #   - SSH authentication
+  #   - File encryption/decryption
+
+  local backup_file=""
+  local backup_pass=""
+  local passphrase=""
+  local admin_pin="12345678"
+  local force=false
+  local non_interactive=false
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --backup)
+        backup_file="$2"
+        shift 2
+        ;;
+      --backup-pass)
+        backup_pass="$2"
+        shift 2
+        ;;
+      --passphrase)
+        passphrase="$2"
+        shift 2
+        ;;
+      --admin-pin)
+        admin_pin="$2"
+        shift 2
+        ;;
+      --force)
+        force=true
+        shift
+        ;;
+      --yes|-y)
+        non_interactive=true
+        shift
+        ;;
+      -h|--help)
+        echo "Usage: keycutter gpg key install [options]"
+        echo
+        echo "Install GPG subkeys from a master key backup to YubiKey"
+        echo
+        echo "Options:"
+        echo "  --backup FILE         Path to encrypted backup file"
+        echo "  --backup-pass PASS    Passphrase for backup decryption"
+        echo "  --passphrase PASS     Key passphrase for subkey operations"
+        echo "  --admin-pin PIN       YubiKey admin PIN (default: factory default)"
+        echo "  --force               Overwrite existing keys on YubiKey"
+        echo "  --yes, -y             Non-interactive mode"
+        echo "  -h, --help            Show this help"
+        echo
+        echo "Examples:"
+        echo "  keycutter gpg key install"
+        echo "  keycutter gpg key install --backup ~/gpg-backups/gpg-backup-2025-01-01-ABCD1234.tar.gz.gpg"
+        echo "  keycutter gpg key install --yes --backup FILE --backup-pass 'pass1' --passphrase 'pass2'"
+        echo
+        echo "This command will:"
+        echo "  1. List available master key backups"
+        echo "  2. Decrypt and load the selected backup"
+        echo "  3. Transfer subkeys to your YubiKey"
+        echo
+        echo "After install, your YubiKey can be used for signing, encryption, and SSH."
+        return 0
+        ;;
+      *)
+        log "Error: Unknown option: $1"
+        log "Use --help for usage information"
+        return 1
+        ;;
+    esac
+  done
+
+  # Source GPG library
+  source "${KEYCUTTER_ROOT}/lib/gpg"
+
+  # Load config
+  gpg-config-load
+
+  # Check GPG is available
+  if ! gpg-version-check >/dev/null 2>&1; then
+    log "Error: GPG is not installed or version too old"
+    return 1
+  fi
+
+  # If no backup file specified, list available backups
+  if [[ -z "$backup_file" ]]; then
+    echo
+    log "Available GPG key backups:"
+    echo
+
+    # Get list of backups
+    local backup_dir
+    backup_dir=$(gpg-config-get GPG_BACKUP_DIR "")
+    backup_dir="${backup_dir/#\~/$HOME}"
+
+    if [[ -z "$backup_dir" ]] || [[ ! -d "$backup_dir" ]]; then
+      log "Error: No backup location configured or directory not found"
+      log "Create a backup first with: keycutter gpg backup"
+      return 1
+    fi
+
+    # Find backup files
+    local -a backup_files=()
+    local backup_count=0
+
+    for f in "$backup_dir"/gpg-backup-*.tar.gz.gpg; do
+      if [[ -f "$f" ]]; then
+        backup_count=$((backup_count + 1))
+        backup_files+=("$f")
+
+        # Extract info from filename
+        local backup_name
+        backup_name=$(basename "$f")
+        backup_name="${backup_name%.tar.gz.gpg}"
+        local fingerprint="${backup_name##*-}"
+        local backup_date
+        backup_date=$(echo "$backup_name" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || echo "unknown")
+
+        echo "  [$backup_count] $(basename "$f")"
+        echo "      Fingerprint: ...${fingerprint}"
+        echo "      Created: $backup_date"
+        echo
+      fi
+    done
+
+    if [[ $backup_count -eq 0 ]]; then
+      log "Error: No backup files found in: $backup_dir"
+      log "Create a backup with: keycutter gpg key create && keycutter gpg backup"
+      return 1
+    fi
+
+    if [[ $backup_count -eq 1 ]]; then
+      backup_file="${backup_files[0]}"
+      log "Using only available backup: $(basename "$backup_file")"
+    else
+      if [[ "$non_interactive" == true ]]; then
+        log "Error: Multiple backups found. Use --backup to specify which backup to use."
+        return 1
+      fi
+
+      # Prompt for selection
+      local selection
+      read -rp "Select backup [1-$backup_count]: " selection
+
+      if [[ ! "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt $backup_count ]]; then
+        log "Error: Invalid selection"
+        return 1
+      fi
+
+      backup_file="${backup_files[$((selection - 1))]}"
+    fi
+  fi
+
+  # Verify backup file exists
+  if [[ ! -f "$backup_file" ]]; then
+    log "Error: Backup file not found: $backup_file"
+    return 1
+  fi
+
+  # Get backup passphrase
+  if [[ -z "$backup_pass" ]]; then
+    if [[ "$non_interactive" == true ]]; then
+      log "Error: --backup-pass required in non-interactive mode"
+      return 1
+    fi
+
+    echo
+    log "Enter the passphrase to decrypt the backup:"
+    read -rsp "Backup passphrase: " backup_pass
+    echo
+  fi
+
+  # Get key passphrase
+  if [[ -z "$passphrase" ]]; then
+    if [[ "$non_interactive" == true ]]; then
+      log "Error: --passphrase required in non-interactive mode"
+      return 1
+    fi
+
+    echo
+    log "Enter the passphrase for the GPG key:"
+    read -rsp "Key passphrase: " passphrase
+    echo
+  fi
+
+  # Create ephemeral GNUPGHOME for key operations
+  echo
+  log "Creating secure ephemeral environment..."
+
+  local temp_home
+  if ! temp_home=$(gpg-home-temp-create); then
+    log "Error: Failed to create ephemeral GNUPGHOME"
+    return 1
+  fi
+
+  # Set up cleanup trap
+  trap 'gpg-home-temp-cleanup' EXIT
+
+  # Restore the backup
+  echo
+  log "Restoring master key from backup..."
+
+  local fingerprint
+  if ! fingerprint=$(gpg-backup-restore --backup-file "$backup_file" --backup-pass "$backup_pass"); then
+    log "Error: Failed to restore backup"
+    return 1
+  fi
+
+  if [[ -z "$fingerprint" ]]; then
+    log "Error: No key fingerprint returned from restore"
+    return 1
+  fi
+
+  log "Restored key: ${fingerprint:0:16}..."
+
+  # Verify we have 3 subkeys
+  local subkey_count
+  subkey_count=$(gpg --homedir "$GNUPGHOME" --list-secret-keys --with-colons "$fingerprint" 2>/dev/null | grep -c "^ssb:")
+
+  if [[ $subkey_count -lt 3 ]]; then
+    log "Error: Expected 3 subkeys (Sign, Encrypt, Auth), found $subkey_count"
+    log "The backup may be incomplete or missing subkeys"
+    return 1
+  fi
+
+  log "Found $subkey_count subkeys ready for transfer"
+
+  # Detect YubiKey
+  echo
+  log "Detecting YubiKey..."
+
+  if ! gpg-yubikey-detect --quiet &>/dev/null; then
+    log "Error: No YubiKey detected"
+    echo
+    echo "Please insert your YubiKey and try again."
+    echo "To check YubiKey status: ykman list"
+    return 1
+  fi
+
+  local serial
+  serial=$(gpg-yubikey-detect --quiet 2>/dev/null)
+  log "YubiKey detected: $serial"
+
+  # Check if YubiKey already has keys
+  local card_status
+  card_status=$(gpg-card-has-keys 2>/dev/null) || card_status="empty"
+
+  if [[ "$card_status" != "empty" && "$force" != "true" ]]; then
+    log "Error: YubiKey already has GPG keys installed"
+    echo
+    echo "Current status: $card_status"
+    echo
+    echo "Options:"
+    echo "  1. Use --force to overwrite existing keys"
+    echo "  2. Reset the card first: keycutter gpg card reset"
+    echo "  3. Use a different YubiKey"
+    return 1
+  fi
+
+  if [[ "$card_status" != "empty" && "$force" == "true" ]]; then
+    log "Warning: Overwriting existing keys on YubiKey"
+  fi
+
+  # Transfer subkeys to YubiKey
+  echo
+  log "Transferring subkeys to YubiKey..."
+  log "This is a ONE-WAY operation - keys cannot be extracted from YubiKey"
+  echo
+
+  if [[ "$non_interactive" != true && "$force" != true ]]; then
+    read -rp "Continue? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy] ]]; then
+      log "Transfer cancelled"
+      return 1
+    fi
+  fi
+
+  local transfer_args=(
+    --fingerprint "$fingerprint"
+    --passphrase "$passphrase"
+    --admin-pin "$admin_pin"
+  )
+
+  if [[ "$force" == true ]]; then
+    transfer_args+=(--force)
+  fi
+
+  if ! gpg-key-to-yubikey "${transfer_args[@]}"; then
+    log "Error: Failed to transfer subkeys to YubiKey"
+    return 1
+  fi
+
+  # Clean up ephemeral home (will be done by trap, but be explicit)
+  echo
+  log "Cleaning up ephemeral environment..."
+
+  # Verify final state
+  gpg-scdaemon-restart &>/dev/null
+  sleep 1
+
+  local final_status
+  final_status=$(gpg-card-has-keys 2>/dev/null) || final_status="unknown"
+
+  echo
+  log "Installation complete!"
+  echo
+  echo "  YubiKey Serial: $serial"
+  echo "  Key Fingerprint: ${fingerprint:0:16}..."
+  echo "  Card Status: $final_status"
+  echo
+  log "Your YubiKey is now ready for:"
+  echo "  - Git commit signing"
+  echo "  - SSH authentication (via gpg-agent)"
+  echo "  - File encryption/decryption"
+  echo
+  log "To configure host for GPG/YubiKey: keycutter gpg setup"
+
+  return 0
 }
 
 keycutter-gpg-setup() {

@@ -1716,3 +1716,266 @@ Authentication key: [none]"
 
     rm -rf "$GNUPGHOME"
 }
+
+# ============================================================================
+# gpg-backup-list tests (gpg-012)
+# ============================================================================
+
+@test "gpg-backup-list returns error when no backup location configured" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    # Clear any existing config
+    unset GPG_BACKUP_DIR
+    _GPG_CONFIG=()
+
+    run gpg-backup-list
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "No backup location configured" ]]
+}
+
+@test "gpg-backup-list returns error when backup directory does not exist" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    # Set non-existent backup directory
+    export GPG_BACKUP_DIR="$TEST_HOME/nonexistent-backup-dir"
+
+    run gpg-backup-list
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Backup directory not found" ]]
+
+    unset GPG_BACKUP_DIR
+}
+
+@test "gpg-backup-list returns error when no backup files found" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    # Create empty backup directory
+    local backup_dir="$TEST_HOME/empty-backups"
+    mkdir -p "$backup_dir"
+    export GPG_BACKUP_DIR="$backup_dir"
+
+    run gpg-backup-list
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "No backup files found" ]]
+
+    unset GPG_BACKUP_DIR
+}
+
+@test "gpg-backup-list finds backup files in directory" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    # Create backup directory with mock backup files
+    local backup_dir="$TEST_HOME/backups-with-files"
+    mkdir -p "$backup_dir"
+
+    # Create fake backup files (matching expected pattern)
+    touch "$backup_dir/gpg-backup-2025-01-01-ABCD1234.tar.gz.gpg"
+    touch "$backup_dir/gpg-backup-2025-02-15-EFGH5678.tar.gz.gpg"
+
+    export GPG_BACKUP_DIR="$backup_dir"
+
+    run gpg-backup-list
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Found 2 backup(s)" ]]
+    [[ "$output" =~ "ABCD1234" ]]
+    [[ "$output" =~ "EFGH5678" ]]
+    [[ "$output" =~ "2025-01-01" ]]
+    [[ "$output" =~ "2025-02-15" ]]
+
+    unset GPG_BACKUP_DIR
+}
+
+@test "gpg-backup-list --quiet outputs only file paths" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    # Create backup directory with mock backup file
+    local backup_dir="$TEST_HOME/backups-quiet-test"
+    mkdir -p "$backup_dir"
+    touch "$backup_dir/gpg-backup-2025-01-01-ABCD1234.tar.gz.gpg"
+
+    export GPG_BACKUP_DIR="$backup_dir"
+
+    run gpg-backup-list --quiet
+    [ "$status" -eq 0 ]
+    # Should only output the file path, no extra info
+    [[ "$output" == "$backup_dir/gpg-backup-2025-01-01-ABCD1234.tar.gz.gpg" ]]
+
+    unset GPG_BACKUP_DIR
+}
+
+@test "gpg-backup-list rejects unknown options" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-backup-list --invalid-option
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+}
+
+# ============================================================================
+# gpg-backup-restore tests (gpg-012)
+# ============================================================================
+
+@test "gpg-backup-restore requires --backup-file" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-backup-restore
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--backup-file is required" ]]
+}
+
+@test "gpg-backup-restore fails when backup file not found" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-backup-restore --backup-file "$TEST_HOME/nonexistent-backup.tar.gz.gpg"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Backup file not found" ]]
+}
+
+@test "gpg-backup-restore requires GNUPGHOME to be set" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    # Create a fake backup file
+    local backup_file="$TEST_HOME/test-backup.tar.gz.gpg"
+    touch "$backup_file"
+
+    unset GNUPGHOME
+    _GPG_EPHEMERAL_HOME=""
+
+    run gpg-backup-restore --backup-file "$backup_file"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "GNUPGHOME not set" ]]
+}
+
+@test "gpg-backup-restore requires GNUPGHOME directory to exist" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    # Create a fake backup file
+    local backup_file="$TEST_HOME/test-backup2.tar.gz.gpg"
+    touch "$backup_file"
+
+    export GNUPGHOME="$TEST_HOME/nonexistent-gnupghome"
+    _GPG_EPHEMERAL_HOME=""
+
+    run gpg-backup-restore --backup-file "$backup_file"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "GNUPGHOME directory does not exist" ]]
+
+    unset GNUPGHOME
+}
+
+@test "gpg-backup-restore rejects unknown options" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-backup-restore --invalid-option "value"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+}
+
+# ============================================================================
+# keycutter-gpg-key-install CLI tests (gpg-012)
+# ============================================================================
+
+@test "keycutter-gpg-key-install shows help with --help" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key-install --help
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Usage: keycutter gpg key install" ]]
+    [[ "$output" =~ "--backup" ]]
+    [[ "$output" =~ "--backup-pass" ]]
+    [[ "$output" =~ "--passphrase" ]]
+    [[ "$output" =~ "--admin-pin" ]]
+    [[ "$output" =~ "--force" ]]
+}
+
+@test "keycutter-gpg-key-install rejects unknown options" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key-install --invalid-option "value"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+}
+
+@test "keycutter-gpg-key-install fails when no backup location configured" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Mock gpg for version check
+    create_mock_command "gpg" 0 "gpg (GnuPG) 2.4.0"
+    create_mock_command "gpgconf" 0 ""
+
+    # Clear backup config
+    unset GPG_BACKUP_DIR
+    export XDG_CONFIG_HOME="$TEST_HOME/.config"
+    rm -f "$XDG_CONFIG_HOME/keycutter/gpg.conf" 2>/dev/null
+
+    run keycutter-gpg-key-install
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "No backup location configured" ]] || [[ "$output" =~ "directory not found" ]]
+
+    unset XDG_CONFIG_HOME
+}
+
+@test "keycutter-gpg-key-install fails when backup file not found" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Mock gpg for version check
+    create_mock_command "gpg" 0 "gpg (GnuPG) 2.4.0"
+    create_mock_command "gpgconf" 0 ""
+
+    run keycutter-gpg-key-install --backup "$TEST_HOME/nonexistent-backup.tar.gz.gpg"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Backup file not found" ]]
+}
+
+@test "keycutter-gpg-key-install requires --backup-pass in non-interactive mode" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Mock gpg for version check
+    create_mock_command "gpg" 0 "gpg (GnuPG) 2.4.0"
+    create_mock_command "gpgconf" 0 ""
+
+    # Create a fake backup file
+    local backup_file="$TEST_HOME/test-backup-pass.tar.gz.gpg"
+    touch "$backup_file"
+
+    run keycutter-gpg-key-install --yes --backup "$backup_file" --passphrase "test"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--backup-pass required" ]]
+}
+
+@test "keycutter-gpg-key-install requires --passphrase in non-interactive mode" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Mock gpg for version check
+    create_mock_command "gpg" 0 "gpg (GnuPG) 2.4.0"
+    create_mock_command "gpgconf" 0 ""
+
+    # Create a fake backup file
+    local backup_file="$TEST_HOME/test-passphrase.tar.gz.gpg"
+    touch "$backup_file"
+
+    run keycutter-gpg-key-install --yes --backup "$backup_file" --backup-pass "test"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--passphrase required" ]]
+}
+
+@test "keycutter-gpg-key-install requires --backup when multiple backups exist in non-interactive mode" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Mock gpg for version check
+    create_mock_command "gpg" 0 "gpg (GnuPG) 2.4.0"
+    create_mock_command "gpgconf" 0 ""
+
+    # Create backup directory with multiple backup files
+    local backup_dir="$TEST_HOME/multi-backups"
+    mkdir -p "$backup_dir"
+    touch "$backup_dir/gpg-backup-2025-01-01-AAAA1111.tar.gz.gpg"
+    touch "$backup_dir/gpg-backup-2025-02-02-BBBB2222.tar.gz.gpg"
+    export GPG_BACKUP_DIR="$backup_dir"
+
+    run keycutter-gpg-key-install --yes --backup-pass "test" --passphrase "test"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Multiple backups found" ]] || [[ "$output" =~ "--backup" ]]
+
+    unset GPG_BACKUP_DIR
+}

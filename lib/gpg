@@ -26,6 +26,8 @@
 # Backup:
 # - gpg-key-backup(): Create encrypted backup of master key and subkeys
 # - gpg-backup-readme-generate(): Generate README with restore instructions
+# - gpg-backup-list(): List available backups from registered locations
+# - gpg-backup-restore(): Restore keys from encrypted backup to GNUPGHOME
 #
 # YubiKey Detection and Service Management:
 # - gpg-pcscd-ensure(): Ensure pcscd service is running
@@ -1984,4 +1986,287 @@ EOF
         log "Error: Failed to reset OpenPGP application"
         return 1
     fi
+}
+
+# =============================================================================
+# Backup Listing and Restoration (gpg-012)
+# =============================================================================
+
+gpg-backup-list() {
+    # List available GPG key backups from registered locations
+    #
+    # This function searches for encrypted backup files in the configured
+    # backup directory and extracts key information from them.
+    #
+    # Arguments:
+    #   --quiet    Only output backup paths (for scripting)
+    #
+    # Returns:
+    #   0 if backups found
+    #   1 if no backup location configured or no backups found
+    #
+    # Output:
+    #   Prints list of backups with fingerprints and user IDs
+
+    local quiet=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --quiet)
+                quiet=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Load config to get backup locations
+    gpg-config-load
+
+    local backup_dir
+    backup_dir=$(gpg-config-get GPG_BACKUP_DIR "")
+
+    if [[ -z "$backup_dir" ]]; then
+        if [[ "$quiet" != "true" ]]; then
+            echo "  No backup location configured."
+            echo "  Set GPG_BACKUP_DIR in config or use 'keycutter gpg backup' to create backups."
+        fi
+        return 1
+    fi
+
+    # Expand path
+    backup_dir="${backup_dir/#\~/$HOME}"
+
+    if [[ ! -d "$backup_dir" ]]; then
+        if [[ "$quiet" != "true" ]]; then
+            echo "  Backup directory not found: $backup_dir"
+        fi
+        return 1
+    fi
+
+    # Search for encrypted backup files
+    local found_backups=0
+    local backup_file backup_name fingerprint uid
+    local -a backup_list=()
+
+    # Look for encrypted backup pattern: gpg-backup-*.tar.gz.gpg
+    for backup_file in "$backup_dir"/gpg-backup-*.tar.gz.gpg; do
+        if [[ -f "$backup_file" ]]; then
+            found_backups=$((found_backups + 1))
+            backup_list+=("$backup_file")
+
+            if [[ "$quiet" != "true" ]]; then
+                # Extract info from filename
+                # Format: gpg-backup-YYYY-MM-DD-FINGERPRINT.tar.gz.gpg
+                backup_name=$(basename "$backup_file")
+                # Remove extensions to get base name
+                backup_name="${backup_name%.tar.gz.gpg}"
+
+                # Extract fingerprint (last 8 chars before extension)
+                fingerprint="${backup_name##*-}"
+
+                # Extract date
+                local backup_date
+                backup_date=$(echo "$backup_name" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || echo "unknown")
+
+                echo "  [$found_backups] $backup_file"
+                echo "      Fingerprint: ...${fingerprint}"
+                echo "      Created: $backup_date"
+                echo
+            else
+                echo "$backup_file"
+            fi
+        fi
+    done
+
+    if [[ $found_backups -eq 0 ]]; then
+        if [[ "$quiet" != "true" ]]; then
+            echo "  No backup files found in: $backup_dir"
+            echo "  Create a backup with: keycutter gpg backup"
+        fi
+        return 1
+    fi
+
+    if [[ "$quiet" != "true" ]]; then
+        echo "  Found $found_backups backup(s) in: $backup_dir"
+    fi
+    return 0
+}
+
+gpg-backup-restore() {
+    # Restore GPG keys from an encrypted backup to ephemeral GNUPGHOME
+    #
+    # This function decrypts a backup archive and imports the master key
+    # and subkeys into the current (ephemeral) GNUPGHOME.
+    #
+    # Arguments:
+    #   --backup-file FILE    Path to encrypted backup (required)
+    #   --backup-pass PASS    Passphrase for backup decryption (will prompt if not provided)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Output:
+    #   Prints the fingerprint of the restored key on success
+    #
+    # Environment:
+    #   GNUPGHOME must be set (typically to ephemeral directory)
+    #
+    # Example:
+    #   gpg-home-temp-create
+    #   gpg-backup-restore --backup-file ~/gpg-backups/gpg-backup-2025-01-01-ABCD1234.tar.gz.gpg
+
+    local backup_file=""
+    local backup_pass=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --backup-file)
+                backup_file="$2"
+                shift 2
+                ;;
+            --backup-pass)
+                backup_pass="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Validate required parameters
+    if [[ -z "$backup_file" ]]; then
+        log "Error: --backup-file is required"
+        return 1
+    fi
+
+    if [[ ! -f "$backup_file" ]]; then
+        log "Error: Backup file not found: $backup_file"
+        return 1
+    fi
+
+    # Validate GNUPGHOME
+    if [[ -z "${GNUPGHOME:-}" ]]; then
+        log "Error: GNUPGHOME not set. Use gpg-home-temp-create first."
+        return 1
+    fi
+
+    if [[ ! -d "$GNUPGHOME" ]]; then
+        log "Error: GNUPGHOME directory does not exist: $GNUPGHOME"
+        return 1
+    fi
+
+    # Create temporary directory for extraction
+    local temp_extract
+    temp_extract=$(mktemp -d) || {
+        log "Error: Failed to create temporary directory"
+        return 1
+    }
+    chmod 700 "$temp_extract"
+
+    # Cleanup on exit
+    trap "rm -rf '$temp_extract'" RETURN
+
+    log "Decrypting backup: $(basename "$backup_file")..."
+
+    # Decrypt the backup
+    local decrypt_cmd=(gpg --decrypt --quiet)
+    if [[ -n "$backup_pass" ]]; then
+        decrypt_cmd+=(--batch --pinentry-mode loopback --passphrase "$backup_pass")
+    fi
+
+    if ! "${decrypt_cmd[@]}" "$backup_file" 2>/dev/null | tar -xzf - -C "$temp_extract" 2>/dev/null; then
+        log "Error: Failed to decrypt backup"
+        log "Check that the backup passphrase is correct"
+        return 1
+    fi
+
+    # Find the extracted backup directory
+    local extracted_dir
+    extracted_dir=$(find "$temp_extract" -maxdepth 1 -type d -name "gpg-backup-*" | head -1)
+
+    if [[ -z "$extracted_dir" ]] || [[ ! -d "$extracted_dir" ]]; then
+        log "Error: Could not find backup contents after extraction"
+        return 1
+    fi
+
+    # Look for the master key file
+    local master_key_file=""
+    if [[ -f "$extracted_dir/master-key.asc" ]]; then
+        master_key_file="$extracted_dir/master-key.asc"
+    elif [[ -f "$extracted_dir/secret-key.asc" ]]; then
+        master_key_file="$extracted_dir/secret-key.asc"
+    fi
+
+    if [[ -z "$master_key_file" ]]; then
+        log "Error: No master key file found in backup"
+        log "Expected: master-key.asc or secret-key.asc"
+        return 1
+    fi
+
+    # Copy GPG configuration to ephemeral home if not present
+    local gpg_conf="${KEYCUTTER_ROOT}/config/gpg/gpg.conf"
+    if [[ -f "$gpg_conf" ]] && [[ ! -f "$GNUPGHOME/gpg.conf" ]]; then
+        cp "$gpg_conf" "$GNUPGHOME/gpg.conf"
+    fi
+
+    # Configure gpg-agent for pinentry-loopback
+    if [[ ! -f "$GNUPGHOME/gpg-agent.conf" ]]; then
+        cat > "$GNUPGHOME/gpg-agent.conf" <<EOF
+allow-loopback-pinentry
+EOF
+    fi
+
+    # Restart agent with new config
+    gpg-agent-restart "$GNUPGHOME" >/dev/null 2>&1
+
+    log "Importing master key..."
+
+    # Import the master key
+    if ! gpg --homedir "$GNUPGHOME" --import "$master_key_file" 2>&1; then
+        log "Error: Failed to import master key"
+        return 1
+    fi
+
+    # Import ownertrust if available
+    if [[ -f "$extracted_dir/ownertrust.txt" ]]; then
+        log "Importing trust database..."
+        gpg --homedir "$GNUPGHOME" --import-ownertrust "$extracted_dir/ownertrust.txt" 2>/dev/null || true
+    fi
+
+    # Get the imported key fingerprint
+    local fingerprint
+    fingerprint=$(gpg --homedir "$GNUPGHOME" --list-secret-keys --with-colons 2>/dev/null | \
+        awk -F: '/^sec:/ { getline; if ($1 == "fpr") print $10; exit }')
+
+    if [[ -z "$fingerprint" ]]; then
+        # Try alternative method
+        fingerprint=$(gpg --homedir "$GNUPGHOME" --list-secret-keys --with-colons 2>/dev/null | \
+            awk -F: '/^fpr:/ { print $10; exit }')
+    fi
+
+    if [[ -z "$fingerprint" ]]; then
+        log "Warning: Could not determine key fingerprint"
+        log "Keys imported but fingerprint extraction failed"
+        return 0
+    fi
+
+    # Count subkeys
+    local subkey_count
+    subkey_count=$(gpg --homedir "$GNUPGHOME" --list-secret-keys --with-colons "$fingerprint" 2>/dev/null | grep -c "^ssb:")
+
+    log "Success: Key restored"
+    log "Fingerprint: $fingerprint"
+    log "Subkeys: $subkey_count"
+
+    echo "$fingerprint"
+    return 0
 }
