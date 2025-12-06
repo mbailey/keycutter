@@ -139,8 +139,8 @@
         "Create encrypted backup with verification",
         "Register backup location in keycutter config"
       ],
-      "status": "failing",
-      "last_updated": null
+      "status": "passing",
+      "last_updated": "2025-12-06"
     },
     {
       "id": "gpg-010",

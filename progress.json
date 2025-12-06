@@ -3,8 +3,8 @@
   "task_id": "KC-15",
   "started": "2025-12-06",
   "current_phase": "implementation",
-  "current_feature": "gpg-009",
-  "features_completed": 8,
+  "current_feature": "gpg-010",
+  "features_completed": 9,
   "features_total": 20,
   "sessions": [
     {
@@ -57,11 +57,18 @@
       "notes": "Implemented unified 'keycutter gpg key create' command that creates master key + all 3 subkeys (Sign, Encrypt, Auth) in one flow. Supports --master-only for Certify-only master, --subkeys --fingerprint for adding subkeys to existing master, --master-expiration for master key expiration, and --yes for non-interactive mode. Added 7 BATS tests for unified command validation."
     },
     {
-      "date": "$(date +%Y-%m-%d)",
+      "date": "2025-12-06",
       "features_completed": [
         "gpg-008"
       ],
       "notes": "Implemented gpg-key-backup function for encrypted master key backup. Exports master key, subkeys, public key in armor format. Creates AES256-encrypted .tar.gz.gpg archive. Generates README.md with restore instructions. Added 16 BATS tests for backup functions."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-009"
+      ],
+      "notes": "Implemented 'keycutter gpg backup' CLI command. Lists available keys in GNUPGHOME for selection, prompts for backup destination with GPG_BACKUP_DIR config default, creates encrypted backup via gpg-key-backup, and registers backup location in user config (~/.config/keycutter/gpg.conf). Supports interactive and non-interactive (--yes) modes with --fingerprint, --output-dir, --passphrase, --backup-pass options. Added 11 BATS tests for CLI command."
     }
   ],
   "context_summaries": {

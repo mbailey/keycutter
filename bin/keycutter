@@ -1633,9 +1633,292 @@ keycutter-gpg-setup() {
 }
 
 keycutter-gpg-backup() {
-  log "Error: GPG backup not yet implemented"
-  log "See: https://github.com/mbailey/keycutter/issues/KC-15"
-  return 1
+  # Create encrypted backup of GPG master key
+  #
+  # Usage: keycutter gpg backup [options]
+  #
+  # Options:
+  #   --fingerprint FP      Fingerprint of key to backup (prompts if not specified)
+  #   --output-dir DIR      Directory for backup (prompts if not specified)
+  #   --passphrase PASS     Key passphrase for export (prompts if not specified)
+  #   --backup-pass PASS    Passphrase for backup encryption (prompts if not specified)
+  #   --yes, -y             Non-interactive mode (requires all passphrases)
+  #   -h, --help            Show this help message
+  #
+  # This command creates an encrypted backup of a GPG master key and its subkeys.
+  # The backup includes:
+  #   - Master key and subkeys (armor format)
+  #   - Public key for distribution
+  #   - Revocation certificate
+  #   - Trust database
+  #   - README with restore instructions
+  #
+  # All files are bundled into an AES256-encrypted archive.
+  #
+  # Environment:
+  #   GNUPGHOME must be set and contain the key to backup.
+  #   Typically used after 'keycutter gpg key create' in the same session.
+
+  local fingerprint=""
+  local output_dir=""
+  local passphrase=""
+  local backup_pass=""
+  local non_interactive=false
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --fingerprint)
+        fingerprint="$2"
+        shift 2
+        ;;
+      --output-dir)
+        output_dir="$2"
+        shift 2
+        ;;
+      --passphrase)
+        passphrase="$2"
+        shift 2
+        ;;
+      --backup-pass)
+        backup_pass="$2"
+        shift 2
+        ;;
+      --yes|-y)
+        non_interactive=true
+        shift
+        ;;
+      -h|--help)
+        echo "Usage: keycutter gpg backup [options]"
+        echo
+        echo "Create an encrypted backup of a GPG master key"
+        echo
+        echo "Options:"
+        echo "  --fingerprint FP      Key fingerprint to backup"
+        echo "  --output-dir DIR      Directory for backup storage"
+        echo "  --passphrase PASS     Key passphrase for export"
+        echo "  --backup-pass PASS    Passphrase for backup encryption"
+        echo "  --yes, -y             Non-interactive mode"
+        echo "  -h, --help            Show this help"
+        echo
+        echo "Examples:"
+        echo "  keycutter gpg backup"
+        echo "  keycutter gpg backup --fingerprint ABCD1234 --output-dir ~/gpg-backups"
+        echo "  keycutter gpg backup --yes --passphrase 'keypass' --backup-pass 'backuppass'"
+        echo
+        echo "Environment:"
+        echo "  GNUPGHOME must contain the key to backup"
+        echo "  GPG_BACKUP_DIR can set default output directory"
+        return 0
+        ;;
+      *)
+        log "Error: Unknown option: $1"
+        log "Use --help for usage information"
+        return 1
+        ;;
+    esac
+  done
+
+  # Source GPG library
+  source "${KEYCUTTER_ROOT}/lib/gpg"
+
+  # Load config for defaults
+  gpg-config-load
+
+  # Verify GNUPGHOME is set
+  if [[ -z "${GNUPGHOME:-}" ]]; then
+    log "Error: GNUPGHOME is not set"
+    log "The GPG backup command requires keys to be in an ephemeral GNUPGHOME."
+    log "Typically this is used immediately after 'keycutter gpg key create'."
+    return 1
+  fi
+
+  if [[ ! -d "$GNUPGHOME" ]]; then
+    log "Error: GNUPGHOME directory does not exist: $GNUPGHOME"
+    return 1
+  fi
+
+  # Check GPG is available
+  if ! gpg-version-check >/dev/null 2>&1; then
+    log "Error: GPG is not installed or version too old"
+    return 1
+  fi
+
+  # Get list of secret keys in GNUPGHOME
+  local secret_keys
+  secret_keys=$(gpg --homedir "$GNUPGHOME" --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^sec:/ { print $5 }')
+
+  if [[ -z "$secret_keys" ]]; then
+    log "Error: No secret keys found in GNUPGHOME"
+    log "GNUPGHOME: $GNUPGHOME"
+    return 1
+  fi
+
+  # If fingerprint not specified, list keys and prompt
+  if [[ -z "$fingerprint" ]]; then
+    echo
+    log "Available keys in GNUPGHOME:"
+    echo
+
+    local key_count=0
+    local key_list=()
+    local keyid uid
+
+    while IFS= read -r keyid; do
+      [[ -z "$keyid" ]] && continue
+      key_count=$((key_count + 1))
+      key_list+=("$keyid")
+
+      uid=$(gpg --homedir "$GNUPGHOME" --list-keys --with-colons "$keyid" 2>/dev/null | awk -F: '/^uid:/ { print $10; exit }')
+      echo "  [$key_count] $keyid"
+      [[ -n "$uid" ]] && echo "      $uid"
+    done <<< "$secret_keys"
+
+    echo
+
+    if [[ $key_count -eq 0 ]]; then
+      log "Error: No keys found"
+      return 1
+    fi
+
+    if [[ $key_count -eq 1 ]]; then
+      fingerprint="${key_list[0]}"
+      log "Using only available key: ${fingerprint:0:16}..."
+    else
+      if [[ "$non_interactive" == true ]]; then
+        log "Error: Multiple keys found. Use --fingerprint to specify which key to backup."
+        return 1
+      fi
+
+      # Prompt for selection
+      local selection
+      read -rp "Select key to backup [1-$key_count]: " selection
+
+      if [[ ! "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt $key_count ]]; then
+        log "Error: Invalid selection"
+        return 1
+      fi
+
+      fingerprint="${key_list[$((selection - 1))]}"
+    fi
+  fi
+
+  # Get full fingerprint if short key ID provided
+  if [[ ${#fingerprint} -lt 40 ]]; then
+    local full_fp
+    full_fp=$(gpg --homedir "$GNUPGHOME" --list-keys --with-colons "$fingerprint" 2>/dev/null | awk -F: '/^fpr:/ { print $10; exit }')
+    if [[ -n "$full_fp" ]]; then
+      fingerprint="$full_fp"
+    fi
+  fi
+
+  # Get output directory
+  if [[ -z "$output_dir" ]]; then
+    output_dir=$(gpg-config-get GPG_BACKUP_DIR "")
+    output_dir="${output_dir/#\~/$HOME}"
+  fi
+
+  if [[ -z "$output_dir" ]]; then
+    if [[ "$non_interactive" == true ]]; then
+      log "Error: --output-dir required in non-interactive mode"
+      log "Set GPG_BACKUP_DIR in config or use --output-dir flag"
+      return 1
+    fi
+
+    # Prompt for output directory
+    local default_dir="${HOME}/gpg-backups"
+    read -rp "Backup directory [$default_dir]: " output_dir
+    output_dir="${output_dir:-$default_dir}"
+  fi
+
+  # Expand tilde
+  output_dir="${output_dir/#\~/$HOME}"
+
+  # Get key passphrase
+  if [[ -z "$passphrase" ]]; then
+    passphrase="${GPG_PASSPHRASE:-}"
+  fi
+
+  if [[ -z "$passphrase" ]]; then
+    if [[ "$non_interactive" == true ]]; then
+      log "Error: --passphrase required in non-interactive mode"
+      return 1
+    fi
+
+    # Prompt for key passphrase
+    echo
+    log "Enter the passphrase for the GPG key:"
+    read -rsp "Key passphrase: " passphrase
+    echo
+  fi
+
+  # Get backup encryption passphrase
+  if [[ -z "$backup_pass" ]]; then
+    if [[ "$non_interactive" == true ]]; then
+      log "Error: --backup-pass required in non-interactive mode"
+      return 1
+    fi
+
+    # Prompt for backup passphrase
+    echo
+    log "Enter a passphrase to encrypt the backup archive:"
+    log "(This can be different from your key passphrase)"
+    read -rsp "Backup passphrase: " backup_pass
+    echo
+    read -rsp "Confirm backup passphrase: " backup_pass_confirm
+    echo
+
+    if [[ "$backup_pass" != "$backup_pass_confirm" ]]; then
+      log "Error: Passphrases do not match"
+      return 1
+    fi
+  fi
+
+  # Create the backup
+  echo
+  log "Creating encrypted backup..."
+  echo
+
+  local backup_path
+  if ! backup_path=$(gpg-key-backup \
+    --fingerprint "$fingerprint" \
+    --output-dir "$output_dir" \
+    --passphrase "$passphrase" \
+    --backup-pass "$backup_pass"); then
+    log "Error: Backup failed"
+    return 1
+  fi
+
+  echo
+  log "Backup created successfully!"
+  echo
+  echo "  Location: $backup_path"
+  echo
+  log "IMPORTANT: Store this backup securely!"
+  log "You will need both the backup file AND the backup passphrase to restore."
+  echo
+
+  # Register backup location in config (create user config if it doesn't exist)
+  local user_config="${XDG_CONFIG_HOME:-$HOME/.config}/keycutter/gpg.conf"
+  local config_dir
+  config_dir=$(dirname "$user_config")
+
+  if [[ ! -d "$config_dir" ]]; then
+    mkdir -p "$config_dir"
+    chmod 700 "$config_dir"
+  fi
+
+  # Check if GPG_BACKUP_DIR is already set in user config
+  if [[ -f "$user_config" ]] && grep -q "^GPG_BACKUP_DIR=" "$user_config" 2>/dev/null; then
+    # Already configured
+    :
+  else
+    # Add GPG_BACKUP_DIR to user config
+    echo "GPG_BACKUP_DIR=\"$output_dir\"" >> "$user_config"
+    log "Registered backup location in config: $user_config"
+  fi
+
+  return 0
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
