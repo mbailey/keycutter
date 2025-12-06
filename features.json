@@ -274,8 +274,8 @@
         "Track which YubiKeys have which key installed",
         "Support keycutter gpg key install --all for batch install"
       ],
-      "status": "failing",
-      "last_updated": null
+      "status": "passing",
+      "last_updated": "2025-12-06"
     },
     {
       "id": "gpg-019",

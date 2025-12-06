@@ -2769,3 +2769,232 @@ Authentication key: [none]"
     unset KEYCUTTER_SSH_KEY_DIR
     rm -rf "$test_keys_dir"
 }
+
+# =============================================================================
+# Multiple YubiKey Support Tests (gpg-018)
+# =============================================================================
+
+@test "gpg-yubikey-registry-path returns path in config directory" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-yubikey-registry-path
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ ".config/keycutter/gpg-yubikeys.json" ]]
+}
+
+@test "gpg-yubikey-registry-init creates registry file" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    local test_config_dir="$TEST_HOME/.config/keycutter"
+    rm -rf "$test_config_dir"
+
+    XDG_CONFIG_HOME="$TEST_HOME/.config"
+    export XDG_CONFIG_HOME
+
+    run gpg-yubikey-registry-init
+
+    [ "$status" -eq 0 ]
+    [ -f "$test_config_dir/gpg-yubikeys.json" ]
+    [[ "$(cat "$test_config_dir/gpg-yubikeys.json")" == '{"installations":[]}' ]]
+
+    rm -rf "$test_config_dir"
+    unset XDG_CONFIG_HOME
+}
+
+@test "gpg-yubikey-registry-add requires --serial" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-yubikey-registry-add --fingerprint "ABCD1234"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--serial is required" ]]
+}
+
+@test "gpg-yubikey-registry-add requires --fingerprint" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-yubikey-registry-add --serial "12345678"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--fingerprint is required" ]]
+}
+
+@test "gpg-yubikey-registry-add creates entry" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    local test_config_dir="$TEST_HOME/.config/keycutter"
+    rm -rf "$test_config_dir"
+    mkdir -p "$test_config_dir"
+
+    XDG_CONFIG_HOME="$TEST_HOME/.config"
+    export XDG_CONFIG_HOME
+
+    run gpg-yubikey-registry-add --serial "12345678" --fingerprint "ABCD1234EFGH5678" --label "Test YubiKey"
+
+    [ "$status" -eq 0 ]
+    [ -f "$test_config_dir/gpg-yubikeys.json" ]
+
+    # Check that the serial is in the file
+    grep -q "12345678" "$test_config_dir/gpg-yubikeys.json"
+    grep -q "ABCD1234EFGH5678" "$test_config_dir/gpg-yubikeys.json"
+
+    rm -rf "$test_config_dir"
+    unset XDG_CONFIG_HOME
+}
+
+@test "gpg-yubikey-registry-list returns error when no registry" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    local test_config_dir="$TEST_HOME/.config/keycutter"
+    rm -rf "$test_config_dir"
+
+    XDG_CONFIG_HOME="$TEST_HOME/.config"
+    export XDG_CONFIG_HOME
+
+    run gpg-yubikey-registry-list
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "No YubiKey installations registered" ]]
+
+    unset XDG_CONFIG_HOME
+}
+
+@test "gpg-yubikey-registry-list --quiet outputs serial numbers" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    local test_config_dir="$TEST_HOME/.config/keycutter"
+    rm -rf "$test_config_dir"
+    mkdir -p "$test_config_dir"
+
+    XDG_CONFIG_HOME="$TEST_HOME/.config"
+    export XDG_CONFIG_HOME
+
+    # Add an entry first
+    gpg-yubikey-registry-add --serial "87654321" --fingerprint "WXYZ9876" >/dev/null
+
+    run gpg-yubikey-registry-list --quiet
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "87654321" ]]
+
+    rm -rf "$test_config_dir"
+    unset XDG_CONFIG_HOME
+}
+
+@test "gpg-yubikey-registry-check requires --serial" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-yubikey-registry-check --fingerprint "ABCD1234"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--serial is required" ]]
+}
+
+@test "gpg-yubikey-registry-check requires --fingerprint" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-yubikey-registry-check --serial "12345678"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--fingerprint is required" ]]
+}
+
+@test "gpg-yubikey-registry-check returns 1 when not registered" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    local test_config_dir="$TEST_HOME/.config/keycutter"
+    rm -rf "$test_config_dir"
+    mkdir -p "$test_config_dir"
+    echo '{"installations":[]}' > "$test_config_dir/gpg-yubikeys.json"
+
+    XDG_CONFIG_HOME="$TEST_HOME/.config"
+    export XDG_CONFIG_HOME
+
+    run gpg-yubikey-registry-check --serial "12345678" --fingerprint "ABCD1234"
+
+    [ "$status" -eq 1 ]
+
+    rm -rf "$test_config_dir"
+    unset XDG_CONFIG_HOME
+}
+
+@test "gpg-yubikey-registry-remove requires --serial" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    run gpg-yubikey-registry-remove
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--serial is required" ]]
+}
+
+@test "gpg-yubikeys-list-available returns error when no YubiKey" {
+    source "$KEYCUTTER_ROOT/lib/gpg"
+
+    # Mock ykman to return empty
+    ykman() {
+        if [[ "$1" == "list" ]]; then
+            return 0  # Empty output
+        fi
+        return 1
+    }
+    export -f ykman
+
+    run gpg-yubikeys-list-available --quiet
+
+    # Should fail or return empty
+    [[ -z "$output" ]] || [[ "$output" =~ "No YubiKey" ]]
+
+    unset -f ykman
+}
+
+@test "keycutter-gpg-key-install help shows --all option" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key-install --help
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "--all" ]]
+    [[ "$output" =~ "Install to all connected YubiKeys" ]]
+}
+
+@test "keycutter-gpg-key-install help shows --label option" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key-install --help
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "--label" ]]
+}
+
+@test "keycutter-gpg-yubikeys shows help with --help" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-yubikeys --help
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Usage:" ]]
+    [[ "$output" =~ "--fingerprint" ]]
+    [[ "$output" =~ "--json" ]]
+    [[ "$output" =~ "--remove" ]]
+    [[ "$output" =~ "--connected" ]]
+}
+
+@test "keycutter-gpg-yubikeys rejects unknown options" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-yubikeys --invalid-flag
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+}
+
+@test "keycutter gpg help shows yubikeys subcommand" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg --help
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "yubikeys" ]]
+    [[ "$output" =~ "List registered YubiKey installations" ]]
+}

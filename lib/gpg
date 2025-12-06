@@ -44,6 +44,15 @@
 #
 # Subkey Transfer:
 # - gpg-key-to-yubikey(): Transfer subkeys (Sign, Encrypt, Auth) to YubiKey
+#
+# Multiple YubiKey Support:
+# - gpg-yubikey-registry-path(): Get path to YubiKey registry file
+# - gpg-yubikey-registry-init(): Initialize registry file
+# - gpg-yubikey-registry-add(): Register a YubiKey installation
+# - gpg-yubikey-registry-list(): List registered installations
+# - gpg-yubikey-registry-check(): Check if YubiKey is registered
+# - gpg-yubikey-registry-remove(): Remove YubiKey from registry
+# - gpg-yubikeys-list-available(): List currently connected YubiKeys
 
 KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/utils"
@@ -4055,4 +4064,463 @@ gpg-ssh-sshcontrol-add() {
     gpgconf --launch gpg-agent 2>/dev/null
 
     return 0
+}
+
+# =============================================================================
+# Multiple YubiKey Support (gpg-018)
+# =============================================================================
+#
+# These functions support installing the same GPG key to multiple YubiKeys
+# and tracking which YubiKeys have which key installed.
+#
+# Registry file location: ~/.config/keycutter/gpg-yubikeys.json
+# Format:
+# {
+#   "installations": [
+#     {
+#       "serial": "12345678",
+#       "fingerprint": "ABCD1234...",
+#       "installed_at": "2025-01-01T12:00:00Z",
+#       "label": "Primary YubiKey"
+#     }
+#   ]
+# }
+
+gpg-yubikey-registry-path() {
+    # Get the path to the YubiKey registry file
+    #
+    # Returns:
+    #   Path to the registry file (creates directory if needed)
+
+    local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/keycutter"
+
+    # Ensure directory exists
+    if [[ ! -d "$config_dir" ]]; then
+        mkdir -p "$config_dir"
+    fi
+
+    echo "$config_dir/gpg-yubikeys.json"
+}
+
+gpg-yubikey-registry-init() {
+    # Initialize the YubiKey registry file if it doesn't exist
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local registry_file
+    registry_file=$(gpg-yubikey-registry-path)
+
+    if [[ ! -f "$registry_file" ]]; then
+        echo '{"installations":[]}' > "$registry_file"
+        log "Created YubiKey registry: $registry_file"
+    fi
+
+    return 0
+}
+
+gpg-yubikey-registry-add() {
+    # Register a YubiKey installation in the registry
+    #
+    # Arguments:
+    #   --serial SERIAL         YubiKey serial number (required)
+    #   --fingerprint FP        GPG key fingerprint (required)
+    #   --label LABEL           Optional label for the YubiKey
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local serial=""
+    local fingerprint=""
+    local label=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --serial)
+                serial="$2"
+                shift 2
+                ;;
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --label)
+                label="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$serial" ]]; then
+        log "Error: --serial is required"
+        return 1
+    fi
+
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: --fingerprint is required"
+        return 1
+    fi
+
+    # Initialize registry if needed
+    gpg-yubikey-registry-init
+
+    local registry_file
+    registry_file=$(gpg-yubikey-registry-path)
+
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Remove existing entry for this serial (update case)
+    local temp_file="${registry_file}.tmp"
+
+    if command -v jq &>/dev/null; then
+        # Use jq for proper JSON manipulation
+        jq --arg serial "$serial" \
+           --arg fp "$fingerprint" \
+           --arg ts "$timestamp" \
+           --arg lbl "$label" \
+           '.installations = [.installations[] | select(.serial != $serial)] + [{
+               "serial": $serial,
+               "fingerprint": $fp,
+               "installed_at": $ts,
+               "label": $lbl
+           }]' "$registry_file" > "$temp_file" && mv "$temp_file" "$registry_file"
+    else
+        # Fallback: simple append without dedup (less elegant but functional)
+        local new_entry="{\"serial\":\"$serial\",\"fingerprint\":\"$fingerprint\",\"installed_at\":\"$timestamp\",\"label\":\"$label\"}"
+
+        # Read current file and add new entry
+        local current
+        current=$(cat "$registry_file")
+
+        # Simple sed-based insertion (works for basic cases)
+        if [[ "$current" == '{"installations":[]}' ]]; then
+            echo "{\"installations\":[$new_entry]}" > "$registry_file"
+        else
+            # Insert before the closing ]}
+            echo "${current%\]\}},${new_entry}]}" > "$registry_file"
+        fi
+    fi
+
+    log "Registered YubiKey $serial with key ${fingerprint:0:16}..."
+    return 0
+}
+
+gpg-yubikey-registry-list() {
+    # List all registered YubiKey installations
+    #
+    # Arguments:
+    #   --fingerprint FP    Filter by fingerprint
+    #   --quiet             Output serial numbers only
+    #   --json              Output as JSON
+    #
+    # Returns:
+    #   0 if entries found
+    #   1 if no entries or error
+
+    local fingerprint=""
+    local quiet=false
+    local json_output=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --quiet|-q)
+                quiet=true
+                shift
+                ;;
+            --json)
+                json_output=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    local registry_file
+    registry_file=$(gpg-yubikey-registry-path)
+
+    if [[ ! -f "$registry_file" ]]; then
+        if [[ "$quiet" != true ]]; then
+            log "No YubiKey installations registered"
+        fi
+        return 1
+    fi
+
+    if [[ "$json_output" == true ]]; then
+        if [[ -n "$fingerprint" ]] && command -v jq &>/dev/null; then
+            jq --arg fp "$fingerprint" '.installations | map(select(.fingerprint == $fp))' "$registry_file"
+        else
+            cat "$registry_file"
+        fi
+        return 0
+    fi
+
+    if command -v jq &>/dev/null; then
+        local entries
+        if [[ -n "$fingerprint" ]]; then
+            entries=$(jq -r --arg fp "$fingerprint" '.installations[] | select(.fingerprint == $fp) | "\(.serial)|\(.fingerprint)|\(.installed_at)|\(.label)"' "$registry_file" 2>/dev/null)
+        else
+            entries=$(jq -r '.installations[] | "\(.serial)|\(.fingerprint)|\(.installed_at)|\(.label)"' "$registry_file" 2>/dev/null)
+        fi
+
+        if [[ -z "$entries" ]]; then
+            if [[ "$quiet" != true ]]; then
+                log "No YubiKey installations found"
+            fi
+            return 1
+        fi
+
+        if [[ "$quiet" == true ]]; then
+            echo "$entries" | cut -d'|' -f1
+        else
+            echo
+            echo "Registered YubiKey Installations:"
+            echo
+            while IFS='|' read -r serial fp installed_at label; do
+                echo "  Serial:      $serial"
+                echo "  Fingerprint: ${fp:0:16}..."
+                echo "  Installed:   $installed_at"
+                if [[ -n "$label" && "$label" != "null" ]]; then
+                    echo "  Label:       $label"
+                fi
+                echo
+            done <<< "$entries"
+        fi
+    else
+        # Fallback without jq
+        if [[ "$quiet" == true ]]; then
+            grep -o '"serial":"[^"]*"' "$registry_file" | cut -d'"' -f4
+        else
+            cat "$registry_file"
+        fi
+    fi
+
+    return 0
+}
+
+gpg-yubikey-registry-check() {
+    # Check if a YubiKey is registered with a specific fingerprint
+    #
+    # Arguments:
+    #   --serial SERIAL         YubiKey serial number (required)
+    #   --fingerprint FP        GPG key fingerprint (required)
+    #
+    # Returns:
+    #   0 if YubiKey is registered with that fingerprint
+    #   1 if not registered or different fingerprint
+
+    local serial=""
+    local fingerprint=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --serial)
+                serial="$2"
+                shift 2
+                ;;
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$serial" ]]; then
+        log "Error: --serial is required"
+        return 1
+    fi
+
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: --fingerprint is required"
+        return 1
+    fi
+
+    local registry_file
+    registry_file=$(gpg-yubikey-registry-path)
+
+    if [[ ! -f "$registry_file" ]]; then
+        return 1
+    fi
+
+    if command -v jq &>/dev/null; then
+        local match
+        match=$(jq -r --arg serial "$serial" --arg fp "$fingerprint" \
+            '.installations[] | select(.serial == $serial and .fingerprint == $fp) | .serial' \
+            "$registry_file" 2>/dev/null)
+
+        if [[ -n "$match" ]]; then
+            return 0
+        fi
+    else
+        # Fallback: simple grep
+        if grep -q "\"serial\":\"$serial\"" "$registry_file" && \
+           grep -q "\"fingerprint\":\"$fingerprint\"" "$registry_file"; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+gpg-yubikey-registry-remove() {
+    # Remove a YubiKey from the registry
+    #
+    # Arguments:
+    #   --serial SERIAL         YubiKey serial number (required)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local serial=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --serial)
+                serial="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$serial" ]]; then
+        log "Error: --serial is required"
+        return 1
+    fi
+
+    local registry_file
+    registry_file=$(gpg-yubikey-registry-path)
+
+    if [[ ! -f "$registry_file" ]]; then
+        log "Error: No registry file found"
+        return 1
+    fi
+
+    if command -v jq &>/dev/null; then
+        local temp_file="${registry_file}.tmp"
+        jq --arg serial "$serial" \
+           '.installations = [.installations[] | select(.serial != $serial)]' \
+           "$registry_file" > "$temp_file" && mv "$temp_file" "$registry_file"
+
+        log "Removed YubiKey $serial from registry"
+        return 0
+    else
+        log "Error: jq is required to remove entries"
+        return 1
+    fi
+}
+
+gpg-yubikeys-list-available() {
+    # List all YubiKeys currently connected that have OpenPGP enabled
+    #
+    # This function uses ykman to enumerate all connected YubiKeys,
+    # not just the one GPG happens to be talking to.
+    #
+    # Arguments:
+    #   --quiet             Output serial numbers only
+    #
+    # Returns:
+    #   0 if YubiKeys found
+    #   1 if no YubiKeys found or error
+
+    local quiet=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --quiet|-q)
+                quiet=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Prefer ykman for listing all YubiKeys
+    if command -v ykman &>/dev/null; then
+        local yubikeys
+        yubikeys=$(ykman list --serials 2>/dev/null)
+
+        if [[ -z "$yubikeys" ]]; then
+            if [[ "$quiet" != true ]]; then
+                log "No YubiKeys detected"
+            fi
+            return 1
+        fi
+
+        if [[ "$quiet" == true ]]; then
+            echo "$yubikeys"
+        else
+            echo
+            log "Connected YubiKeys:"
+            echo
+            while read -r serial; do
+                local device_info
+                device_info=$(ykman --device "$serial" info 2>/dev/null | head -5)
+
+                local device_name
+                device_name=$(echo "$device_info" | grep "Device type:" | cut -d: -f2 | xargs)
+
+                local openpgp_status="enabled"
+                if ! ykman --device "$serial" openpgp info &>/dev/null 2>&1; then
+                    openpgp_status="disabled"
+                fi
+
+                echo "  Serial:   $serial"
+                echo "  Type:     ${device_name:-Unknown}"
+                echo "  OpenPGP:  $openpgp_status"
+                echo
+            done <<< "$yubikeys"
+        fi
+
+        return 0
+    else
+        # Fallback to GPG (only shows one YubiKey)
+        if [[ "$quiet" != true ]]; then
+            log "Warning: ykman not installed, can only detect one YubiKey at a time"
+        fi
+
+        local serial
+        serial=$(gpg-yubikey-detect --quiet 2>/dev/null)
+
+        if [[ -n "$serial" ]]; then
+            if [[ "$quiet" == true ]]; then
+                echo "$serial"
+            else
+                echo
+                log "Connected YubiKey:"
+                echo "  Serial: $serial"
+                echo
+            fi
+            return 0
+        else
+            if [[ "$quiet" != true ]]; then
+                log "No YubiKey detected"
+            fi
+            return 1
+        fi
+    fi
 }

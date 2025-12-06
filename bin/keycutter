@@ -1236,15 +1236,19 @@ keycutter-gpg() {
     echo "Subcommands:"
     echo "  key list [--all]               List GPG keys on current YubiKey"
     echo "  key create [--yes]             Create master key + subkeys (Sign, Encrypt, Auth)"
-    echo "  key install [--master KEY_ID]  Install subkeys from master to YubiKey"
+    echo "  key install [--all]            Install subkeys from master to YubiKey(s)"
     echo "  setup                          Configure host for GPG/YubiKey operation"
     echo "  backup                         Backup master key to encrypted storage"
+    echo "  yubikeys                       List registered YubiKey installations"
     echo
     echo "Examples:"
     echo "  keycutter gpg key list           # Show keys on current YubiKey"
     echo "  keycutter gpg key create         # Interactive master + subkey creation"
     echo "  keycutter gpg key create --yes   # Non-interactive with config defaults"
+    echo "  keycutter gpg key install        # Install to current YubiKey"
+    echo "  keycutter gpg key install --all  # Install to all connected YubiKeys"
     echo "  keycutter gpg setup              # Configure this host for GPG/YubiKey"
+    echo "  keycutter gpg yubikeys           # Show registered installations"
     echo
     [[ $# -eq 0 ]] && return 1 || return 0
   fi
@@ -1262,9 +1266,12 @@ keycutter-gpg() {
     backup)
       keycutter-gpg-backup "$@"
       ;;
+    yubikeys)
+      keycutter-gpg-yubikeys "$@"
+      ;;
     *)
       log "Error: Unknown gpg subcommand: $subcmd"
-      echo "Available subcommands: key, setup, backup"
+      echo "Available subcommands: key, setup, backup, yubikeys"
       return 1
       ;;
   esac
@@ -1688,6 +1695,8 @@ keycutter-gpg-key-install() {
   #   --passphrase PASS     Key passphrase for subkey operations (prompts if not specified)
   #   --admin-pin PIN       YubiKey admin PIN (default: 12345678)
   #   --force               Overwrite existing keys on YubiKey
+  #   --label LABEL         Label for the YubiKey (e.g., "Primary", "Backup")
+  #   --all                 Install to all connected YubiKeys (batch mode)
   #   --yes, -y             Non-interactive mode (requires all passphrases)
   #   -h, --help            Show this help message
   #
@@ -1696,6 +1705,7 @@ keycutter-gpg-key-install() {
   #   2. Decrypts and loads the selected backup into ephemeral GNUPGHOME
   #   3. Detects YubiKey and checks for existing keys
   #   4. Transfers Sign, Encrypt, Auth subkeys to YubiKey
+  #   5. Registers the installation in the YubiKey registry
   #
   # After install, the YubiKey will hold your subkeys and can be used for:
   #   - Git commit signing
@@ -1708,6 +1718,8 @@ keycutter-gpg-key-install() {
   local admin_pin="12345678"
   local force=false
   local non_interactive=false
+  local label=""
+  local install_all=false
 
   # Parse arguments
   while [[ $# -gt 0 ]]; do
@@ -1732,6 +1744,14 @@ keycutter-gpg-key-install() {
         force=true
         shift
         ;;
+      --label)
+        label="$2"
+        shift 2
+        ;;
+      --all)
+        install_all=true
+        shift
+        ;;
       --yes|-y)
         non_interactive=true
         shift
@@ -1747,20 +1767,38 @@ keycutter-gpg-key-install() {
         echo "  --passphrase PASS     Key passphrase for subkey operations"
         echo "  --admin-pin PIN       YubiKey admin PIN (default: factory default)"
         echo "  --force               Overwrite existing keys on YubiKey"
+        echo "  --label LABEL         Label for the YubiKey (e.g., 'Primary')"
+        echo "  --all                 Install to all connected YubiKeys"
         echo "  --yes, -y             Non-interactive mode"
         echo "  -h, --help            Show this help"
         echo
         echo "Examples:"
+        echo "  # Install to current YubiKey"
         echo "  keycutter gpg key install"
-        echo "  keycutter gpg key install --backup ~/gpg-backups/gpg-backup-2025-01-01-ABCD1234.tar.gz.gpg"
-        echo "  keycutter gpg key install --yes --backup FILE --backup-pass 'pass1' --passphrase 'pass2'"
+        echo
+        echo "  # Install with label"
+        echo "  keycutter gpg key install --label 'Primary YubiKey'"
+        echo
+        echo "  # Install to all connected YubiKeys (batch mode)"
+        echo "  keycutter gpg key install --all --yes --backup FILE \\"
+        echo "      --backup-pass 'pass1' --passphrase 'pass2'"
+        echo
+        echo "  # Non-interactive single install"
+        echo "  keycutter gpg key install --yes --backup FILE \\"
+        echo "      --backup-pass 'pass1' --passphrase 'pass2'"
         echo
         echo "This command will:"
         echo "  1. List available master key backups"
         echo "  2. Decrypt and load the selected backup"
-        echo "  3. Transfer subkeys to your YubiKey"
+        echo "  3. Transfer subkeys to your YubiKey(s)"
+        echo "  4. Register the installation in the YubiKey registry"
         echo
         echo "After install, your YubiKey can be used for signing, encryption, and SSH."
+        echo
+        echo "Multiple YubiKey Workflow:"
+        echo "  The same GPG key can be installed on multiple YubiKeys for redundancy."
+        echo "  Use --all to install to all connected YubiKeys at once."
+        echo "  View registered installations: keycutter gpg yubikeys"
         return 0
         ;;
       *)
@@ -1926,6 +1964,26 @@ keycutter-gpg-key-install() {
 
   log "Found $subkey_count subkeys ready for transfer"
 
+  # Handle batch installation (--all flag)
+  if [[ "$install_all" == true ]]; then
+    _keycutter_gpg_install_all_yubikeys "$fingerprint" "$passphrase" "$admin_pin" "$force" "$label"
+    return $?
+  fi
+
+  # Single YubiKey installation
+  _keycutter_gpg_install_single_yubikey "$fingerprint" "$passphrase" "$admin_pin" "$force" "$non_interactive" "$label"
+  return $?
+}
+
+_keycutter_gpg_install_single_yubikey() {
+  # Internal function to install to a single YubiKey
+  local fingerprint="$1"
+  local passphrase="$2"
+  local admin_pin="$3"
+  local force="$4"
+  local non_interactive="$5"
+  local label="$6"
+
   # Detect YubiKey
   echo
   log "Detecting YubiKey..."
@@ -1941,6 +1999,15 @@ keycutter-gpg-key-install() {
   local serial
   serial=$(gpg-yubikey-detect --quiet 2>/dev/null)
   log "YubiKey detected: $serial"
+
+  # Check if already registered with this key
+  if gpg-yubikey-registry-check --serial "$serial" --fingerprint "$fingerprint" 2>/dev/null; then
+    log "Note: This YubiKey is already registered with this GPG key"
+    if [[ "$force" != "true" ]]; then
+      echo "Use --force to reinstall"
+      return 1
+    fi
+  fi
 
   # Check if YubiKey already has keys
   local card_status
@@ -1991,6 +2058,16 @@ keycutter-gpg-key-install() {
     return 1
   fi
 
+  # Register the installation
+  local registry_args=(
+    --serial "$serial"
+    --fingerprint "$fingerprint"
+  )
+  if [[ -n "$label" ]]; then
+    registry_args+=(--label "$label")
+  fi
+  gpg-yubikey-registry-add "${registry_args[@]}"
+
   # Clean up ephemeral home (will be done by trap, but be explicit)
   echo
   log "Cleaning up ephemeral environment..."
@@ -2008,6 +2085,9 @@ keycutter-gpg-key-install() {
   echo "  YubiKey Serial: $serial"
   echo "  Key Fingerprint: ${fingerprint:0:16}..."
   echo "  Card Status: $final_status"
+  if [[ -n "$label" ]]; then
+    echo "  Label: $label"
+  fi
   echo
   log "Your YubiKey is now ready for:"
   echo "  - Git commit signing"
@@ -2015,7 +2095,160 @@ keycutter-gpg-key-install() {
   echo "  - File encryption/decryption"
   echo
   log "To configure host for GPG/YubiKey: keycutter gpg setup"
+  log "To view registered installations: keycutter gpg yubikeys"
 
+  return 0
+}
+
+_keycutter_gpg_install_all_yubikeys() {
+  # Internal function to install to all connected YubiKeys
+  local fingerprint="$1"
+  local passphrase="$2"
+  local admin_pin="$3"
+  local force="$4"
+  local label_prefix="$5"
+
+  echo
+  log "Batch installation mode: Installing to all connected YubiKeys"
+  echo
+
+  # Check for ykman (required for multi-YubiKey)
+  if ! command -v ykman &>/dev/null; then
+    log "Error: ykman (YubiKey Manager) is required for --all mode"
+    echo "Install with: brew install ykman (macOS) or apt install yubikey-manager (Ubuntu)"
+    return 1
+  fi
+
+  # Get list of connected YubiKeys
+  local yubikeys
+  yubikeys=$(gpg-yubikeys-list-available --quiet 2>/dev/null)
+
+  if [[ -z "$yubikeys" ]]; then
+    log "Error: No YubiKeys detected"
+    return 1
+  fi
+
+  local yubikey_count
+  yubikey_count=$(echo "$yubikeys" | wc -l | xargs)
+  log "Found $yubikey_count YubiKey(s)"
+
+  # List them
+  local idx=1
+  while read -r serial; do
+    local current_label=""
+    if [[ -n "$label_prefix" ]]; then
+      current_label="${label_prefix} #${idx}"
+    fi
+    echo "  [$idx] Serial: $serial"
+    if [[ -n "$current_label" ]]; then
+      echo "       Label: $current_label"
+    fi
+    idx=$((idx + 1))
+  done <<< "$yubikeys"
+  echo
+
+  log "This is a ONE-WAY operation - keys cannot be extracted from YubiKeys"
+  echo
+
+  if [[ "$force" != true ]]; then
+    read -rp "Install to all $yubikey_count YubiKey(s)? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy] ]]; then
+      log "Batch installation cancelled"
+      return 1
+    fi
+  fi
+
+  # Install to each YubiKey
+  local success_count=0
+  local fail_count=0
+  idx=1
+
+  while read -r serial; do
+    echo
+    log "=== Installing to YubiKey $idx/$yubikey_count (Serial: $serial) ==="
+
+    local current_label=""
+    if [[ -n "$label_prefix" ]]; then
+      current_label="${label_prefix} #${idx}"
+    fi
+
+    # For multi-YubiKey batch, we need to switch between them
+    # GPG only talks to one at a time, so user may need to physically swap
+    if [[ $idx -gt 1 ]]; then
+      echo
+      log "Please ensure YubiKey $serial is the active device"
+      log "(You may need to remove other YubiKeys temporarily)"
+      read -rp "Press Enter when ready..."
+      gpg-scdaemon-restart &>/dev/null
+      sleep 1
+    fi
+
+    # Check if already registered
+    if gpg-yubikey-registry-check --serial "$serial" --fingerprint "$fingerprint" 2>/dev/null; then
+      log "Note: YubiKey $serial is already registered with this key"
+      if [[ "$force" != true ]]; then
+        log "Skipping (use --force to reinstall)"
+        idx=$((idx + 1))
+        continue
+      fi
+    fi
+
+    # Check card status
+    local card_status
+    card_status=$(gpg-card-has-keys 2>/dev/null) || card_status="empty"
+
+    if [[ "$card_status" != "empty" && "$force" != true ]]; then
+      log "Warning: YubiKey $serial already has keys, skipping"
+      fail_count=$((fail_count + 1))
+      idx=$((idx + 1))
+      continue
+    fi
+
+    # Transfer
+    local transfer_args=(
+      --fingerprint "$fingerprint"
+      --passphrase "$passphrase"
+      --admin-pin "$admin_pin"
+    )
+
+    if [[ "$force" == true ]]; then
+      transfer_args+=(--force)
+    fi
+
+    if gpg-key-to-yubikey "${transfer_args[@]}"; then
+      # Register the installation
+      local registry_args=(
+        --serial "$serial"
+        --fingerprint "$fingerprint"
+      )
+      if [[ -n "$current_label" ]]; then
+        registry_args+=(--label "$current_label")
+      fi
+      gpg-yubikey-registry-add "${registry_args[@]}"
+
+      log "Success: Installed to YubiKey $serial"
+      success_count=$((success_count + 1))
+    else
+      log "Error: Failed to install to YubiKey $serial"
+      fail_count=$((fail_count + 1))
+    fi
+
+    idx=$((idx + 1))
+  done <<< "$yubikeys"
+
+  # Summary
+  echo
+  log "=== Batch Installation Summary ==="
+  echo
+  echo "  Total YubiKeys: $yubikey_count"
+  echo "  Successful:     $success_count"
+  echo "  Failed:         $fail_count"
+  echo
+  log "To view registered installations: keycutter gpg yubikeys"
+
+  if [[ $fail_count -gt 0 ]]; then
+    return 1
+  fi
   return 0
 }
 
@@ -2672,6 +2905,108 @@ keycutter-gpg-backup() {
   fi
 
   return 0
+}
+
+keycutter-gpg-yubikeys() {
+  # List and manage registered YubiKey installations
+  #
+  # Usage: keycutter gpg yubikeys [--fingerprint FP] [--json] [--quiet]
+  #
+  # This command shows all YubiKeys that have been registered with GPG keys
+  # via 'keycutter gpg key install'.
+
+  local fingerprint=""
+  local json_output=false
+  local quiet=false
+  local remove_serial=""
+  local list_connected=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --fingerprint)
+        fingerprint="$2"
+        shift 2
+        ;;
+      --json)
+        json_output=true
+        shift
+        ;;
+      --quiet|-q)
+        quiet=true
+        shift
+        ;;
+      --remove)
+        remove_serial="$2"
+        shift 2
+        ;;
+      --connected)
+        list_connected=true
+        shift
+        ;;
+      -h|--help)
+        echo "Usage: keycutter gpg yubikeys [options]"
+        echo
+        echo "List and manage registered YubiKey installations."
+        echo
+        echo "Options:"
+        echo "  --fingerprint FP    Filter by GPG key fingerprint"
+        echo "  --json              Output as JSON"
+        echo "  --quiet, -q         Output only serial numbers"
+        echo "  --connected         Show currently connected YubiKeys"
+        echo "  --remove SERIAL     Remove a YubiKey from the registry"
+        echo "  -h, --help          Show this help"
+        echo
+        echo "Examples:"
+        echo "  keycutter gpg yubikeys                    # List all registered installations"
+        echo "  keycutter gpg yubikeys --connected        # Show connected YubiKeys"
+        echo "  keycutter gpg yubikeys --fingerprint ABC  # Filter by fingerprint"
+        echo "  keycutter gpg yubikeys --remove 12345678  # Remove from registry"
+        echo
+        echo "The registry tracks which YubiKeys have GPG keys installed."
+        echo "This enables multi-YubiKey workflows where the same key is"
+        echo "installed on multiple devices for redundancy."
+        return 0
+        ;;
+      *)
+        log "Error: Unknown option: $1"
+        log "Use --help for usage information"
+        return 1
+        ;;
+    esac
+  done
+
+  # Source GPG library
+  source "${KEYCUTTER_ROOT}/lib/gpg"
+
+  # Handle --remove
+  if [[ -n "$remove_serial" ]]; then
+    gpg-yubikey-registry-remove --serial "$remove_serial"
+    return $?
+  fi
+
+  # Handle --connected
+  if [[ "$list_connected" == true ]]; then
+    gpg-yubikeys-list-available
+    return $?
+  fi
+
+  # Default: list registered installations
+  local list_args=()
+
+  if [[ -n "$fingerprint" ]]; then
+    list_args+=(--fingerprint "$fingerprint")
+  fi
+
+  if [[ "$json_output" == true ]]; then
+    list_args+=(--json)
+  fi
+
+  if [[ "$quiet" == true ]]; then
+    list_args+=(--quiet)
+  fi
+
+  gpg-yubikey-registry-list "${list_args[@]}"
+  return $?
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

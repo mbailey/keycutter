@@ -7,9 +7,10 @@ Complete reference for Keycutter's GPG commands.
 ```
 keycutter gpg key list [--all]              # List GPG keys on YubiKey
 keycutter gpg key create [options]          # Create master key + subkeys
-keycutter gpg key install [options]         # Install subkeys to YubiKey
+keycutter gpg key install [options]         # Install subkeys to YubiKey(s)
 keycutter gpg setup [options]               # Configure host for GPG
 keycutter gpg backup [options]              # Backup master key
+keycutter gpg yubikeys [options]            # List registered YubiKey installations
 ```
 
 ## keycutter gpg key list
@@ -104,7 +105,7 @@ keycutter gpg key create --subkeys --fingerprint ABC123...
 
 ## keycutter gpg key install
 
-Install GPG subkeys from a master key backup to a YubiKey. This transfers the Sign, Encrypt, and Auth subkeys to the YubiKey's OpenPGP applet.
+Install GPG subkeys from a master key backup to one or more YubiKeys. This transfers the Sign, Encrypt, and Auth subkeys to the YubiKey's OpenPGP applet.
 
 ### Usage
 
@@ -121,13 +122,18 @@ keycutter gpg key install [options]
 | `--passphrase PASS` | Key passphrase for operations | Prompted |
 | `--admin-pin PIN` | YubiKey admin PIN | `12345678` |
 | `--force` | Overwrite existing keys on YubiKey | Prompt |
+| `--label LABEL` | Label for the YubiKey (e.g., "Primary") | None |
+| `--all` | Install to all connected YubiKeys | Single YubiKey |
 | `--yes`, `-y` | Non-interactive mode | Interactive |
 
 ### Examples
 
 ```bash
-# Interactive installation
+# Interactive installation to current YubiKey
 keycutter gpg key install
+
+# Install with a descriptive label
+keycutter gpg key install --label "Primary YubiKey"
 
 # Non-interactive from specific backup
 keycutter gpg key install \
@@ -136,6 +142,13 @@ keycutter gpg key install \
   --passphrase "key-passphrase" \
   --admin-pin "12345678" \
   --yes
+
+# Install to all connected YubiKeys (batch mode)
+keycutter gpg key install --all \
+  --backup /path/to/backup.tar.gz.gpg \
+  --backup-pass "backup-passphrase" \
+  --passphrase "key-passphrase" \
+  --yes
 ```
 
 ### Prerequisites
@@ -143,12 +156,14 @@ keycutter gpg key install \
 - YubiKey inserted with OpenPGP applet enabled
 - pcscd service running (Linux)
 - Master key backup available
+- `ykman` (YubiKey Manager) installed for `--all` mode
 
 ### Notes
 
 - Subkeys are **moved** to the YubiKey (not copied)
 - After transfer, operations require the physical YubiKey
 - Use `--force` to overwrite existing keys on the YubiKey
+- Each installation is registered in the YubiKey registry (see `keycutter gpg yubikeys`)
 
 ## keycutter gpg setup
 
@@ -255,6 +270,83 @@ The encrypted `.tar.gz.gpg` archive contains:
 - Store backups offline in secure locations
 - Consider multiple backup copies in different locations
 - Test backup restoration periodically
+
+## keycutter gpg yubikeys
+
+List and manage registered YubiKey installations. This command shows which YubiKeys have GPG keys installed via `keycutter gpg key install`.
+
+### Usage
+
+```bash
+keycutter gpg yubikeys [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--fingerprint FP` | Filter by GPG key fingerprint |
+| `--json` | Output as JSON |
+| `--quiet`, `-q` | Output only serial numbers |
+| `--connected` | Show currently connected YubiKeys |
+| `--remove SERIAL` | Remove a YubiKey from the registry |
+
+### Examples
+
+```bash
+# List all registered installations
+keycutter gpg yubikeys
+
+# Show currently connected YubiKeys
+keycutter gpg yubikeys --connected
+
+# Filter by fingerprint
+keycutter gpg yubikeys --fingerprint ABC123...
+
+# Output as JSON for scripting
+keycutter gpg yubikeys --json
+
+# Remove a YubiKey from the registry
+keycutter gpg yubikeys --remove 12345678
+```
+
+### Registry File
+
+The registry is stored at `~/.config/keycutter/gpg-yubikeys.json` and tracks:
+
+- YubiKey serial number
+- GPG key fingerprint
+- Installation date
+- Optional label
+
+### Multiple YubiKey Workflow
+
+Installing the same GPG key on multiple YubiKeys provides:
+
+- **Redundancy** - If one YubiKey is lost or damaged, you can continue using another
+- **Convenience** - Keep one at work, one at home, one for travel
+- **Business continuity** - Team members can share encrypted files
+
+Typical workflow:
+
+```bash
+# Create and backup your master key
+keycutter gpg key create
+keycutter gpg backup
+
+# Install to your primary YubiKey
+keycutter gpg key install --label "Primary"
+
+# Install to backup YubiKeys
+keycutter gpg key install --label "Backup 1"
+keycutter gpg key install --label "Backup 2"
+
+# Or install to all connected YubiKeys at once
+keycutter gpg key install --all --label "Work Keys"
+
+# View all registered installations
+keycutter gpg yubikeys
+```
 
 ## See Also
 
