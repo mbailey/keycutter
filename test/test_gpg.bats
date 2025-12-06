@@ -648,3 +648,95 @@ uid:::::::Test User <test@example.com>::::::::::0:"
     [ "$status" -eq 1 ]
     [[ "$output" =~ "--passphrase required" ]]
 }
+
+# ============================================================================
+# gpg-subkeys-create tests
+# ============================================================================
+
+@test "gpg-subkeys-create requires --fingerprint" {
+    gpg-home-temp-create >/dev/null
+
+    run gpg-subkeys-create --passphrase "testpass123"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--fingerprint is required" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-subkeys-create requires --passphrase" {
+    gpg-home-temp-create >/dev/null
+
+    run gpg-subkeys-create --fingerprint "ABCD1234567890EF"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--passphrase is required" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-subkeys-create requires GNUPGHOME" {
+    unset GNUPGHOME
+    _GPG_EPHEMERAL_HOME=""
+
+    run gpg-subkeys-create --fingerprint "ABCD1234567890EF" --passphrase "testpass123"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "GNUPGHOME not set" ]]
+}
+
+@test "gpg-subkeys-create validates key type" {
+    gpg-home-temp-create >/dev/null
+
+    run gpg-subkeys-create --fingerprint "ABCD1234567890EF" --passphrase "testpass123" --key-type "invalid_type"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Invalid key type" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-subkeys-create accepts ed25519 key type" {
+    gpg-home-temp-create >/dev/null
+
+    # Test that ed25519 doesn't trigger "Invalid key type" error
+    run gpg-subkeys-create --fingerprint "ABCD1234567890EF" --passphrase "testpass123" --key-type "ed25519"
+
+    # Should NOT fail with "Invalid key type" - will fail for other reasons (no master key)
+    [[ ! "$output" =~ "Invalid key type" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-subkeys-create accepts rsa4096 key type" {
+    gpg-home-temp-create >/dev/null
+
+    run gpg-subkeys-create --fingerprint "ABCD1234567890EF" --passphrase "testpass123" --key-type "rsa4096"
+
+    # Should NOT fail with "Invalid key type"
+    [[ ! "$output" =~ "Invalid key type" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-subkeys-create fails when master key not found" {
+    gpg-home-temp-create >/dev/null
+
+    run gpg-subkeys-create --fingerprint "NONEXISTENT1234567890" --passphrase "testpass123"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Master key not found" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-subkeys-create uses config defaults for key type and expiration" {
+    # Test that config defaults are loaded correctly
+    gpg-home-temp-create >/dev/null
+
+    # Load config and verify defaults
+    gpg-config-load
+    local default_type=$(gpg-config-get GPG_KEY_TYPE "")
+    local default_expiration=$(gpg-config-get GPG_EXPIRATION "")
+
+    # Verify the defaults match what we expect
+    [ "$default_type" = "ed25519" ]
+    [ "$default_expiration" = "2y" ]
+
+    gpg-home-temp-cleanup
+}

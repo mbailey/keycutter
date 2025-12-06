@@ -15,6 +15,7 @@
 #
 # Key Creation:
 # - gpg-master-key-create(): Create master (Certify) key in ephemeral GNUPGHOME
+# - gpg-subkeys-create(): Create Sign, Encrypt, Auth subkeys for master key
 # - gpg-identity-prompt(): Interactive prompt for user identity
 # - gpg-passphrase-prompt(): Interactive prompt for passphrase with confirmation
 #
@@ -492,6 +493,148 @@ EOF
 
     log "Success: Master key created"
     echo "$fingerprint"
+    return 0
+}
+
+gpg-subkeys-create() {
+    # Create subkeys (Sign, Encrypt, Auth) for an existing master key
+    #
+    # This function generates the three operational subkeys that will be
+    # transferred to YubiKey. The master key (Certify only) remains secure
+    # in the ephemeral GNUPGHOME or backup storage.
+    #
+    # Arguments:
+    #   --fingerprint  Master key fingerprint (required)
+    #   --key-type     Algorithm: ed25519 (default) or rsa4096
+    #   --expiration   Expiration period: 2y (default), 1y, etc.
+    #   --passphrase   Passphrase for the master key (required)
+    #
+    # Returns:
+    #   0 on success (all 3 subkeys created)
+    #   1 on failure
+    #
+    # Output:
+    #   Prints subkey fingerprints on success
+    #
+    # Environment:
+    #   GNUPGHOME must be set and contain the master key
+    #
+    # Example:
+    #   gpg-subkeys-create --fingerprint "$FP" --passphrase "$PASS"
+
+    local fingerprint=""
+    local key_type=""
+    local expiration=""
+    local passphrase=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --key-type)
+                key_type="$2"
+                shift 2
+                ;;
+            --expiration)
+                expiration="$2"
+                shift 2
+                ;;
+            --passphrase)
+                passphrase="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Load config for defaults
+    gpg-config-load
+
+    # Use provided values or fall back to config
+    key_type="${key_type:-$(gpg-config-get GPG_KEY_TYPE ed25519)}"
+    expiration="${expiration:-$(gpg-config-get GPG_EXPIRATION 2y)}"
+
+    # Validate required parameters
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: --fingerprint is required"
+        return 1
+    fi
+
+    if [[ -z "$passphrase" ]]; then
+        log "Error: --passphrase is required for batch subkey creation"
+        return 1
+    fi
+
+    # Validate GNUPGHOME is set
+    if [[ -z "${GNUPGHOME:-}" ]]; then
+        log "Error: GNUPGHOME not set"
+        return 1
+    fi
+
+    if [[ ! -d "$GNUPGHOME" ]]; then
+        log "Error: GNUPGHOME directory does not exist: $GNUPGHOME"
+        return 1
+    fi
+
+    # Validate key type
+    case "$key_type" in
+        ed25519|rsa4096|rsa3072)
+            ;;
+        *)
+            log "Error: Invalid key type: $key_type"
+            log "Supported types: ed25519, rsa4096, rsa3072"
+            return 1
+            ;;
+    esac
+
+    # Verify master key exists in GNUPGHOME
+    if ! gpg --homedir "$GNUPGHOME" --list-keys "$fingerprint" &>/dev/null; then
+        log "Error: Master key not found: $fingerprint"
+        return 1
+    fi
+
+    log "Creating subkeys for master key: ${fingerprint:0:16}..."
+    log "Key type: $key_type, Expiration: $expiration"
+
+    # Subkey capabilities to create
+    local subkeys=("sign" "encrypt" "auth")
+    local created_count=0
+
+    for subkey in "${subkeys[@]}"; do
+        log "Creating $subkey subkey..."
+
+        if gpg --homedir "$GNUPGHOME" \
+               --batch \
+               --pinentry-mode loopback \
+               --passphrase "$passphrase" \
+               --quick-add-key "$fingerprint" "$key_type" "$subkey" "$expiration" 2>&1; then
+            log "Success: $subkey subkey created"
+            created_count=$((created_count + 1))
+        else
+            log "Error: Failed to create $subkey subkey"
+            return 1
+        fi
+    done
+
+    # Verify all subkeys were created
+    if [[ $created_count -ne 3 ]]; then
+        log "Error: Expected 3 subkeys, created $created_count"
+        return 1
+    fi
+
+    # List the subkeys we created
+    local subkey_info
+    subkey_info=$(gpg --homedir "$GNUPGHOME" --list-keys --with-colons "$fingerprint" 2>/dev/null | \
+        awk -F: '/^sub:/ { print $5 }')
+
+    log "Success: All subkeys created"
+    echo "$subkey_info"
     return 0
 }
 
