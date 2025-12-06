@@ -154,8 +154,8 @@
         "Add functions to change admin PIN and user PIN",
         "Handle case where YubiKey already has keys"
       ],
-      "status": "failing",
-      "last_updated": null
+      "status": "passing",
+      "last_updated": "2025-12-06"
     },
     {
       "id": "gpg-011",

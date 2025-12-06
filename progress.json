@@ -3,8 +3,8 @@
   "task_id": "KC-15",
   "started": "2025-12-06",
   "current_phase": "implementation",
-  "current_feature": "gpg-010",
-  "features_completed": 9,
+  "current_feature": "gpg-011",
+  "features_completed": 10,
   "features_total": 20,
   "sessions": [
     {
@@ -69,6 +69,13 @@
         "gpg-009"
       ],
       "notes": "Implemented 'keycutter gpg backup' CLI command. Lists available keys in GNUPGHOME for selection, prompts for backup destination with GPG_BACKUP_DIR config default, creates encrypted backup via gpg-key-backup, and registers backup location in user config (~/.config/keycutter/gpg.conf). Supports interactive and non-interactive (--yes) modes with --fingerprint, --output-dir, --passphrase, --backup-pass options. Added 11 BATS tests for CLI command."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-010"
+      ],
+      "notes": "Implemented YubiKey detection and PIN management functions: gpg-pcscd-ensure (service management for Linux), gpg-scdaemon-restart (smartcard daemon refresh), gpg-yubikey-detect (with retry logic, --retries, --delay, --quiet options), gpg-yubikey-openpgp-enabled (checks if OpenPGP app enabled), gpg-card-has-keys (returns 'empty'/'partial'/'full'), gpg-pin-generate (random PIN generation with --type admin/user, --length), gpg-pin-change-admin/user (PIN management with factory defaults), gpg-card-reset (reset via ykman or gpg-connect-agent APDU). Added 30 BATS tests for all new functions."
     }
   ],
   "context_summaries": {

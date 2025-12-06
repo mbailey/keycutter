@@ -26,6 +26,19 @@
 # Backup:
 # - gpg-key-backup(): Create encrypted backup of master key and subkeys
 # - gpg-backup-readme-generate(): Generate README with restore instructions
+#
+# YubiKey Detection and Service Management:
+# - gpg-pcscd-ensure(): Ensure pcscd service is running
+# - gpg-scdaemon-restart(): Restart scdaemon for smartcard refresh
+# - gpg-yubikey-detect(): Detect YubiKey with retry logic
+# - gpg-yubikey-openpgp-enabled(): Check if OpenPGP is enabled on YubiKey
+# - gpg-card-has-keys(): Check if YubiKey has GPG keys installed
+#
+# PIN Management:
+# - gpg-pin-generate(): Generate secure random PIN
+# - gpg-pin-change-admin(): Change YubiKey admin PIN
+# - gpg-pin-change-user(): Change YubiKey user PIN
+# - gpg-card-reset(): Reset OpenPGP application on YubiKey
 
 KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/utils"
@@ -1198,4 +1211,551 @@ gpg-master-keys-list() {
 
     echo "  Found $found_keys master key(s)"
     return 0
+}
+
+# =============================================================================
+# YubiKey Detection and Service Management (gpg-010)
+# =============================================================================
+
+gpg-pcscd-ensure() {
+    # Ensure pcscd service is running (required for smartcard access)
+    #
+    # This function checks if pcscd is running and starts it if needed.
+    # On macOS, pcscd is typically managed by the system.
+    # On Linux, it may need to be started via systemctl or service.
+    #
+    # Returns:
+    #   0 if pcscd is running or successfully started
+    #   1 if pcscd cannot be started
+
+    # Check if pcscd is needed - skip on macOS where it's automatic
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS handles smartcard daemon automatically
+        return 0
+    fi
+
+    # On Linux, check and start pcscd if needed
+    if command -v systemctl &>/dev/null; then
+        if ! systemctl is-active --quiet pcscd; then
+            log "Starting pcscd service..."
+            if ! sudo systemctl start pcscd; then
+                log "Error: Failed to start pcscd service"
+                echo "Try: sudo systemctl start pcscd"
+                return 1
+            fi
+            sleep 1
+        fi
+    elif command -v service &>/dev/null; then
+        if ! service pcscd status &>/dev/null; then
+            log "Starting pcscd service..."
+            if ! sudo service pcscd start; then
+                log "Error: Failed to start pcscd service"
+                return 1
+            fi
+            sleep 1
+        fi
+    fi
+
+    return 0
+}
+
+gpg-scdaemon-restart() {
+    # Restart scdaemon to refresh smartcard connection
+    #
+    # scdaemon is the GPG smartcard daemon that communicates with the YubiKey.
+    # Sometimes it needs to be restarted after the YubiKey is inserted or
+    # after configuration changes.
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local gpg_home="${GNUPGHOME:-$HOME/.gnupg}"
+
+    log "Restarting scdaemon..."
+
+    # Kill existing scdaemon
+    gpgconf --kill scdaemon 2>/dev/null || true
+
+    # Brief pause for cleanup
+    sleep 0.5
+
+    # Restart via gpg-connect-agent
+    if ! gpg-connect-agent "SCD RESTART" /bye &>/dev/null; then
+        # Try alternative method - just trigger card access
+        gpg --card-status &>/dev/null || true
+    fi
+
+    sleep 0.5
+    return 0
+}
+
+gpg-yubikey-detect() {
+    # Detect YubiKey with OpenPGP application
+    #
+    # This function attempts to detect a YubiKey with OpenPGP support.
+    # It uses retry logic since the YubiKey may take a moment to be recognized
+    # after insertion.
+    #
+    # Arguments:
+    #   --retries N   Number of retry attempts (default: 3)
+    #   --delay N     Delay between retries in seconds (default: 2)
+    #   --quiet       Suppress status messages
+    #
+    # Returns:
+    #   0 if YubiKey with OpenPGP detected
+    #   1 if no YubiKey found
+    #
+    # Output:
+    #   Prints serial number on success (unless --quiet)
+
+    local retries=3
+    local delay=2
+    local quiet=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --retries)
+                retries="$2"
+                shift 2
+                ;;
+            --delay)
+                delay="$2"
+                shift 2
+                ;;
+            --quiet)
+                quiet=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Ensure pcscd is running
+    gpg-pcscd-ensure || return 1
+
+    local attempt=1
+    local card_status serial_number
+
+    while [[ $attempt -le $retries ]]; do
+        # Try to get card status
+        if card_status=$(gpg --card-status 2>&1); then
+            # Extract serial number
+            serial_number=$(echo "$card_status" | grep "^Serial number" | awk '{print $NF}')
+
+            if [[ -n "$serial_number" ]]; then
+                if [[ "$quiet" != "true" ]]; then
+                    log "YubiKey detected: $serial_number"
+                fi
+                echo "$serial_number"
+                return 0
+            fi
+        fi
+
+        # Not found yet
+        if [[ "$quiet" != "true" && $attempt -lt $retries ]]; then
+            log "Attempt $attempt/$retries: YubiKey not detected, retrying in ${delay}s..."
+        fi
+
+        if [[ $attempt -lt $retries ]]; then
+            sleep "$delay"
+            # Restart scdaemon between attempts
+            gpg-scdaemon-restart &>/dev/null
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    if [[ "$quiet" != "true" ]]; then
+        log "Error: YubiKey with OpenPGP not detected"
+        echo "Troubleshooting:"
+        echo "  - Ensure YubiKey is inserted"
+        echo "  - Try removing and reinserting the YubiKey"
+        echo "  - Check: ykman list"
+        echo "  - Check: gpg --card-status"
+    fi
+    return 1
+}
+
+gpg-yubikey-openpgp-enabled() {
+    # Check if OpenPGP application is enabled on YubiKey
+    #
+    # Requires ykman (YubiKey Manager) to be installed.
+    #
+    # Returns:
+    #   0 if OpenPGP is enabled
+    #   1 if OpenPGP is disabled or ykman not available
+
+    if ! command -v ykman &>/dev/null; then
+        log "Warning: ykman not installed, cannot check OpenPGP status"
+        # Fall back to gpg --card-status test
+        if gpg --card-status &>/dev/null; then
+            return 0
+        fi
+        return 1
+    fi
+
+    if ykman info 2>/dev/null | grep -q "OpenPGP.*Enabled"; then
+        return 0
+    else
+        log "OpenPGP application is not enabled on YubiKey"
+        echo "Enable with: ykman config usb --enable OPENPGP"
+        return 1
+    fi
+}
+
+gpg-card-has-keys() {
+    # Check if the YubiKey already has GPG keys installed
+    #
+    # Returns:
+    #   0 if keys are present
+    #   1 if no keys or card not accessible
+    #
+    # Output:
+    #   Prints "empty", "partial", or "full" to indicate key status
+
+    local card_status
+    card_status=$(gpg --card-status 2>&1) || return 1
+
+    local sig_key enc_key auth_key
+    sig_key=$(echo "$card_status" | grep "^Signature key" | grep -v "\[none\]")
+    enc_key=$(echo "$card_status" | grep "^Encryption key" | grep -v "\[none\]")
+    auth_key=$(echo "$card_status" | grep "^Authentication key" | grep -v "\[none\]")
+
+    local key_count=0
+    [[ -n "$sig_key" ]] && key_count=$((key_count + 1))
+    [[ -n "$enc_key" ]] && key_count=$((key_count + 1))
+    [[ -n "$auth_key" ]] && key_count=$((key_count + 1))
+
+    if [[ $key_count -eq 0 ]]; then
+        echo "empty"
+        return 1
+    elif [[ $key_count -eq 3 ]]; then
+        echo "full"
+        return 0
+    else
+        echo "partial"
+        return 0
+    fi
+}
+
+# =============================================================================
+# PIN Management Functions (gpg-010)
+# =============================================================================
+
+gpg-pin-generate() {
+    # Generate a secure random PIN
+    #
+    # Arguments:
+    #   --length N    PIN length (default: 8 for admin, 6 for user)
+    #   --type TYPE   "admin" (8 digits) or "user" (6 digits)
+    #
+    # Returns:
+    #   0 on success
+    #
+    # Output:
+    #   Prints the generated PIN
+
+    local length=""
+    local pin_type="user"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --length)
+                length="$2"
+                shift 2
+                ;;
+            --type)
+                pin_type="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Set default length based on type
+    if [[ -z "$length" ]]; then
+        case "$pin_type" in
+            admin) length=8 ;;
+            user)  length=6 ;;
+            *)
+                log "Error: Unknown PIN type: $pin_type"
+                return 1
+                ;;
+        esac
+    fi
+
+    # Generate random PIN using /dev/urandom
+    local pin
+    pin=$(LC_ALL=C tr -dc '0-9' < /dev/urandom | fold -w"$length" | head -1)
+
+    echo "$pin"
+    return 0
+}
+
+gpg-pin-change-admin() {
+    # Change the YubiKey admin PIN
+    #
+    # The admin PIN is used for administrative operations like transferring
+    # keys to the card. Default factory admin PIN is 12345678.
+    #
+    # Arguments:
+    #   --old-pin PIN     Current admin PIN (default: 12345678)
+    #   --new-pin PIN     New admin PIN (will prompt if not provided)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Note: Admin PIN must be 8-127 characters.
+    #       3 incorrect attempts will DESTROY data on YubiKey!
+
+    local old_pin="12345678"  # Factory default
+    local new_pin=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --old-pin)
+                old_pin="$2"
+                shift 2
+                ;;
+            --new-pin)
+                new_pin="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Validate new PIN length
+    if [[ -n "$new_pin" && ${#new_pin} -lt 8 ]]; then
+        log "Error: Admin PIN must be at least 8 characters"
+        return 1
+    fi
+
+    # Prompt for new PIN if not provided
+    if [[ -z "$new_pin" ]]; then
+        echo
+        echo "Enter new admin PIN (minimum 8 characters):"
+        read -rsp "  New admin PIN: " new_pin
+        echo
+        if [[ ${#new_pin} -lt 8 ]]; then
+            log "Error: Admin PIN must be at least 8 characters"
+            return 1
+        fi
+        local confirm_pin
+        read -rsp "  Confirm PIN: " confirm_pin
+        echo
+        if [[ "$new_pin" != "$confirm_pin" ]]; then
+            log "Error: PINs do not match"
+            return 1
+        fi
+    fi
+
+    log "Changing admin PIN..."
+
+    # Use gpg --change-pin with command-fd for non-interactive operation
+    # Menu option 3 = Change Admin PIN
+    if echo -e "3\n${old_pin}\n${new_pin}\n${new_pin}\nq\n" | \
+       gpg --command-fd=0 --pinentry-mode=loopback --change-pin 2>&1; then
+        log "Success: Admin PIN changed"
+        return 0
+    else
+        log "Error: Failed to change admin PIN"
+        echo "Note: 3 incorrect admin PIN attempts will destroy data on YubiKey"
+        return 1
+    fi
+}
+
+gpg-pin-change-user() {
+    # Change the YubiKey user PIN
+    #
+    # The user PIN is used for signing and decryption operations.
+    # Default factory user PIN is 123456.
+    #
+    # Arguments:
+    #   --old-pin PIN     Current user PIN (default: 123456)
+    #   --new-pin PIN     New user PIN (will prompt if not provided)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Note: User PIN must be 6-127 characters.
+    #       3 incorrect attempts will require admin PIN to unblock.
+
+    local old_pin="123456"  # Factory default
+    local new_pin=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --old-pin)
+                old_pin="$2"
+                shift 2
+                ;;
+            --new-pin)
+                new_pin="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Validate new PIN length
+    if [[ -n "$new_pin" && ${#new_pin} -lt 6 ]]; then
+        log "Error: User PIN must be at least 6 characters"
+        return 1
+    fi
+
+    # Prompt for new PIN if not provided
+    if [[ -z "$new_pin" ]]; then
+        echo
+        echo "Enter new user PIN (minimum 6 characters):"
+        read -rsp "  New user PIN: " new_pin
+        echo
+        if [[ ${#new_pin} -lt 6 ]]; then
+            log "Error: User PIN must be at least 6 characters"
+            return 1
+        fi
+        local confirm_pin
+        read -rsp "  Confirm PIN: " confirm_pin
+        echo
+        if [[ "$new_pin" != "$confirm_pin" ]]; then
+            log "Error: PINs do not match"
+            return 1
+        fi
+    fi
+
+    log "Changing user PIN..."
+
+    # Use gpg --change-pin with command-fd for non-interactive operation
+    # Menu option 1 = Change User PIN
+    if echo -e "1\n${old_pin}\n${new_pin}\n${new_pin}\nq\n" | \
+       gpg --command-fd=0 --pinentry-mode=loopback --change-pin 2>&1; then
+        log "Success: User PIN changed"
+        return 0
+    else
+        log "Error: Failed to change user PIN"
+        echo "Note: 3 incorrect user PIN attempts will require admin PIN to unblock"
+        return 1
+    fi
+}
+
+gpg-card-reset() {
+    # Reset GPG keys on YubiKey (preserves other YubiKey settings)
+    #
+    # This function resets only the OpenPGP application on the YubiKey,
+    # removing all GPG keys but preserving other settings and applications.
+    #
+    # Arguments:
+    #   --force   Skip confirmation prompt
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure or user cancellation
+    #
+    # WARNING: This will delete all GPG keys on the YubiKey!
+
+    local force=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force)
+                force=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Detect YubiKey first
+    if ! gpg-yubikey-detect --quiet &>/dev/null; then
+        log "Error: No YubiKey detected"
+        return 1
+    fi
+
+    # Confirmation prompt
+    if [[ "$force" != "true" ]]; then
+        echo
+        echo "WARNING: This will delete ALL GPG keys on the YubiKey!"
+        echo "This action cannot be undone."
+        echo
+        read -rp "Type 'RESET' to confirm: " confirm
+        if [[ "$confirm" != "RESET" ]]; then
+            log "Reset cancelled"
+            return 1
+        fi
+    fi
+
+    log "Resetting OpenPGP application on YubiKey..."
+
+    # Prefer ykman if available (more reliable)
+    if command -v ykman &>/dev/null; then
+        if ykman openpgp reset --force 2>&1; then
+            log "Success: OpenPGP application reset"
+            echo "Default PINs have been restored:"
+            echo "  User PIN:  123456"
+            echo "  Admin PIN: 12345678"
+            return 0
+        else
+            log "Error: Failed to reset OpenPGP application"
+            return 1
+        fi
+    fi
+
+    # Fall back to gpg-connect-agent method
+    log "Using gpg-connect-agent to reset (ykman not available)..."
+
+    # This sequence intentionally triggers PIN lockout to force reset
+    # Ref: https://github.com/drduh/YubiKey-Guide
+    if gpg-connect-agent -r <<'EOF' 2>&1
+/hex
+scd serialno
+scd apdu 00 20 00 81 08 40 40 40 40 40 40 40 40
+scd apdu 00 20 00 81 08 40 40 40 40 40 40 40 40
+scd apdu 00 20 00 81 08 40 40 40 40 40 40 40 40
+scd apdu 00 20 00 81 08 40 40 40 40 40 40 40 40
+scd apdu 00 20 00 83 08 40 40 40 40 40 40 40 40
+scd apdu 00 20 00 83 08 40 40 40 40 40 40 40 40
+scd apdu 00 20 00 83 08 40 40 40 40 40 40 40 40
+scd apdu 00 20 00 83 08 40 40 40 40 40 40 40 40
+scd apdu 00 e6 00 00
+scd apdu 00 44 00 00
+/echo Card has been reset
+/bye
+EOF
+    then
+        log "Success: OpenPGP application reset"
+        echo "Default PINs have been restored:"
+        echo "  User PIN:  123456"
+        echo "  Admin PIN: 12345678"
+
+        # Restart scdaemon to pick up changes
+        gpg-scdaemon-restart
+
+        return 0
+    else
+        log "Error: Failed to reset OpenPGP application"
+        return 1
+    fi
 }

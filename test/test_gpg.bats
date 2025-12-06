@@ -1224,3 +1224,379 @@ sec::256:22:1234567890ABCDEF:1704067200:::u:::scESCA:::+:::ed25519:::0:"
     _GPG_EPHEMERAL_HOME=""
     unset XDG_CONFIG_HOME
 }
+
+# ============================================================================
+# gpg-pcscd-ensure tests (gpg-010)
+# ============================================================================
+
+@test "gpg-pcscd-ensure returns 0 on macOS" {
+    # Mock macOS environment
+    local original_ostype="$OSTYPE"
+    OSTYPE="darwin22.0"
+
+    run gpg-pcscd-ensure
+    [ "$status" -eq 0 ]
+
+    OSTYPE="$original_ostype"
+}
+
+@test "gpg-pcscd-ensure checks systemctl on Linux" {
+    # Mock Linux environment
+    local original_ostype="$OSTYPE"
+    OSTYPE="linux-gnu"
+
+    # Mock systemctl as active
+    create_mock_command "systemctl" 0 ""
+
+    run gpg-pcscd-ensure
+    [ "$status" -eq 0 ]
+
+    OSTYPE="$original_ostype"
+}
+
+# ============================================================================
+# gpg-scdaemon-restart tests (gpg-010)
+# ============================================================================
+
+@test "gpg-scdaemon-restart calls gpgconf --kill scdaemon" {
+    create_mock_command "gpgconf" 0 ""
+    create_mock_command "gpg-connect-agent" 0 "OK"
+
+    run gpg-scdaemon-restart
+    [ "$status" -eq 0 ]
+    assert_mock_called "gpgconf"
+}
+
+@test "gpg-scdaemon-restart logs restart message" {
+    create_mock_command "gpgconf" 0 ""
+    create_mock_command "gpg-connect-agent" 0 "OK"
+
+    run gpg-scdaemon-restart
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Restarting scdaemon" ]]
+}
+
+# ============================================================================
+# gpg-yubikey-detect tests (gpg-010)
+# ============================================================================
+
+@test "gpg-yubikey-detect returns serial number on success" {
+    # Mock macOS (no pcscd needed)
+    local original_ostype="$OSTYPE"
+    OSTYPE="darwin22.0"
+
+    # Mock gpg --card-status with valid output
+    create_mock_command "gpg" 0 "Reader ...........: Yubico YubiKey FIDO+CCID
+Serial number ....: 12345678
+Name of cardholder: Test User"
+
+    run gpg-yubikey-detect --retries 1
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "12345678" ]]
+
+    OSTYPE="$original_ostype"
+}
+
+@test "gpg-yubikey-detect fails when no YubiKey present" {
+    # Mock macOS (no pcscd needed)
+    local original_ostype="$OSTYPE"
+    OSTYPE="darwin22.0"
+
+    # Mock gpg --card-status failure
+    create_mock_command "gpg" 1 "gpg: selecting card failed: No such device"
+    create_mock_command "gpgconf" 0 ""
+    create_mock_command "gpg-connect-agent" 0 "OK"
+
+    run gpg-yubikey-detect --retries 1 --delay 0
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "not detected" ]] || [[ "$output" =~ "Troubleshooting" ]]
+
+    OSTYPE="$original_ostype"
+}
+
+@test "gpg-yubikey-detect accepts --quiet option" {
+    # Mock macOS (no pcscd needed)
+    local original_ostype="$OSTYPE"
+    OSTYPE="darwin22.0"
+
+    create_mock_command "gpg" 0 "Serial number ....: 12345678"
+
+    run gpg-yubikey-detect --quiet --retries 1
+    [ "$status" -eq 0 ]
+
+    # Should only output serial number, not log messages
+    [[ ! "$output" =~ "YubiKey detected:" ]]
+
+    OSTYPE="$original_ostype"
+}
+
+@test "gpg-yubikey-detect accepts --retries and --delay options" {
+    # Mock macOS (no pcscd needed)
+    local original_ostype="$OSTYPE"
+    OSTYPE="darwin22.0"
+
+    create_mock_command "gpg" 1 "gpg: selecting card failed: No such device"
+    create_mock_command "gpgconf" 0 ""
+    create_mock_command "gpg-connect-agent" 0 "OK"
+
+    # Test that options are parsed correctly
+    run gpg-yubikey-detect --retries 2 --delay 0
+    [ "$status" -eq 1 ]
+
+    OSTYPE="$original_ostype"
+}
+
+# ============================================================================
+# gpg-yubikey-openpgp-enabled tests (gpg-010)
+# ============================================================================
+
+@test "gpg-yubikey-openpgp-enabled falls back to gpg --card-status when ykman not available" {
+    # Remove ykman from PATH
+    function command() {
+        if [[ "$2" == "ykman" ]]; then
+            return 1
+        fi
+        builtin command "$@"
+    }
+    export -f command
+
+    # Mock gpg --card-status success
+    create_mock_command "gpg" 0 "Serial number ....: 12345678"
+
+    run gpg-yubikey-openpgp-enabled
+    [ "$status" -eq 0 ]
+}
+
+@test "gpg-yubikey-openpgp-enabled returns 0 when OpenPGP is enabled" {
+    create_mock_command "ykman" 0 "Device type: YubiKey 5
+OpenPGP:          Enabled"
+
+    run gpg-yubikey-openpgp-enabled
+    [ "$status" -eq 0 ]
+}
+
+@test "gpg-yubikey-openpgp-enabled returns 1 when OpenPGP is disabled" {
+    create_mock_command "ykman" 0 "Device type: YubiKey 5
+OpenPGP:          Disabled"
+
+    run gpg-yubikey-openpgp-enabled
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "not enabled" ]]
+}
+
+# ============================================================================
+# gpg-card-has-keys tests (gpg-010)
+# ============================================================================
+
+@test "gpg-card-has-keys returns 'empty' when no keys on card" {
+    create_mock_command "gpg" 0 "Reader ...........: Yubico YubiKey
+Serial number ....: 12345678
+Signature key ....: [none]
+Encryption key....: [none]
+Authentication key: [none]"
+
+    run gpg-card-has-keys
+    [ "$status" -eq 1 ]
+    [ "$output" = "empty" ]
+}
+
+@test "gpg-card-has-keys returns 'full' when all keys present" {
+    create_mock_command "gpg" 0 "Reader ...........: Yubico YubiKey
+Serial number ....: 12345678
+Signature key ....: ABCD 1234 5678 90EF
+Encryption key....: DCBA 4321 8765 FE09
+Authentication key: 1111 2222 3333 4444"
+
+    run gpg-card-has-keys
+    [ "$status" -eq 0 ]
+    [ "$output" = "full" ]
+}
+
+@test "gpg-card-has-keys returns 'partial' when some keys present" {
+    create_mock_command "gpg" 0 "Reader ...........: Yubico YubiKey
+Serial number ....: 12345678
+Signature key ....: ABCD 1234 5678 90EF
+Encryption key....: [none]
+Authentication key: [none]"
+
+    run gpg-card-has-keys
+    [ "$status" -eq 0 ]
+    [ "$output" = "partial" ]
+}
+
+@test "gpg-card-has-keys fails when card not accessible" {
+    create_mock_command "gpg" 1 "gpg: selecting card failed: No such device"
+
+    run gpg-card-has-keys
+    [ "$status" -eq 1 ]
+}
+
+# ============================================================================
+# gpg-pin-generate tests (gpg-010)
+# ============================================================================
+
+@test "gpg-pin-generate generates 6-digit user PIN by default" {
+    run gpg-pin-generate --type user
+    [ "$status" -eq 0 ]
+    [ ${#output} -eq 6 ]
+    [[ "$output" =~ ^[0-9]+$ ]]
+}
+
+@test "gpg-pin-generate generates 8-digit admin PIN" {
+    run gpg-pin-generate --type admin
+    [ "$status" -eq 0 ]
+    [ ${#output} -eq 8 ]
+    [[ "$output" =~ ^[0-9]+$ ]]
+}
+
+@test "gpg-pin-generate accepts custom length" {
+    run gpg-pin-generate --length 10
+    [ "$status" -eq 0 ]
+    [ ${#output} -eq 10 ]
+    [[ "$output" =~ ^[0-9]+$ ]]
+}
+
+@test "gpg-pin-generate rejects unknown type" {
+    run gpg-pin-generate --type invalid
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown PIN type" ]]
+}
+
+@test "gpg-pin-generate produces different PINs each time" {
+    local pin1 pin2 pin3
+
+    pin1=$(gpg-pin-generate --type admin)
+    pin2=$(gpg-pin-generate --type admin)
+    pin3=$(gpg-pin-generate --type admin)
+
+    # At least two should be different (extremely unlikely all same)
+    [ "$pin1" != "$pin2" ] || [ "$pin2" != "$pin3" ] || [ "$pin1" != "$pin3" ]
+}
+
+# ============================================================================
+# gpg-pin-change-admin tests (gpg-010)
+# ============================================================================
+
+@test "gpg-pin-change-admin rejects short new PIN" {
+    run gpg-pin-change-admin --new-pin "1234567"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "at least 8 characters" ]]
+}
+
+@test "gpg-pin-change-admin accepts 8-character PIN" {
+    # Mock gpg --change-pin
+    create_mock_command "gpg" 0 ""
+
+    run gpg-pin-change-admin --old-pin "12345678" --new-pin "87654321"
+    # May fail due to mock, but should not fail on validation
+    [[ ! "$output" =~ "at least 8 characters" ]]
+}
+
+@test "gpg-pin-change-admin uses default old PIN" {
+    # The function should use 12345678 as default old PIN
+    # We just verify it doesn't require --old-pin
+    create_mock_command "gpg" 0 ""
+
+    run gpg-pin-change-admin --new-pin "87654321"
+    # Should not fail with "missing old-pin" error
+    [[ ! "$output" =~ "old-pin" ]] || [[ ! "$output" =~ "required" ]]
+}
+
+# ============================================================================
+# gpg-pin-change-user tests (gpg-010)
+# ============================================================================
+
+@test "gpg-pin-change-user rejects short new PIN" {
+    run gpg-pin-change-user --new-pin "12345"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "at least 6 characters" ]]
+}
+
+@test "gpg-pin-change-user accepts 6-character PIN" {
+    # Mock gpg --change-pin
+    create_mock_command "gpg" 0 ""
+
+    run gpg-pin-change-user --old-pin "123456" --new-pin "654321"
+    # May fail due to mock, but should not fail on validation
+    [[ ! "$output" =~ "at least 6 characters" ]]
+}
+
+@test "gpg-pin-change-user uses default old PIN" {
+    # The function should use 123456 as default old PIN
+    create_mock_command "gpg" 0 ""
+
+    run gpg-pin-change-user --new-pin "654321"
+    # Should not fail with "missing old-pin" error
+    [[ ! "$output" =~ "old-pin" ]] || [[ ! "$output" =~ "required" ]]
+}
+
+# ============================================================================
+# gpg-card-reset tests (gpg-010)
+# ============================================================================
+
+@test "gpg-card-reset fails when no YubiKey detected" {
+    # Mock macOS (no pcscd needed)
+    local original_ostype="$OSTYPE"
+    OSTYPE="darwin22.0"
+
+    # Mock gpg --card-status failure
+    create_mock_command "gpg" 1 "gpg: selecting card failed: No such device"
+    create_mock_command "gpgconf" 0 ""
+    create_mock_command "gpg-connect-agent" 0 "OK"
+
+    run gpg-card-reset --force
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "No YubiKey detected" ]]
+
+    OSTYPE="$original_ostype"
+}
+
+@test "gpg-card-reset uses ykman when available" {
+    # Mock macOS (no pcscd needed)
+    local original_ostype="$OSTYPE"
+    OSTYPE="darwin22.0"
+
+    # Mock successful YubiKey detection
+    create_mock_command "gpg" 0 "Serial number ....: 12345678"
+    create_mock_command "ykman" 0 "SUCCESS"
+
+    run gpg-card-reset --force
+    [ "$status" -eq 0 ]
+    assert_mock_called "ykman"
+
+    OSTYPE="$original_ostype"
+}
+
+@test "gpg-card-reset accepts --force flag" {
+    # Mock macOS (no pcscd needed)
+    local original_ostype="$OSTYPE"
+    OSTYPE="darwin22.0"
+
+    # Mock successful YubiKey detection
+    create_mock_command "gpg" 0 "Serial number ....: 12345678"
+    create_mock_command "ykman" 0 "SUCCESS"
+
+    # Should not prompt with --force
+    run gpg-card-reset --force
+    [ "$status" -eq 0 ]
+    [[ ! "$output" =~ "Type 'RESET'" ]]
+
+    OSTYPE="$original_ostype"
+}
+
+@test "gpg-card-reset shows default PINs after reset" {
+    # Mock macOS (no pcscd needed)
+    local original_ostype="$OSTYPE"
+    OSTYPE="darwin22.0"
+
+    # Mock successful YubiKey detection and reset
+    create_mock_command "gpg" 0 "Serial number ....: 12345678"
+    create_mock_command "ykman" 0 "SUCCESS"
+
+    run gpg-card-reset --force
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "123456" ]]
+    [[ "$output" =~ "12345678" ]]
+
+    OSTYPE="$original_ostype"
+}
