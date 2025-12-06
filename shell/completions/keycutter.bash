@@ -12,8 +12,17 @@ _keycutter_completion() {
   local update_subcommands="git config requirements touch-detector"
   local ssh_known_hosts_subcommands="delete-line remove fix backup list-backups restore"
   local git_signing_subcommands="enable disable status help"
-  local gpg_subcommands="key setup backup help"
-  local gpg_key_subcommands="list create install help"
+  local gpg_subcommands="key setup backup yubikeys help"
+  local gpg_key_subcommands="list create install renew help"
+
+  # GPG command options
+  local gpg_key_list_opts="--all"
+  local gpg_key_create_opts="--identity --key-type --expiration --master-expiration --passphrase --master-only --subkeys --fingerprint --yes -y"
+  local gpg_key_install_opts="--backup --backup-pass --passphrase --admin-pin --force --label --all --yes -y"
+  local gpg_key_renew_opts="--backup --backup-pass --passphrase --expiration --revoke --keyserver --admin-pin --force --yes -y"
+  local gpg_setup_opts="--enable-ssh --skip-packages --skip-config --skip-launchagent --skip-wsl-relay --yes -y"
+  local gpg_backup_opts="--fingerprint --output-dir --passphrase --backup-pass --yes -y"
+  local gpg_yubikeys_opts="--fingerprint --json --quiet -q --connected --remove"
 
   # Get the command (first argument after keycutter)
   local cmd=""
@@ -198,19 +207,80 @@ _keycutter_completion() {
     case "$subcmd" in
     key)
       # Complete with gpg key subcommands
+      local gpg_key_cmd=""
+      if [[ ${#words[@]} -gt 3 ]]; then
+        gpg_key_cmd="${words[3]}"
+      fi
+
       if [[ $cword -eq 3 ]]; then
         COMPREPLY=($(compgen -W "$gpg_key_subcommands" -- "$cur"))
-      elif [[ ${words[3]} == "list" && "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "--all" -- "$cur"))
-      elif [[ ${words[3]} == "create" && "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "--yes" -- "$cur"))
-      elif [[ ${words[3]} == "install" && "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "--master" -- "$cur"))
+      elif [[ "$cur" == -* ]]; then
+        # Complete options based on gpg key subcommand
+        case "$gpg_key_cmd" in
+        list)
+          COMPREPLY=($(compgen -W "$gpg_key_list_opts" -- "$cur"))
+          ;;
+        create)
+          COMPREPLY=($(compgen -W "$gpg_key_create_opts" -- "$cur"))
+          ;;
+        install)
+          COMPREPLY=($(compgen -W "$gpg_key_install_opts" -- "$cur"))
+          ;;
+        renew)
+          COMPREPLY=($(compgen -W "$gpg_key_renew_opts" -- "$cur"))
+          ;;
+        esac
+      elif [[ "$prev" == "--key-type" ]]; then
+        COMPREPLY=($(compgen -W "ed25519 rsa4096" -- "$cur"))
+      elif [[ "$prev" == "--fingerprint" ]]; then
+        # Complete with GPG key fingerprints from keyring
+        local fingerprints
+        fingerprints=$(gpg --list-keys --keyid-format long 2>/dev/null | grep -E '^      [A-F0-9]{40}$' | tr -d ' ')
+        COMPREPLY=($(compgen -W "$fingerprints" -- "$cur"))
+      elif [[ "$prev" == "--backup" ]]; then
+        # Complete with backup files
+        _filedir 'tar.gz.gpg'
+      elif [[ "$prev" == "--output-dir" ]]; then
+        _filedir -d
       fi
       return
       ;;
-    setup|backup)
-      # No additional completion needed
+    setup)
+      if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "$gpg_setup_opts" -- "$cur"))
+      fi
+      return
+      ;;
+    backup)
+      if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "$gpg_backup_opts" -- "$cur"))
+      elif [[ "$prev" == "--fingerprint" ]]; then
+        # Complete with GPG key fingerprints from keyring
+        local fingerprints
+        fingerprints=$(gpg --list-keys --keyid-format long 2>/dev/null | grep -E '^      [A-F0-9]{40}$' | tr -d ' ')
+        COMPREPLY=($(compgen -W "$fingerprints" -- "$cur"))
+      elif [[ "$prev" == "--output-dir" ]]; then
+        _filedir -d
+      fi
+      return
+      ;;
+    yubikeys)
+      if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "$gpg_yubikeys_opts" -- "$cur"))
+      elif [[ "$prev" == "--fingerprint" ]]; then
+        # Complete with GPG key fingerprints from keyring
+        local fingerprints
+        fingerprints=$(gpg --list-keys --keyid-format long 2>/dev/null | grep -E '^      [A-F0-9]{40}$' | tr -d ' ')
+        COMPREPLY=($(compgen -W "$fingerprints" -- "$cur"))
+      elif [[ "$prev" == "--remove" ]]; then
+        # Complete with registered YubiKey serial numbers
+        local registry_file="$HOME/.config/keycutter/gpg-yubikeys.json"
+        if [[ -f "$registry_file" ]] && command -v jq &>/dev/null; then
+          local serials
+          serials=$(jq -r 'keys[]' "$registry_file" 2>/dev/null)
+          COMPREPLY=($(compgen -W "$serials" -- "$cur"))
+        fi
+      fi
       return
       ;;
     esac

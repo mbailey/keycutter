@@ -289,8 +289,8 @@
         "Transfer to YubiKey(s)",
         "Update public key on keyservers"
       ],
-      "status": "failing",
-      "last_updated": null
+      "status": "passing",
+      "last_updated": "2025-12-06"
     },
     {
       "id": "gpg-020",
@@ -303,8 +303,8 @@
         "Complete subcommands and flags",
         "Complete key IDs from gpg keyring"
       ],
-      "status": "failing",
-      "last_updated": null
+      "status": "passing",
+      "last_updated": "2025-12-06"
     }
   ]
 }

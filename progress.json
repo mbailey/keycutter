@@ -3,8 +3,8 @@
   "task_id": "KC-15",
   "started": "2025-12-06",
   "current_phase": "implementation",
-  "current_feature": "gpg-019",
-  "features_completed": 18,
+  "current_feature": null,
+  "features_completed": 20,
   "features_total": 20,
   "sessions": [
     {
@@ -118,6 +118,20 @@
         "gpg-018"
       ],
       "notes": "Implemented multiple YubiKey support (gpg-018). Added lib/gpg functions: gpg-yubikey-registry-path, gpg-yubikey-registry-init, gpg-yubikey-registry-add, gpg-yubikey-registry-list, gpg-yubikey-registry-check, gpg-yubikey-registry-remove, gpg-yubikeys-list-available. Updated keycutter-gpg-key-install with --all and --label flags for batch installation. Added keycutter-gpg-yubikeys command for registry management. Created _keycutter_gpg_install_single_yubikey and _keycutter_gpg_install_all_yubikeys internal functions. Updated docs/gpg-commands.md with multi-YubiKey workflow documentation. Added 17 BATS tests for registry functions."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-019"
+      ],
+      "notes": "Implemented subkey renewal workflow (gpg-019). Added lib/gpg functions: gpg-subkeys-list-info (displays subkey capabilities and expiration dates), gpg-subkeys-revoke (revokes existing subkeys with configurable reason), gpg-key-renew (orchestrates renewal by creating new subkeys), gpg-key-export-public (exports public key in armor format), gpg-key-send-keyserver (uploads updated key to keyserver). Added keycutter-gpg-key-renew CLI command with --backup, --backup-pass, --passphrase, --expiration, --revoke, --keyserver, --admin-pin, --force, --yes options. Updated docs/gpg-commands.md with renewal command documentation. Added 25 BATS tests for renewal functions."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-020"
+      ],
+      "notes": "Implemented comprehensive shell completions for all GPG commands (gpg-020). Updated shell/completions/keycutter.bash with full GPG subcommand and flag support including: gpg key list/create/install/renew, gpg setup, gpg backup, gpg yubikeys. Added dynamic completion for --key-type (ed25519/rsa4096), --fingerprint (from GPG keyring), --backup (tar.gz.gpg files), --output-dir (directories), and --remove (YubiKey serials from registry). Created new shell/completions/keycutter.zsh with full zsh-native completion support using _arguments and _values. All 20 GPG integration features now complete."
     }
   ],
   "context_summaries": {
