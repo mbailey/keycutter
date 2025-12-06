@@ -22,6 +22,10 @@
 # Key Listing:
 # - gpg-card-status-display(): Parse and display GPG card status
 # - gpg-master-keys-list(): List master keys from backup locations
+#
+# Backup:
+# - gpg-key-backup(): Create encrypted backup of master key and subkeys
+# - gpg-backup-readme-generate(): Generate README with restore instructions
 
 KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/utils"
@@ -806,6 +810,332 @@ gpg-card-status-display() {
         echo "  Note: Keys present but not linked to local keyring."
         echo "  Run 'gpg --card-status' to fetch public keys."
     fi
+}
+
+# =============================================================================
+# Backup Functions
+# =============================================================================
+
+gpg-key-backup() {
+    # Create encrypted backup of GPG master key and subkeys
+    #
+    # This function exports the master key, subkeys, and public key in ASCII
+    # armor format, then creates an encrypted archive for secure storage.
+    #
+    # Arguments:
+    #   --fingerprint  Key fingerprint to backup (required)
+    #   --output-dir   Directory to store backup (default: from config or prompted)
+    #   --passphrase   Key passphrase for export (will prompt if not provided)
+    #   --backup-pass  Passphrase for backup encryption (will prompt if not provided)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Output:
+    #   Prints path to encrypted backup on success
+    #
+    # Environment:
+    #   GNUPGHOME must be set and contain the key to backup
+    #
+    # Example:
+    #   gpg-key-backup --fingerprint "ABCD1234..." --output-dir ~/gpg-backups
+
+    local fingerprint=""
+    local output_dir=""
+    local passphrase=""
+    local backup_pass=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --output-dir)
+                output_dir="$2"
+                shift 2
+                ;;
+            --passphrase)
+                passphrase="$2"
+                shift 2
+                ;;
+            --backup-pass)
+                backup_pass="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Load config for defaults
+    gpg-config-load
+
+    # Get output directory from config if not provided
+    if [[ -z "$output_dir" ]]; then
+        output_dir=$(gpg-config-get GPG_BACKUP_DIR "")
+        output_dir="${output_dir/#\~/$HOME}"
+    fi
+
+    # Validate required parameters
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: --fingerprint is required"
+        return 1
+    fi
+
+    if [[ -z "$output_dir" ]]; then
+        log "Error: --output-dir is required (or set GPG_BACKUP_DIR in config)"
+        return 1
+    fi
+
+    # Validate GNUPGHOME
+    if [[ -z "${GNUPGHOME:-}" ]]; then
+        log "Error: GNUPGHOME not set"
+        return 1
+    fi
+
+    if [[ ! -d "$GNUPGHOME" ]]; then
+        log "Error: GNUPGHOME directory does not exist: $GNUPGHOME"
+        return 1
+    fi
+
+    # Verify key exists
+    if ! gpg --homedir "$GNUPGHOME" --list-secret-keys "$fingerprint" &>/dev/null; then
+        log "Error: Key not found: $fingerprint"
+        return 1
+    fi
+
+    # Get key UID for directory naming
+    local uid
+    uid=$(gpg --homedir "$GNUPGHOME" --list-keys --with-colons "$fingerprint" 2>/dev/null | \
+        awk -F: '/^uid:/ {print $10; exit}')
+
+    # Create backup directory with date and short fingerprint
+    local date_stamp
+    date_stamp=$(date +%Y-%m-%d)
+    local short_fp="${fingerprint: -8}"
+    local backup_name="gpg-backup-${date_stamp}-${short_fp}"
+    local backup_dir="${output_dir}/${backup_name}"
+
+    # Create output and backup directories
+    mkdir -p "$output_dir" || {
+        log "Error: Failed to create output directory: $output_dir"
+        return 1
+    }
+
+    mkdir -p "$backup_dir" || {
+        log "Error: Failed to create backup directory: $backup_dir"
+        return 1
+    }
+    chmod 700 "$backup_dir"
+
+    log "Creating backup for key: ${fingerprint:0:16}..."
+    log "Backup directory: $backup_dir"
+
+    # Export files with proper permissions
+    local export_cmd_base=(
+        gpg --homedir "$GNUPGHOME" --armor
+    )
+
+    if [[ -n "$passphrase" ]]; then
+        export_cmd_base+=(--batch --pinentry-mode loopback --passphrase "$passphrase")
+    fi
+
+    # 1. Export master secret key
+    log "Exporting master key..."
+    if ! "${export_cmd_base[@]}" --export-secret-keys "$fingerprint" > "$backup_dir/master-key.asc" 2>/dev/null; then
+        log "Error: Failed to export master key"
+        rm -rf "$backup_dir"
+        return 1
+    fi
+    chmod 600 "$backup_dir/master-key.asc"
+
+    # 2. Export secret subkeys only (for separate backup)
+    log "Exporting subkeys..."
+    if ! "${export_cmd_base[@]}" --export-secret-subkeys "$fingerprint" > "$backup_dir/subkeys.asc" 2>/dev/null; then
+        log "Warning: No subkeys to export (may be master-only key)"
+        rm -f "$backup_dir/subkeys.asc"
+    else
+        chmod 600 "$backup_dir/subkeys.asc"
+    fi
+
+    # 3. Export public key
+    log "Exporting public key..."
+    if ! gpg --homedir "$GNUPGHOME" --armor --export "$fingerprint" > "$backup_dir/public-key.asc" 2>/dev/null; then
+        log "Error: Failed to export public key"
+        rm -rf "$backup_dir"
+        return 1
+    fi
+
+    # 4. Generate revocation certificate
+    log "Generating revocation certificate..."
+    local revoke_cmd=(gpg --homedir "$GNUPGHOME" --armor --output "$backup_dir/revocation-cert.asc")
+    if [[ -n "$passphrase" ]]; then
+        revoke_cmd+=(--batch --pinentry-mode loopback --passphrase "$passphrase")
+    fi
+    revoke_cmd+=(--gen-revoke "$fingerprint")
+
+    # Generate revoke cert (requires answering 'y' and providing reason)
+    if [[ -n "$passphrase" ]]; then
+        echo -e "y\n0\n\ny\n" | "${revoke_cmd[@]}" 2>/dev/null || {
+            log "Warning: Failed to generate revocation certificate"
+            rm -f "$backup_dir/revocation-cert.asc"
+        }
+    else
+        log "Skipping revocation cert generation (requires passphrase in batch mode)"
+    fi
+
+    if [[ -f "$backup_dir/revocation-cert.asc" ]]; then
+        chmod 600 "$backup_dir/revocation-cert.asc"
+    fi
+
+    # 5. Export ownertrust
+    log "Exporting trust database..."
+    gpg --homedir "$GNUPGHOME" --export-ownertrust > "$backup_dir/ownertrust.txt" 2>/dev/null || true
+
+    # 6. Generate README with restore instructions
+    log "Generating restore instructions..."
+    gpg-backup-readme-generate "$backup_dir" "$fingerprint" "$uid"
+
+    # 7. Create encrypted archive
+    log "Creating encrypted backup archive..."
+    local encrypted_backup="${output_dir}/${backup_name}.tar.gz.gpg"
+
+    local encrypt_cmd=(gpg --symmetric --cipher-algo AES256 --armor)
+    if [[ -n "$backup_pass" ]]; then
+        encrypt_cmd+=(--batch --pinentry-mode loopback --passphrase "$backup_pass")
+    fi
+
+    if ! tar -czf - -C "$output_dir" "$backup_name" | "${encrypt_cmd[@]}" > "$encrypted_backup" 2>/dev/null; then
+        log "Error: Failed to create encrypted backup"
+        rm -rf "$backup_dir"
+        return 1
+    fi
+    chmod 600 "$encrypted_backup"
+
+    # 8. Clean up unencrypted backup directory
+    log "Cleaning up unencrypted files..."
+    rm -rf "$backup_dir"
+
+    log "Success: Backup created"
+    echo "$encrypted_backup"
+    return 0
+}
+
+gpg-backup-readme-generate() {
+    # Generate README file with restore instructions
+    #
+    # Arguments:
+    #   $1 - Backup directory path
+    #   $2 - Key fingerprint
+    #   $3 - User ID (optional)
+    #
+    # Returns:
+    #   0 always
+
+    local backup_dir="$1"
+    local fingerprint="$2"
+    local uid="${3:-}"
+    local date_stamp
+    date_stamp=$(date +%Y-%m-%d)
+
+    cat > "$backup_dir/README.md" <<EOF
+# GPG Key Backup
+
+**Created:** ${date_stamp}
+**Fingerprint:** ${fingerprint}
+**User ID:** ${uid:-Unknown}
+
+## Contents
+
+- \`master-key.asc\` - Master (Certify) key and subkeys - **KEEP SECURE!**
+- \`subkeys.asc\` - Secret subkeys only (Sign, Encrypt, Auth)
+- \`public-key.asc\` - Public key for distribution
+- \`revocation-cert.asc\` - Revocation certificate - **KEEP SECURE!**
+- \`ownertrust.txt\` - GPG trust database
+- \`README.md\` - This file
+
+## Restore Instructions
+
+### Full Restore (Master Key + Subkeys)
+
+Use this when you need full access to your master key (e.g., for signing other keys,
+creating new subkeys, or extending expiration).
+
+\`\`\`bash
+# 1. Create a secure ephemeral environment
+export GNUPGHOME=\$(mktemp -d)
+chmod 700 \$GNUPGHOME
+
+# 2. Import the master key
+gpg --import master-key.asc
+
+# 3. Import trust settings
+gpg --import-ownertrust ownertrust.txt
+
+# 4. Verify import
+gpg --list-secret-keys
+\`\`\`
+
+### Subkeys-Only Restore (Daily Use)
+
+Use this to restore just the subkeys to your regular keyring.
+The master key stays safely in backup.
+
+\`\`\`bash
+# 1. Import subkeys only
+gpg --import subkeys.asc
+
+# 2. Import trust settings
+gpg --import-ownertrust ownertrust.txt
+
+# 3. Verify import (should show 'sec#' for master - stub only)
+gpg --list-secret-keys
+\`\`\`
+
+### Transfer to YubiKey
+
+After restoring the master key, you can transfer subkeys to a YubiKey:
+
+\`\`\`bash
+keycutter gpg key install --fingerprint ${fingerprint}
+\`\`\`
+
+### Publish Public Key
+
+To publish your public key to a keyserver:
+
+\`\`\`bash
+gpg --send-keys ${fingerprint}
+\`\`\`
+
+Or distribute \`public-key.asc\` directly.
+
+## Security Notes
+
+- **Master key** should only be accessed in air-gapped or ephemeral environments
+- **Revocation certificate** can revoke your key - keep it separate and secure
+- Store multiple copies in geographically separate secure locations
+- Consider storing on encrypted USB drives or in secure cloud storage
+
+## Decrypting This Backup
+
+If you received this as an encrypted \`.tar.gz.gpg\` file:
+
+\`\`\`bash
+# Decrypt and extract
+gpg --decrypt backup.tar.gz.gpg | tar -xzf -
+\`\`\`
+
+---
+*Generated by keycutter gpg backup*
+EOF
+
+    return 0
 }
 
 gpg-master-keys-list() {

@@ -1,1 +1,310 @@
-../harness/features.json
+{
+  "project": "keycutter-gpg",
+  "version": "1.0.0",
+  "created": "2025-12-06",
+  "description": "GPG key management integration for Keycutter - enabling secure GPG master key creation, YubiKey subkey installation, and key lifecycle management",
+  "references": {
+    "drduh_guide": "https://github.com/drduh/YubiKey-Guide",
+    "existing_gpg_package": "/Users/admin/Code/github.com/mbailey/metool-packages-dev/gpg/",
+    "existing_yubigpg_package": "/Users/admin/Code/github.com/mbailey/metool-packages-dev/yubigpg/",
+    "keycutter_gpg_branch": "remotes/origin/feat/gpg"
+  },
+  "features": [
+    {
+      "id": "gpg-001",
+      "category": "Foundation",
+      "priority": 1,
+      "description": "Add gpg subcommand structure to keycutter CLI",
+      "steps": [
+        "Add 'gpg' subcommand to bin/keycutter",
+        "Add 'gpg key' subcommand group",
+        "Add help text for gpg commands",
+        "Add shell completion for gpg subcommands"
+      ],
+      "status": "passing",
+      "last_updated": "2025-12-06"
+    },
+    {
+      "id": "gpg-002",
+      "category": "Foundation",
+      "priority": 2,
+      "description": "Create lib/gpg library with core GPG helper functions",
+      "steps": [
+        "Create lib/gpg file with sourcing pattern matching lib/ssh",
+        "Add gpg-version-check function",
+        "Add gpg-home-temp-create function for ephemeral GNUPGHOME",
+        "Add gpg-agent-restart function",
+        "Add tests in test/test_gpg.bats"
+      ],
+      "status": "passing",
+      "last_updated": "2025-12-06"
+    },
+    {
+      "id": "gpg-003",
+      "category": "Foundation",
+      "priority": 3,
+      "description": "Create GPG configuration file format and defaults",
+      "steps": [
+        "Create config/gpg-defaults with KEY_TYPE, EXPIRATION, cipher preferences",
+        "Create config/gpg.conf with hardened settings (based on drduh)",
+        "Add function to load and merge config with CLI overrides",
+        "Document config format in docs/gpg-configuration.md"
+      ],
+      "status": "passing",
+      "last_updated": "2025-12-06"
+    },
+    {
+      "id": "gpg-004",
+      "category": "List",
+      "priority": 4,
+      "description": "Implement 'keycutter gpg key list' command",
+      "steps": [
+        "Add keycutter-gpg-key-list function",
+        "Show GPG keys on current YubiKey (gpg --card-status)",
+        "Format output similar to keycutter key list",
+        "Add --all flag to also show available master keys from backup locations"
+      ],
+      "status": "passing",
+      "last_updated": "2025-12-06"
+    },
+    {
+      "id": "gpg-005",
+      "category": "Create",
+      "priority": 5,
+      "description": "Implement master key creation with ephemeral GNUPGHOME",
+      "steps": [
+        "Create gpg-master-key-create function",
+        "Set up temporary GNUPGHOME that clears on completion",
+        "Generate master Certify key with strong passphrase",
+        "Key should never touch disk unencrypted",
+        "Support --identity, --key-type, --expiration flags"
+      ],
+      "status": "passing",
+      "last_updated": "2025-12-06"
+    },
+    {
+      "id": "gpg-006",
+      "category": "Create",
+      "priority": 6,
+      "description": "Implement subkey generation for master key",
+      "steps": [
+        "Add gpg-subkeys-create function",
+        "Generate Sign subkey with expiration",
+        "Generate Encrypt subkey with expiration",
+        "Generate Auth subkey with expiration",
+        "Use batch mode with pinentry-loopback"
+      ],
+      "status": "passing",
+      "last_updated": "2025-12-06"
+    },
+    {
+      "id": "gpg-007",
+      "category": "Create",
+      "priority": 7,
+      "description": "Implement 'keycutter gpg key create' unified command",
+      "steps": [
+        "Add keycutter-gpg-key-create function",
+        "Default: create master + all 3 subkeys in one flow",
+        "Support --master-only to create just Certify key",
+        "Support --subkeys --fingerprint FP to add subkeys to existing master",
+        "Support --yes/-y for non-interactive mode with config file"
+      ],
+      "status": "passing",
+      "last_updated": "2025-12-06"
+    },
+    {
+      "id": "gpg-008",
+      "category": "Backup",
+      "priority": 8,
+      "description": "Implement encrypted master key backup",
+      "steps": [
+        "Add gpg-key-backup function",
+        "Export master key and subkeys in armor format",
+        "Create encrypted backup using symmetric encryption or LUKS",
+        "Generate backup README with restore instructions",
+        "Support configurable backup location"
+      ],
+      "status": "passing",
+      "last_updated": "$(date +%Y-%m-%d)"
+    },
+    {
+      "id": "gpg-009",
+      "category": "Backup",
+      "priority": 9,
+      "description": "Implement 'keycutter gpg backup' command",
+      "steps": [
+        "Add keycutter-gpg-backup function to CLI",
+        "List available keys to backup",
+        "Prompt for backup destination",
+        "Create encrypted backup with verification",
+        "Register backup location in keycutter config"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-010",
+      "category": "Install",
+      "priority": 10,
+      "description": "Implement YubiKey detection and PIN management",
+      "steps": [
+        "Add yubikey-gpg-detect function",
+        "Check pcscd service is running",
+        "Detect YubiKey OpenPGP application",
+        "Add functions to change admin PIN and user PIN",
+        "Handle case where YubiKey already has keys"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-011",
+      "category": "Install",
+      "priority": 11,
+      "description": "Implement subkey transfer to YubiKey",
+      "steps": [
+        "Add gpg-key-to-yubikey function",
+        "Transfer Sign subkey to YubiKey",
+        "Transfer Encrypt subkey to YubiKey",
+        "Transfer Auth subkey to YubiKey",
+        "Verify successful transfer",
+        "Clean up local keyring after transfer"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-012",
+      "category": "Install",
+      "priority": 12,
+      "description": "Implement 'keycutter gpg key install' command",
+      "steps": [
+        "Add keycutter-gpg-key-install function to CLI",
+        "List available master keys from registered backup locations",
+        "Prompt user to select master key if multiple",
+        "Load master key from encrypted backup",
+        "Transfer subkeys to current YubiKey",
+        "Support --master KEY_ID for non-interactive"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-013",
+      "category": "Setup",
+      "priority": 13,
+      "description": "Implement 'keycutter gpg setup' for host configuration",
+      "steps": [
+        "Add keycutter-gpg-setup function",
+        "Install required packages (gnupg, pinentry, ykman, pcscd)",
+        "Configure gpg-agent with pinentry",
+        "Enable SSH support in gpg-agent",
+        "Test configuration works",
+        "Support macOS, Ubuntu, Fedora"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-014",
+      "category": "Setup",
+      "priority": 14,
+      "description": "Add WSL-specific GPG configuration",
+      "steps": [
+        "Detect WSL environment",
+        "Configure gpg-relay for Windows GPG agent forwarding",
+        "Set up socat and npiperelay",
+        "Add troubleshooting guidance for WSL issues"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-015",
+      "category": "Documentation",
+      "priority": 15,
+      "description": "Create comprehensive GPG documentation",
+      "steps": [
+        "Add docs/gpg-quickstart.md with getting started guide",
+        "Add docs/gpg-commands.md with command reference",
+        "Add docs/gpg-security.md with security best practices",
+        "Update README.md to mention GPG support",
+        "Add docs/gpg-troubleshooting.md"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-016",
+      "category": "Testing",
+      "priority": 16,
+      "description": "Add comprehensive BATS tests for GPG functions",
+      "steps": [
+        "Create test/test_gpg.bats",
+        "Test config loading and merging",
+        "Test key generation in ephemeral environment",
+        "Test backup and restore flow",
+        "Test key listing functions",
+        "Mock YubiKey operations for CI"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-017",
+      "category": "Integration",
+      "priority": 17,
+      "description": "Integrate GPG auth key with SSH agent",
+      "steps": [
+        "Configure gpg-agent as SSH agent",
+        "Export GPG auth key as SSH public key",
+        "Register with keycutter's key management",
+        "Support keycutter key list showing GPG-backed SSH keys"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-018",
+      "category": "Advanced",
+      "priority": 18,
+      "description": "Support multiple YubiKeys with same master key",
+      "steps": [
+        "Document workflow for installing to multiple YubiKeys",
+        "Track which YubiKeys have which key installed",
+        "Support keycutter gpg key install --all for batch install"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-019",
+      "category": "Advanced",
+      "priority": 19,
+      "description": "Add subkey renewal workflow",
+      "steps": [
+        "Add keycutter gpg key renew command",
+        "Load master key from backup",
+        "Generate new subkeys with fresh expiration",
+        "Transfer to YubiKey(s)",
+        "Update public key on keyservers"
+      ],
+      "status": "failing",
+      "last_updated": null
+    },
+    {
+      "id": "gpg-020",
+      "category": "Polish",
+      "priority": 20,
+      "description": "Add shell completion for all GPG commands",
+      "steps": [
+        "Update completions/keycutter.bash",
+        "Update completions/keycutter.zsh",
+        "Complete subcommands and flags",
+        "Complete key IDs from gpg keyring"
+      ],
+      "status": "failing",
+      "last_updated": null
+    }
+  ]
+}

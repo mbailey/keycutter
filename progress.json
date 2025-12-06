@@ -1,1 +1,76 @@
-../harness/progress.json
+{
+  "workflow_id": "keycutter-gpg-integration",
+  "task_id": "KC-15",
+  "started": "2025-12-06",
+  "current_phase": "implementation",
+  "current_feature": "gpg-009",
+  "features_completed": 8,
+  "features_total": 20,
+  "sessions": [
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-001"
+      ],
+      "notes": "Added GPG subcommand structure to keycutter CLI with help text and bash completions"
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-002"
+      ],
+      "notes": "Created lib/gpg library with core helper functions: gpg-version-check, gpg-home-temp-create/cleanup for ephemeral GNUPGHOME, and gpg-agent-restart/ensure. Added 17 BATS tests covering all functions."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-003"
+      ],
+      "notes": "Created GPG configuration system: config/gpg/defaults with key settings and cipher preferences, config/gpg/gpg.conf with hardened settings from drduh guide, gpg-config-load/get/dump functions in lib/gpg with precedence (CLI > env > user config > defaults), and docs/gpg-configuration.md. Added 11 BATS tests for config functions."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-004"
+      ],
+      "notes": "Implemented 'keycutter gpg key list' command: keycutter-gpg-key-list function in bin/keycutter, gpg-card-status-display for parsing YubiKey card status, gpg-master-keys-list for finding backups. Added --all flag support and 9 BATS tests."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-005"
+      ],
+      "notes": "Implemented 'keycutter gpg key create' command with gpg-master-key-create function. Supports --identity, --key-type, --expiration, --passphrase flags. Interactive and non-interactive (--yes) modes. Uses ephemeral GNUPGHOME for security. Added gpg-identity-prompt and gpg-passphrase-prompt helpers. Added 12 BATS tests for master key creation."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-006"
+      ],
+      "notes": "Implemented gpg-subkeys-create function for generating Sign, Encrypt, and Auth subkeys from a master key. Uses batch mode with --pinentry-mode loopback for non-interactive operation. Supports --fingerprint, --key-type, --expiration, --passphrase arguments. Added 8 BATS tests for subkey creation validation and error handling."
+    },
+    {
+      "date": "2025-12-06",
+      "features_completed": [
+        "gpg-007"
+      ],
+      "notes": "Implemented unified 'keycutter gpg key create' command that creates master key + all 3 subkeys (Sign, Encrypt, Auth) in one flow. Supports --master-only for Certify-only master, --subkeys --fingerprint for adding subkeys to existing master, --master-expiration for master key expiration, and --yes for non-interactive mode. Added 7 BATS tests for unified command validation."
+    },
+    {
+      "date": "$(date +%Y-%m-%d)",
+      "features_completed": [
+        "gpg-008"
+      ],
+      "notes": "Implemented gpg-key-backup function for encrypted master key backup. Exports master key, subkeys, public key in armor format. Creates AES256-encrypted .tar.gz.gpg archive. Generates README.md with restore instructions. Added 16 BATS tests for backup functions."
+    }
+  ],
+  "context_summaries": {
+    "research": "Reviewed existing work in metool-packages-dev/gpg and metool-packages-dev/yubigpg packages. Found complete scripts for key generation (yubikey-gpg-keys-create), YubiKey transfer (yubikey-gpg-keys-copy), and host setup (gpg-yubikey-host-setup). Also reviewed keycutter feat/gpg branch with WSL support. Dr. Duh guide provides authoritative workflow: Environment Prep -> Software Install -> GPG Config -> Key Generation -> Backup -> YubiKey Config -> Operational Use."
+  },
+  "key_decisions": [
+    "Use 'create' not 'generate' to match existing keycutter patterns",
+    "Support config file for non-interactive mode with --yes flag",
+    "Master key never touches disk unencrypted - use ephemeral GNUPGHOME",
+    "Register backup locations in keycutter config for key discovery"
+  ]
+}

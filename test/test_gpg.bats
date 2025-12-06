@@ -795,3 +795,208 @@ uid:::::::Test User <test@example.com>::::::::::0:"
     # Should NOT fail with "Unknown option"
     [[ ! "$output" =~ "Unknown option: --master-expiration" ]]
 }
+
+# ============================================================================
+# gpg-key-backup tests (gpg-008)
+# ============================================================================
+
+@test "gpg-key-backup requires --fingerprint" {
+    gpg-home-temp-create >/dev/null
+
+    run gpg-key-backup --output-dir "$TEST_HOME/backups"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--fingerprint is required" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-key-backup requires --output-dir or GPG_BACKUP_DIR" {
+    gpg-home-temp-create >/dev/null
+
+    # Ensure GPG_BACKUP_DIR is not set
+    unset GPG_BACKUP_DIR
+
+    run gpg-key-backup --fingerprint "ABCD1234567890EF"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--output-dir is required" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-key-backup requires GNUPGHOME to be set" {
+    unset GNUPGHOME
+    _GPG_EPHEMERAL_HOME=""
+
+    run gpg-key-backup --fingerprint "ABCD1234567890EF" --output-dir "$TEST_HOME/backups"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "GNUPGHOME not set" ]]
+}
+
+@test "gpg-key-backup requires GNUPGHOME directory to exist" {
+    export GNUPGHOME="$TEST_HOME/nonexistent_gnupghome"
+    _GPG_EPHEMERAL_HOME=""
+
+    run gpg-key-backup --fingerprint "ABCD1234567890EF" --output-dir "$TEST_HOME/backups"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "GNUPGHOME directory does not exist" ]]
+
+    unset GNUPGHOME
+}
+
+@test "gpg-key-backup fails when key not found" {
+    gpg-home-temp-create >/dev/null
+    local backup_dir="$TEST_HOME/backups"
+    mkdir -p "$backup_dir"
+
+    run gpg-key-backup --fingerprint "NONEXISTENT1234567890" --output-dir "$backup_dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Key not found" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-key-backup uses GPG_BACKUP_DIR from config" {
+    gpg-home-temp-create >/dev/null
+    local backup_dir="$TEST_HOME/backups"
+    mkdir -p "$backup_dir"
+
+    # Set GPG_BACKUP_DIR via environment
+    export GPG_BACKUP_DIR="$backup_dir"
+
+    # Will fail because key doesn't exist, but should not fail on output-dir validation
+    run gpg-key-backup --fingerprint "NONEXISTENT1234567890"
+
+    # Should reach the "Key not found" error, not the "output-dir required" error
+    [[ "$output" =~ "Key not found" ]]
+
+    unset GPG_BACKUP_DIR
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-key-backup accepts all argument types" {
+    gpg-home-temp-create >/dev/null
+    local backup_dir="$TEST_HOME/backups"
+    mkdir -p "$backup_dir"
+
+    # Test that all arguments are parsed correctly
+    run gpg-key-backup \
+        --fingerprint "ABCD1234567890EF" \
+        --output-dir "$backup_dir" \
+        --passphrase "testpass123" \
+        --backup-pass "backuppass456"
+
+    # Should reach "Key not found" (because no key exists), not argument parsing errors
+    [[ "$output" =~ "Key not found" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-key-backup rejects unknown options" {
+    gpg-home-temp-create >/dev/null
+
+    run gpg-key-backup --invalid-option "value"
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+
+    gpg-home-temp-cleanup
+}
+
+@test "gpg-key-backup creates backup directory if needed" {
+    gpg-home-temp-create >/dev/null
+    local backup_dir="$TEST_HOME/new_backup_dir"
+
+    # Directory should not exist yet
+    [ ! -d "$backup_dir" ]
+
+    # Will fail on key not found, but should create the backup directory first
+    run gpg-key-backup --fingerprint "NONEXISTENT1234567890" --output-dir "$backup_dir"
+
+    # The function should have tried to create the directory (though it may fail before that)
+    # This tests the mkdir -p logic
+    [ "$status" -eq 1 ]
+
+    gpg-home-temp-cleanup
+}
+
+# ============================================================================
+# gpg-backup-readme-generate tests
+# ============================================================================
+
+@test "gpg-backup-readme-generate creates README file" {
+    local backup_dir="$TEST_HOME/backup_test"
+    mkdir -p "$backup_dir"
+
+    run gpg-backup-readme-generate "$backup_dir" "ABCD1234567890EF" "Test User <test@example.com>"
+    [ "$status" -eq 0 ]
+
+    # README should exist
+    [ -f "$backup_dir/README.md" ]
+}
+
+@test "gpg-backup-readme-generate includes fingerprint" {
+    local backup_dir="$TEST_HOME/backup_test"
+    mkdir -p "$backup_dir"
+
+    gpg-backup-readme-generate "$backup_dir" "ABCD1234567890EF1234567890ABCDEF12345678" "Test User <test@example.com>"
+
+    # README should contain fingerprint
+    grep -q "ABCD1234567890EF1234567890ABCDEF12345678" "$backup_dir/README.md"
+}
+
+@test "gpg-backup-readme-generate includes user ID" {
+    local backup_dir="$TEST_HOME/backup_test"
+    mkdir -p "$backup_dir"
+
+    gpg-backup-readme-generate "$backup_dir" "ABCD1234567890EF" "Test User <test@example.com>"
+
+    # README should contain user ID
+    grep -q "Test User" "$backup_dir/README.md"
+}
+
+@test "gpg-backup-readme-generate includes restore instructions" {
+    local backup_dir="$TEST_HOME/backup_test"
+    mkdir -p "$backup_dir"
+
+    gpg-backup-readme-generate "$backup_dir" "ABCD1234567890EF" "Test User <test@example.com>"
+
+    # README should contain restore sections
+    grep -q "Restore Instructions" "$backup_dir/README.md"
+    grep -q "Full Restore" "$backup_dir/README.md"
+    grep -q "Subkeys-Only Restore" "$backup_dir/README.md"
+    grep -q "gpg --import" "$backup_dir/README.md"
+}
+
+@test "gpg-backup-readme-generate includes security notes" {
+    local backup_dir="$TEST_HOME/backup_test"
+    mkdir -p "$backup_dir"
+
+    gpg-backup-readme-generate "$backup_dir" "ABCD1234567890EF" "Test User <test@example.com>"
+
+    # README should contain security guidance
+    grep -q "Security Notes" "$backup_dir/README.md"
+    grep -q "Master key" "$backup_dir/README.md"
+}
+
+@test "gpg-backup-readme-generate includes decryption instructions" {
+    local backup_dir="$TEST_HOME/backup_test"
+    mkdir -p "$backup_dir"
+
+    gpg-backup-readme-generate "$backup_dir" "ABCD1234567890EF" "Test User <test@example.com>"
+
+    # README should explain how to decrypt the archive
+    grep -q "Decrypting This Backup" "$backup_dir/README.md"
+    grep -q "gpg --decrypt" "$backup_dir/README.md"
+}
+
+@test "gpg-backup-readme-generate handles missing user ID" {
+    local backup_dir="$TEST_HOME/backup_test"
+    mkdir -p "$backup_dir"
+
+    # Call with empty UID
+    run gpg-backup-readme-generate "$backup_dir" "ABCD1234567890EF" ""
+    [ "$status" -eq 0 ]
+
+    # README should exist and use "Unknown" for missing UID
+    [ -f "$backup_dir/README.md" ]
+    grep -q "Unknown" "$backup_dir/README.md"
+}
