@@ -13,6 +13,11 @@
 # - gpg-agent-restart(): Restart gpg-agent with proper configuration
 # - gpg-agent-ensure(): Ensure gpg-agent is running
 #
+# Key Creation:
+# - gpg-master-key-create(): Create master (Certify) key in ephemeral GNUPGHOME
+# - gpg-identity-prompt(): Interactive prompt for user identity
+# - gpg-passphrase-prompt(): Interactive prompt for passphrase with confirmation
+#
 # Key Listing:
 # - gpg-card-status-display(): Parse and display GPG card status
 # - gpg-master-keys-list(): List master keys from backup locations
@@ -340,6 +345,253 @@ gpg-agent-ensure() {
 
     # Agent not running, start it
     gpg-agent-restart "$gpg_home"
+}
+
+# =============================================================================
+# Key Creation Functions
+# =============================================================================
+
+gpg-master-key-create() {
+    # Create a GPG master (Certify) key in ephemeral GNUPGHOME
+    #
+    # This function creates a master key that will be used to certify subkeys.
+    # The key is created in an ephemeral GNUPGHOME for security - it should
+    # never touch persistent disk storage unencrypted.
+    #
+    # Arguments:
+    #   --identity    User ID for the key (e.g., "Name <email@example.com>")
+    #   --key-type    Algorithm: ed25519 (default) or rsa4096
+    #   --expiration  Expiration period: 0 (never), 1y, 2y, etc. (default: 0)
+    #   --passphrase  Passphrase for the key (will prompt if not provided)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Output:
+    #   Prints the key fingerprint on success
+    #
+    # Environment:
+    #   GNUPGHOME must be set to ephemeral directory (use gpg-home-temp-create)
+    #
+    # Example:
+    #   gpg-home-temp-create
+    #   gpg-master-key-create --identity "Test User <test@example.com>"
+
+    local identity=""
+    local key_type=""
+    local expiration=""
+    local passphrase=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --identity)
+                identity="$2"
+                shift 2
+                ;;
+            --key-type)
+                key_type="$2"
+                shift 2
+                ;;
+            --expiration)
+                expiration="$2"
+                shift 2
+                ;;
+            --passphrase)
+                passphrase="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Load config for defaults
+    gpg-config-load
+
+    # Use provided values or fall back to config
+    key_type="${key_type:-$(gpg-config-get GPG_KEY_TYPE ed25519)}"
+    expiration="${expiration:-$(gpg-config-get GPG_MASTER_EXPIRATION 0)}"
+
+    # Validate required parameters
+    if [[ -z "$identity" ]]; then
+        log "Error: --identity is required"
+        log "Example: --identity 'Your Name <your@email.com>'"
+        return 1
+    fi
+
+    # Validate GNUPGHOME is set and is ephemeral
+    if [[ -z "${GNUPGHOME:-}" ]]; then
+        log "Error: GNUPGHOME not set. Use gpg-home-temp-create first."
+        return 1
+    fi
+
+    if [[ ! -d "$GNUPGHOME" ]]; then
+        log "Error: GNUPGHOME directory does not exist: $GNUPGHOME"
+        return 1
+    fi
+
+    # Validate key type
+    case "$key_type" in
+        ed25519|rsa4096|rsa3072)
+            ;;
+        *)
+            log "Error: Invalid key type: $key_type"
+            log "Supported types: ed25519, rsa4096, rsa3072"
+            return 1
+            ;;
+    esac
+
+    # Copy GPG configuration to ephemeral home
+    local gpg_conf="${KEYCUTTER_ROOT}/config/gpg/gpg.conf"
+    if [[ -f "$gpg_conf" ]]; then
+        cp "$gpg_conf" "$GNUPGHOME/gpg.conf"
+    fi
+
+    # Configure gpg-agent for pinentry-loopback
+    cat > "$GNUPGHOME/gpg-agent.conf" <<EOF
+allow-loopback-pinentry
+EOF
+
+    # Restart agent with new config
+    gpg-agent-restart "$GNUPGHOME" >/dev/null 2>&1
+
+    log "Creating master key for: $identity"
+    log "Key type: $key_type, Expiration: ${expiration:-never}"
+
+    # Build the gpg command
+    local gpg_cmd=(
+        gpg
+        --homedir "$GNUPGHOME"
+        --batch
+        --expert
+    )
+
+    # Add passphrase handling
+    if [[ -n "$passphrase" ]]; then
+        gpg_cmd+=(--pinentry-mode loopback --passphrase "$passphrase")
+    fi
+
+    # Generate the master key (Certify only)
+    if ! "${gpg_cmd[@]}" --quick-generate-key "$identity" "$key_type" cert "$expiration" 2>&1; then
+        log "Error: Failed to create master key"
+        return 1
+    fi
+
+    # Get the key fingerprint
+    local fingerprint
+    fingerprint=$(gpg --homedir "$GNUPGHOME" --list-keys --with-colons "$identity" 2>/dev/null | awk -F: '/^fpr:/ { print $10; exit }')
+
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: Failed to retrieve key fingerprint"
+        return 1
+    fi
+
+    log "Success: Master key created"
+    echo "$fingerprint"
+    return 0
+}
+
+gpg-identity-prompt() {
+    # Interactively prompt for GPG identity components
+    #
+    # Arguments:
+    #   $1 - Variable name to store result
+    #
+    # Returns:
+    #   0 on success
+    #   1 on user cancellation or invalid input
+    #
+    # Output:
+    #   Sets the named variable to "Real Name <email@example.com>" format
+
+    local result_var="$1"
+    local name email identity
+
+    echo
+    echo "Enter your identity for the GPG key:"
+    echo
+
+    read -rp "  Real Name: " name
+    if [[ -z "$name" ]]; then
+        log "Error: Name is required"
+        return 1
+    fi
+
+    read -rp "  Email: " email
+    if [[ -z "$email" ]]; then
+        log "Error: Email is required"
+        return 1
+    fi
+
+    # Validate email format (basic check)
+    if [[ ! "$email" =~ ^[^@]+@[^@]+\.[^@]+$ ]]; then
+        log "Error: Invalid email format"
+        return 1
+    fi
+
+    identity="$name <$email>"
+
+    echo
+    echo "  Identity: $identity"
+    echo
+
+    read -rp "  Is this correct? [Y/n] " confirm
+    if [[ "$confirm" =~ ^[Nn] ]]; then
+        return 1
+    fi
+
+    # Set the result variable
+    printf -v "$result_var" '%s' "$identity"
+    return 0
+}
+
+gpg-passphrase-prompt() {
+    # Interactively prompt for GPG passphrase with confirmation
+    #
+    # Arguments:
+    #   $1 - Variable name to store result
+    #
+    # Returns:
+    #   0 on success
+    #   1 on user cancellation or mismatch
+
+    local result_var="$1"
+    local pass1 pass2
+
+    echo
+    echo "Enter a strong passphrase to protect your GPG master key."
+    echo "This passphrase protects your master key backup."
+    echo
+
+    read -rsp "  Passphrase: " pass1
+    echo
+
+    if [[ -z "$pass1" ]]; then
+        log "Error: Passphrase cannot be empty"
+        return 1
+    fi
+
+    # Check minimum length
+    if [[ ${#pass1} -lt 8 ]]; then
+        log "Error: Passphrase must be at least 8 characters"
+        return 1
+    fi
+
+    read -rsp "  Confirm passphrase: " pass2
+    echo
+
+    if [[ "$pass1" != "$pass2" ]]; then
+        log "Error: Passphrases do not match"
+        return 1
+    fi
+
+    # Set the result variable
+    printf -v "$result_var" '%s' "$pass1"
+    return 0
 }
 
 # =============================================================================

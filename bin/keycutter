@@ -1329,9 +1329,196 @@ keycutter-gpg-key-list() {
 }
 
 keycutter-gpg-key-create() {
-  log "Error: GPG key create not yet implemented"
-  log "See: https://github.com/mbailey/keycutter/issues/KC-15"
-  return 1
+  # Create GPG master key (and optionally subkeys) for use with YubiKey
+  #
+  # Usage: keycutter gpg key create [options]
+  #
+  # Options:
+  #   --identity IDENTITY  User ID for the key (e.g., "Name <email>")
+  #   --key-type TYPE      Key algorithm: ed25519 (default) or rsa4096
+  #   --expiration PERIOD  Subkey expiration: 1y, 2y, etc. (default: 2y)
+  #   --yes, -y            Non-interactive mode using config defaults
+  #   --master-only        Create only the master key (no subkeys)
+  #   -h, --help           Show this help message
+  #
+  # This command creates a GPG master key in a secure ephemeral environment.
+  # The master key never touches disk unencrypted - it must be backed up
+  # before the session ends.
+  #
+  # Interactive mode (default):
+  #   - Prompts for identity if not provided
+  #   - Prompts for passphrase
+  #   - Creates master + subkeys by default
+  #
+  # Non-interactive mode (--yes):
+  #   - Uses GPG_IDENTITY from config or environment
+  #   - Requires --passphrase or GPG_PASSPHRASE environment variable
+
+  local identity=""
+  local key_type=""
+  local expiration=""
+  local passphrase=""
+  local non_interactive=false
+  local master_only=false
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --identity)
+        identity="$2"
+        shift 2
+        ;;
+      --key-type)
+        key_type="$2"
+        shift 2
+        ;;
+      --expiration)
+        expiration="$2"
+        shift 2
+        ;;
+      --passphrase)
+        passphrase="$2"
+        shift 2
+        ;;
+      --yes|-y)
+        non_interactive=true
+        shift
+        ;;
+      --master-only)
+        master_only=true
+        shift
+        ;;
+      -h|--help)
+        echo "Usage: keycutter gpg key create [options]"
+        echo
+        echo "Create a GPG master key for use with YubiKey"
+        echo
+        echo "Options:"
+        echo "  --identity IDENTITY  User ID (e.g., 'Name <email@example.com>')"
+        echo "  --key-type TYPE      Algorithm: ed25519 (default), rsa4096"
+        echo "  --expiration PERIOD  Master key expiration: 0 (never), 1y, 2y, etc."
+        echo "  --passphrase PASS    Passphrase (for non-interactive mode)"
+        echo "  --yes, -y            Non-interactive mode"
+        echo "  --master-only        Create only master key (no subkeys yet)"
+        echo "  -h, --help           Show this help"
+        echo
+        echo "Examples:"
+        echo "  keycutter gpg key create"
+        echo "  keycutter gpg key create --identity 'Alice <alice@example.com>'"
+        echo "  keycutter gpg key create --yes --passphrase 'secret123'"
+        return 0
+        ;;
+      *)
+        log "Error: Unknown option: $1"
+        log "Use --help for usage information"
+        return 1
+        ;;
+    esac
+  done
+
+  # Source GPG library
+  source "${KEYCUTTER_ROOT}/lib/gpg"
+
+  # Load config first (needed for defaults lookup)
+  gpg-config-load
+
+  # Validate parameters in non-interactive mode BEFORE checking GPG
+  # This provides immediate feedback to users about missing parameters
+  if [[ "$non_interactive" == true ]]; then
+    if [[ -z "$identity" ]]; then
+      identity=$(gpg-config-get GPG_IDENTITY "")
+    fi
+    if [[ -z "$identity" ]]; then
+      log "Error: --identity required in non-interactive mode"
+      log "Set GPG_IDENTITY in config or use --identity flag"
+      return 1
+    fi
+    if [[ -z "$passphrase" ]]; then
+      passphrase="${GPG_PASSPHRASE:-}"
+    fi
+    if [[ -z "$passphrase" ]]; then
+      log "Error: --passphrase required in non-interactive mode"
+      log "Set GPG_PASSPHRASE environment variable or use --passphrase flag"
+      return 1
+    fi
+  fi
+
+  # Check GPG version
+  if ! gpg-version-check >/dev/null 2>&1; then
+    log "Error: GPG check failed"
+    return 1
+  fi
+
+  # Interactive mode: prompt for identity if not provided
+  if [[ -z "$identity" ]]; then
+    if ! gpg-identity-prompt identity; then
+      log "Cancelled"
+      return 1
+    fi
+  fi
+
+  # Interactive mode: prompt for passphrase if not provided
+  if [[ -z "$passphrase" ]]; then
+    if ! gpg-passphrase-prompt passphrase; then
+      log "Cancelled"
+      return 1
+    fi
+  fi
+
+  # Create ephemeral GNUPGHOME
+  echo
+  log "Creating secure ephemeral environment..."
+  local ephemeral_home
+  ephemeral_home=$(gpg-home-temp-create) || {
+    log "Error: Failed to create ephemeral GNUPGHOME"
+    return 1
+  }
+
+  # Set up cleanup trap
+  trap 'gpg-home-temp-cleanup' EXIT
+
+  echo
+  log "Creating GPG master key..."
+  echo
+
+  # Build arguments for gpg-master-key-create
+  local create_args=(--identity "$identity" --passphrase "$passphrase")
+  [[ -n "$key_type" ]] && create_args+=(--key-type "$key_type")
+  [[ -n "$expiration" ]] && create_args+=(--expiration "$expiration")
+
+  # Create master key
+  local fingerprint
+  fingerprint=$(gpg-master-key-create "${create_args[@]}") || {
+    log "Error: Failed to create master key"
+    return 1
+  }
+
+  echo
+  log "Master key created successfully!"
+  echo
+  echo "  Fingerprint: $fingerprint"
+  echo "  Identity:    $identity"
+  echo
+
+  # Show key details
+  gpg --homedir "$GNUPGHOME" --list-keys --keyid-format LONG "$fingerprint"
+
+  echo
+  log "WARNING: The master key exists only in ephemeral memory!"
+  log "You MUST backup this key before exiting or it will be lost."
+  echo
+  log "Next steps:"
+  echo "  1. Run 'keycutter gpg backup' to save encrypted backup"
+  echo "  2. Run 'keycutter gpg key install' to transfer to YubiKey"
+  echo
+
+  # TODO: In future, continue to subkey creation unless --master-only
+  if [[ "$master_only" == false ]]; then
+    log "Note: Subkey creation (gpg-006) not yet implemented"
+    log "Use 'gpg --edit-key' to add subkeys manually if needed"
+  fi
+
+  return 0
 }
 
 keycutter-gpg-key-install() {
