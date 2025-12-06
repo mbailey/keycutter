@@ -1984,12 +1984,13 @@ keycutter-gpg-setup() {
   #   5. Tests the configuration
   #   6. Shows shell configuration recommendations
   #
-  # Supported platforms: macOS, Ubuntu, Debian, Fedora, RHEL
+  # Supported platforms: macOS, Ubuntu, Debian, Fedora, RHEL, WSL
 
   local enable_ssh=false
   local skip_packages=false
   local skip_config=false
   local skip_launchagent=false
+  local skip_wsl_relay=false
   local non_interactive=false
 
   # Parse arguments
@@ -2011,6 +2012,10 @@ keycutter-gpg-setup() {
         skip_launchagent=true
         shift
         ;;
+      --skip-wsl-relay)
+        skip_wsl_relay=true
+        shift
+        ;;
       --yes|-y)
         non_interactive=true
         shift
@@ -2025,6 +2030,7 @@ keycutter-gpg-setup() {
         echo "  --skip-packages       Skip package installation"
         echo "  --skip-config         Skip GPG configuration"
         echo "  --skip-launchagent    Skip macOS LaunchAgent setup (macOS only)"
+        echo "  --skip-wsl-relay      Skip WSL relay setup (WSL only)"
         echo "  --yes, -y             Non-interactive mode"
         echo "  -h, --help            Show this help message"
         echo
@@ -2033,10 +2039,11 @@ keycutter-gpg-setup() {
         echo "  2. Configures gpg-agent with pinentry"
         echo "  3. Installs hardened gpg.conf"
         echo "  4. On macOS, installs LaunchAgents for gpg-agent"
-        echo "  5. Tests the configuration"
-        echo "  6. Shows shell configuration recommendations"
+        echo "  5. On WSL, sets up GPG relay to Windows"
+        echo "  6. Tests the configuration"
+        echo "  7. Shows shell configuration recommendations"
         echo
-        echo "Supported platforms: macOS, Ubuntu, Debian, Fedora, RHEL"
+        echo "Supported platforms: macOS, Ubuntu, Debian, Fedora, RHEL, WSL"
         return 0
         ;;
       *)
@@ -2054,7 +2061,14 @@ keycutter-gpg-setup() {
   local os
   os=$(gpg-setup-detect-os)
 
-  log "Starting GPG setup for $os..."
+  # Detect WSL
+  local wsl_version=""
+  if wsl_version=$(gpg-wsl-detect 2>/dev/null); then
+    log "Starting GPG setup for $os ($wsl_version)..."
+    log "WSL detected - will configure GPG relay to Windows"
+  else
+    log "Starting GPG setup for $os..."
+  fi
   echo
 
   # Step 1: Check and install packages
@@ -2121,8 +2135,47 @@ keycutter-gpg-setup() {
     echo
   fi
 
-  # Step 4: Start pcscd if on Linux
-  if [[ "$os" != "macos" ]]; then
+  # Step 3b: WSL GPG Relay Setup
+  if [[ -n "$wsl_version" ]] && [[ "$skip_wsl_relay" != "true" ]]; then
+    log "Setting up WSL GPG relay to Windows..."
+    echo
+
+    local wsl_args=()
+    if [[ "$enable_ssh" == "true" ]]; then
+      wsl_args+=(--enable-ssh)
+    fi
+    if [[ "$non_interactive" == "true" ]]; then
+      wsl_args+=(--yes)
+    fi
+
+    gpg-wsl-setup "${wsl_args[@]}" || {
+      log "Warning: WSL GPG relay setup failed"
+      log "You may need to configure this manually"
+      log "See: keycutter gpg setup --help for troubleshooting"
+    }
+
+    # In WSL, skip the standard config steps as WSL relay handles GPG
+    # Show WSL-specific shell config and skip standard test/config
+    echo
+    log "GPG setup for WSL complete!"
+    echo
+    echo "Next steps:"
+    echo "  1. Add the shell configuration above to your ~/.bashrc or ~/.zshrc"
+    echo "  2. Restart your shell or run: source ~/.bashrc"
+    echo "  3. Ensure Windows GPG/Gpg4win is installed and gpg-agent is running"
+    echo "  4. Insert your YubiKey and test with: gpg --card-status"
+    echo
+    echo "If gpg --card-status fails:"
+    echo "  - In Windows, run: gpg-connect-agent /bye"
+    echo "  - Check relay status: gpg_relay_status"
+    echo "  - Restart relay: gpg_relay_restart"
+    echo
+
+    return 0
+  fi
+
+  # Step 4: Start pcscd if on Linux (not WSL - WSL uses Windows pcscd)
+  if [[ "$os" != "macos" ]] && [[ -z "$wsl_version" ]]; then
     log "Ensuring pcscd service is running..."
     gpg-pcscd-ensure || {
       log "Warning: Could not start pcscd service"

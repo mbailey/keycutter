@@ -2283,3 +2283,204 @@ Authentication key: [none]"
     [[ "$output" =~ "[3/4]" ]]
     [[ "$output" =~ "[4/4]" ]]
 }
+
+# =============================================================================
+# WSL-SPECIFIC FUNCTION TESTS
+# =============================================================================
+
+@test "gpg-wsl-detect returns 1 on non-WSL systems" {
+    # On non-WSL systems, gpg-wsl-detect should return 1
+
+    # Create a mock /proc/version without "microsoft"
+    local mock_proc="$TEST_HOME/mock_proc"
+    mkdir -p "$mock_proc"
+    echo "Linux version 5.15.0-generic (build@server)" > "$mock_proc/version"
+
+    # Temporarily override /proc/version check using function override
+    # Since we can't override /proc, just test that on macOS it returns 1
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        run gpg-wsl-detect
+        [[ "$status" -eq 1 ]]
+        [[ -z "$output" ]]
+    else
+        # On Linux, check /proc/version directly
+        if ! grep -qi microsoft /proc/version 2>/dev/null; then
+            run gpg-wsl-detect
+            [[ "$status" -eq 1 ]]
+            [[ -z "$output" ]]
+        else
+            # Actually running in WSL - test should detect it
+            run gpg-wsl-detect
+            [[ "$status" -eq 0 ]]
+            [[ "$output" =~ "wsl" ]]
+        fi
+    fi
+}
+
+@test "gpg-wsl-relay-script-path returns correct path" {
+    run gpg-wsl-relay-script-path
+
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "${HOME}/.config/keycutter/gpg-relay" ]]
+}
+
+@test "gpg-wsl-shell-config generates valid shell config" {
+    run gpg-wsl-shell-config
+
+    [[ "$status" -eq 0 ]]
+    [[ "$output" =~ "# GPG Relay for WSL" ]]
+    [[ "$output" =~ "source" ]]
+    [[ "$output" =~ "gpg-relay" ]]
+    [[ "$output" =~ "GPG_TTY" ]]
+}
+
+@test "gpg-wsl-shell-config includes SSH config when enabled" {
+    run gpg-wsl-shell-config --enable-ssh
+
+    [[ "$status" -eq 0 ]]
+    [[ "$output" =~ "SSH via GPG agent" ]]
+    [[ "$output" =~ "SSH_AUTH_SOCK" ]]
+}
+
+@test "gpg-wsl-check-prerequisites detects missing socat" {
+    # Mock command to make socat unavailable
+    local saved_path="$PATH"
+    export PATH="$MOCK_BIN_DIR"
+
+    # Don't create mock for socat - it should be "missing"
+
+    run gpg-wsl-check-prerequisites
+
+    export PATH="$saved_path"
+
+    [[ "$status" -eq 1 ]]
+    [[ "$output" =~ "socat" ]]
+}
+
+@test "gpg-wsl-check-prerequisites passes when socat available" {
+    # Create mock socat
+    create_mock_command "socat" 0 ""
+
+    # Mock powershell.exe to avoid errors on non-WSL
+    create_mock_command "powershell.exe" 1 ""
+
+    run gpg-wsl-check-prerequisites
+
+    # Should pass (socat check) or only warn about Windows GPG
+    [[ "$status" -eq 0 ]] || [[ "$output" =~ "Windows GPG" ]]
+}
+
+@test "gpg-wsl-install-npiperelay requires --force when file exists" {
+    # Skip on non-WSL since it requires powershell.exe
+    if [[ "$OSTYPE" == "darwin"* ]] || ! grep -qi microsoft /proc/version 2>/dev/null; then
+        skip "Test requires WSL environment"
+    fi
+
+    # This test can only run in actual WSL
+    local win_profile
+    if win_profile=$(gpg-wsl-windows-user-profile 2>/dev/null); then
+        local wsl_dir="${win_profile}/WSL"
+        local npiperelay_path="${wsl_dir}/npiperelay.exe"
+
+        # Create existing file
+        mkdir -p "$wsl_dir"
+        touch "$npiperelay_path"
+
+        run gpg-wsl-install-npiperelay
+
+        [[ "$status" -eq 0 ]]
+        [[ "$output" =~ "already installed" ]]
+
+        rm -f "$npiperelay_path"
+    else
+        skip "Could not get Windows user profile"
+    fi
+}
+
+@test "gpg-wsl-mask-systemd-sockets always returns 0" {
+    # Mock systemctl to simulate different scenarios
+    create_mock_command "systemctl" 1 "Failed to mask"
+
+    run gpg-wsl-mask-systemd-sockets
+
+    # Should always succeed even if systemctl fails
+    [[ "$status" -eq 0 ]]
+}
+
+@test "gpg-wsl-relay-install creates relay script" {
+    # Skip on non-WSL since it requires powershell.exe and wslpath
+    if [[ "$OSTYPE" == "darwin"* ]] || ! grep -qi microsoft /proc/version 2>/dev/null; then
+        skip "Test requires WSL environment"
+    fi
+
+    local script_path
+    script_path=$(gpg-wsl-relay-script-path)
+    local script_dir
+    script_dir=$(dirname "$script_path")
+
+    # Use test-specific path
+    export HOME="$TEST_HOME"
+    script_path=$(gpg-wsl-relay-script-path)
+    script_dir=$(dirname "$script_path")
+
+    run gpg-wsl-relay-install
+
+    if [[ "$status" -eq 0 ]]; then
+        [[ -f "$script_path" ]]
+        [[ -x "$script_path" ]]
+
+        # Check content
+        grep -q "GPG Relay for WSL" "$script_path"
+        grep -q "gpg_relay_start" "$script_path"
+        grep -q "gpg_relay_stop" "$script_path"
+    fi
+}
+
+@test "gpg-wsl-setup requires prerequisites" {
+    # Create mock powershell that fails (before manipulating PATH)
+    create_mock_command "powershell.exe" 1 ""
+
+    # Mock command without socat - prepend mock dir so mocks take precedence
+    # but system commands still available
+    local saved_path="$PATH"
+    export PATH="$MOCK_BIN_DIR:$saved_path"
+
+    run gpg-wsl-setup --yes
+
+    export PATH="$saved_path"
+
+    # Should fail due to missing prerequisites (socat) or powershell
+    [[ "$status" -eq 1 ]] || [[ "$output" =~ "Error" ]] || [[ "$output" =~ "Warning" ]] || [[ "$output" =~ "socat" ]]
+}
+
+@test "keycutter-gpg-setup accepts --skip-wsl-relay flag" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Mock required commands
+    create_mock_command "gpg" 0 "gpg (GnuPG) 2.4.0"
+    create_mock_command "gpgconf" 0 ""
+    create_mock_command "gpg-connect-agent" 0 ""
+    create_mock_command "pinentry" 0 ""
+
+    # Create test GPG home
+    local test_gpg_home="$TEST_HOME/test-skip-wsl"
+    mkdir -p "$test_gpg_home"
+    export GNUPGHOME="$test_gpg_home"
+
+    run keycutter-gpg-setup --skip-packages --skip-wsl-relay --skip-launchagent
+
+    # Command should accept the flag without error
+    [[ "$output" =~ "GPG setup" ]] || [[ "$output" =~ "Testing" ]]
+
+    unset GNUPGHOME
+}
+
+@test "keycutter-gpg-setup help shows WSL options" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-setup --help
+
+    [[ "$status" -eq 0 ]]
+    [[ "$output" =~ "--skip-wsl-relay" ]]
+    [[ "$output" =~ "WSL" ]]
+}

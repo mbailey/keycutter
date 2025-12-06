@@ -2990,3 +2990,704 @@ EOF
     echo "$fingerprint"
     return 0
 }
+
+# =============================================================================
+# WSL-SPECIFIC GPG FUNCTIONS
+# =============================================================================
+# These functions enable GPG/YubiKey support in Windows Subsystem for Linux
+# by forwarding GPG agent socket connections to the Windows host via npiperelay.
+#
+# References:
+#   - https://codingnest.com/how-to-use-gpg-with-yubikey-wsl/
+#   - https://justyn.io/blog/using-a-yubikey-for-gpg-in-windows-10-wsl-windows-subsystem-for-linux/
+#   - https://github.com/benpye/wsl-ssh-pageant (npiperelay source)
+# =============================================================================
+
+gpg-wsl-detect() {
+    # Detect if running in Windows Subsystem for Linux
+    #
+    # Returns:
+    #   0 if running in WSL (WSL1 or WSL2)
+    #   1 if not running in WSL
+    #
+    # Output:
+    #   Prints "wsl1" or "wsl2" if detected, nothing if not WSL
+
+    # Check /proc/version for "microsoft" string (works for both WSL1 and WSL2)
+    if [[ -f /proc/version ]] && grep -qi microsoft /proc/version; then
+        # Distinguish WSL1 from WSL2
+        if [[ -f /proc/sys/fs/binfmt_misc/WSLInterop ]]; then
+            # WSL2 has this file
+            echo "wsl2"
+        else
+            # WSL1 doesn't have this file, but check /proc/version for "microsoft"
+            # WSL2 typically has "microsoft-standard" in the kernel name
+            if grep -qi "microsoft-standard" /proc/version; then
+                echo "wsl2"
+            else
+                echo "wsl1"
+            fi
+        fi
+        return 0
+    fi
+
+    return 1
+}
+
+gpg-wsl-windows-user-profile() {
+    # Get the Windows user profile path in WSL format
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Output:
+    #   Prints the Windows user profile path (e.g., /mnt/c/Users/username)
+
+    local win_profile
+
+    # Use PowerShell to get the user profile path
+    win_profile=$(powershell.exe -NoProfile -Command 'Write-Host -NoNewline $env:USERPROFILE' 2>/dev/null | tr -d '\r')
+
+    if [[ -z "$win_profile" ]]; then
+        log "Error: Could not determine Windows user profile path"
+        return 1
+    fi
+
+    # Convert to WSL path
+    local wsl_path
+    wsl_path=$(wslpath -u "$win_profile" 2>/dev/null)
+
+    if [[ -z "$wsl_path" ]]; then
+        log "Error: Could not convert Windows path to WSL path"
+        return 1
+    fi
+
+    echo "$wsl_path"
+    return 0
+}
+
+gpg-wsl-windows-gpg-path() {
+    # Get the Windows GPG socket directory path in WSL format
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Output:
+    #   Prints the Windows GPG directory path (e.g., /mnt/c/Users/username/AppData/Local/gnupg)
+
+    local user_profile
+    user_profile=$(gpg-wsl-windows-user-profile) || return 1
+
+    local gpg_path="${user_profile}/AppData/Local/gnupg"
+
+    if [[ ! -d "$gpg_path" ]]; then
+        log "Warning: Windows GPG directory does not exist: $gpg_path"
+        log "Make sure GPG is installed on Windows and gpg-agent has been run"
+    fi
+
+    echo "$gpg_path"
+    return 0
+}
+
+gpg-wsl-check-prerequisites() {
+    # Check if WSL prerequisites for GPG relay are installed
+    #
+    # Arguments:
+    #   --install    Install missing prerequisites
+    #   --yes, -y    Non-interactive mode for installation
+    #
+    # Returns:
+    #   0 if all prerequisites are met
+    #   1 if some prerequisites are missing
+    #
+    # Output:
+    #   Prints missing prerequisites (one per line)
+
+    local install=false
+    local non_interactive=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --install)
+                install=true
+                shift
+                ;;
+            --yes|-y)
+                non_interactive=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    local missing=()
+
+    # Check for socat
+    if ! command -v socat &>/dev/null; then
+        missing+=("socat")
+    fi
+
+    # Check for Windows GPG installation
+    local win_profile
+    if win_profile=$(gpg-wsl-windows-user-profile 2>/dev/null); then
+        local win_gpg_agent="${win_profile}/AppData/Local/Programs/GnuPG/bin/gpg-agent.exe"
+        local win_gpg_path="${win_profile}/AppData/Local/gnupg"
+
+        if [[ ! -f "$win_gpg_agent" ]] && [[ ! -d "$win_gpg_path" ]]; then
+            log "Warning: Windows GPG not found at expected locations"
+            log "Expected: $win_gpg_agent or $win_gpg_path"
+            log "Make sure Gpg4win is installed on Windows"
+        fi
+    fi
+
+    # Print missing prerequisites
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        for pkg in "${missing[@]}"; do
+            echo "$pkg"
+        done
+
+        if [[ "$install" == "true" ]]; then
+            log "Installing missing prerequisites: ${missing[*]}"
+
+            # Detect package manager
+            if command -v apt-get &>/dev/null; then
+                local cmd="sudo apt-get install -y ${missing[*]}"
+                if [[ "$non_interactive" == "true" ]]; then
+                    eval "$cmd"
+                else
+                    echo "The following packages will be installed: ${missing[*]}"
+                    echo -n "Install? [y/N] "
+                    read -r response
+                    if [[ "$response" =~ ^[Yy] ]]; then
+                        eval "$cmd"
+                    else
+                        return 1
+                    fi
+                fi
+            else
+                log "Error: apt-get not found. Please install manually: ${missing[*]}"
+                return 1
+            fi
+        else
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+gpg-wsl-install-npiperelay() {
+    # Download and install npiperelay for GPG socket forwarding
+    #
+    # Arguments:
+    #   --force      Re-download even if already exists
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Output:
+    #   Path to npiperelay executable
+
+    local force=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force)
+                force=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    local win_profile
+    win_profile=$(gpg-wsl-windows-user-profile) || return 1
+
+    # Create WSL directory in Windows user profile
+    local wsl_dir="${win_profile}/WSL"
+    if [[ ! -d "$wsl_dir" ]]; then
+        log "Creating WSL directory: $wsl_dir"
+        mkdir -p "$wsl_dir"
+    fi
+
+    local npiperelay_path="${wsl_dir}/npiperelay.exe"
+
+    # Check if already installed
+    if [[ -f "$npiperelay_path" ]] && [[ "$force" != "true" ]]; then
+        log "npiperelay already installed: $npiperelay_path"
+        echo "$npiperelay_path"
+        return 0
+    fi
+
+    # Download npiperelay
+    # Using wsl-ssh-pageant which includes npiperelay functionality
+    local url="https://github.com/benpye/wsl-ssh-pageant/releases/latest/download/wsl-ssh-pageant-amd64-gui.exe"
+
+    log "Downloading npiperelay from $url..."
+
+    if command -v curl &>/dev/null; then
+        curl -L -o "$npiperelay_path" "$url" || {
+            log "Error: Failed to download npiperelay"
+            return 1
+        }
+    elif command -v wget &>/dev/null; then
+        wget -O "$npiperelay_path" "$url" || {
+            log "Error: Failed to download npiperelay"
+            return 1
+        }
+    else
+        log "Error: Neither curl nor wget available"
+        return 1
+    fi
+
+    log "npiperelay installed: $npiperelay_path"
+    echo "$npiperelay_path"
+    return 0
+}
+
+gpg-wsl-mask-systemd-sockets() {
+    # Disable systemd GPG agent sockets to prevent conflicts with relay
+    #
+    # Returns:
+    #   0 always (failures are non-fatal)
+
+    log "Disabling systemd GPG agent sockets..."
+
+    # Mask sockets to prevent systemd from starting gpg-agent
+    systemctl --user mask --now gpg-agent-browser.socket 2>/dev/null || true
+    systemctl --user mask --now gpg-agent-extra.socket 2>/dev/null || true
+    systemctl --user mask --now gpg-agent-ssh.socket 2>/dev/null || true
+    systemctl --user mask --now gpg-agent.socket 2>/dev/null || true
+
+    log "systemd GPG agent sockets disabled"
+    return 0
+}
+
+gpg-wsl-relay-script-path() {
+    # Get the path where the GPG relay script should be installed
+    #
+    # Output:
+    #   Path to gpg-relay script
+
+    echo "${HOME}/.config/keycutter/gpg-relay"
+}
+
+gpg-wsl-relay-install() {
+    # Install the GPG relay script for socket forwarding
+    #
+    # Arguments:
+    #   --enable-ssh    Enable SSH agent forwarding
+    #   --backup        Back up existing script
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local enable_ssh=false
+    local backup=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --enable-ssh)
+                enable_ssh=true
+                shift
+                ;;
+            --backup)
+                backup=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    local script_path
+    script_path=$(gpg-wsl-relay-script-path)
+    local script_dir
+    script_dir=$(dirname "$script_path")
+
+    # Create directory if needed
+    if [[ ! -d "$script_dir" ]]; then
+        mkdir -p "$script_dir"
+    fi
+
+    # Backup existing script
+    if [[ -f "$script_path" ]] && [[ "$backup" == "true" ]]; then
+        local backup_path="${script_path}.backup.$(date +%Y%m%d%H%M%S)"
+        cp "$script_path" "$backup_path"
+        log "Backed up existing script to: $backup_path"
+    fi
+
+    # Get Windows paths
+    local win_profile
+    win_profile=$(gpg-wsl-windows-user-profile) || return 1
+
+    local npiperelay_path="${win_profile}/WSL/npiperelay.exe"
+    local win_gpg_path="${win_profile}/AppData/Local/gnupg"
+    # Convert to Windows path format for npiperelay
+    local win_gpg_path_win
+    win_gpg_path_win=$(wslpath -w "$win_gpg_path" 2>/dev/null | sed 's/\\/\\\\/g')
+
+    log "Installing GPG relay script: $script_path"
+
+    # Generate the relay script
+    cat > "$script_path" << 'RELAY_SCRIPT_HEADER'
+#!/usr/bin/env bash
+# GPG Relay for WSL
+# Forwards GPG agent socket to Windows via npiperelay
+#
+# Generated by: keycutter gpg setup
+#
+# Usage:
+#   source ~/.config/keycutter/gpg-relay
+#
+# This script is sourced in your shell profile (.bashrc/.zshrc)
+# and automatically starts the GPG relay when needed.
+
+GPG_RELAY_LOCKFILE="${HOME}/.gnupg/.gpg-relay.lock"
+GPG_RELAY_PIDFILE="${HOME}/.gnupg/.gpg-relay.pids"
+SSH_RELAY_PIDFILE="${HOME}/.gnupg/.ssh-relay.pids"
+
+RELAY_SCRIPT_HEADER
+
+    # Add configuration section with paths
+    cat >> "$script_path" << RELAY_SCRIPT_CONFIG
+# Configuration (generated by keycutter)
+NPIPERELAY="${npiperelay_path}"
+WIN_GPG_DIR="${win_gpg_path_win}"
+RELAY_SCRIPT_CONFIG
+
+    # Add SSH configuration if enabled
+    if [[ "$enable_ssh" == "true" ]]; then
+        cat >> "$script_path" << 'RELAY_SCRIPT_SSH'
+SSH_ENABLED="true"
+RELAY_SCRIPT_SSH
+    else
+        cat >> "$script_path" << 'RELAY_SCRIPT_SSH'
+SSH_ENABLED=""
+RELAY_SCRIPT_SSH
+    fi
+
+    # Add the main relay functions
+    cat >> "$script_path" << 'RELAY_SCRIPT_BODY'
+
+gpg_relay_cleanup_stale() {
+    # Clean up stale socket files
+    local socket_dir="${GNUPGHOME:-$HOME/.gnupg}"
+    local xdg_socket_dir="${XDG_RUNTIME_DIR}/gnupg"
+
+    for socket in "${socket_dir}/S.gpg-agent" "${xdg_socket_dir}/S.gpg-agent"; do
+        if [[ -S "$socket" ]]; then
+            if ! fuser "$socket" >/dev/null 2>&1; then
+                rm -f "$socket" 2>/dev/null
+            fi
+        fi
+    done
+
+    if [[ -n "$SSH_ENABLED" ]]; then
+        for socket in "${socket_dir}/S.gpg-agent.ssh" "${xdg_socket_dir}/S.gpg-agent.ssh"; do
+            if [[ -S "$socket" ]]; then
+                if ! fuser "$socket" >/dev/null 2>&1; then
+                    rm -f "$socket" 2>/dev/null
+                fi
+            fi
+        done
+    fi
+}
+
+gpg_relay_check_pids() {
+    # Check if relay processes are running
+    local pidfile="$1"
+    if [[ ! -f "$pidfile" ]]; then
+        return 1
+    fi
+
+    while read -r pid; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            return 1
+        fi
+    done < "$pidfile"
+
+    return 0
+}
+
+gpg_relay_start() {
+    # Start the GPG agent relay
+    local socket_dir="${GNUPGHOME:-$HOME/.gnupg}"
+    local xdg_socket_dir="${XDG_RUNTIME_DIR}/gnupg"
+
+    # Create directories if needed
+    mkdir -p "$socket_dir" 2>/dev/null
+    [[ -n "$XDG_RUNTIME_DIR" ]] && mkdir -p "$xdg_socket_dir" 2>/dev/null
+
+    # Check for recent start (prevent duplicate starts)
+    if [[ -f "$GPG_RELAY_LOCKFILE" ]]; then
+        local lock_age=$(( $(date +%s) - $(stat -c %Y "$GPG_RELAY_LOCKFILE" 2>/dev/null || echo 0) ))
+        if [[ $lock_age -lt 10 ]]; then
+            return 0
+        fi
+    fi
+
+    # Check if relay is already running
+    if gpg_relay_check_pids "$GPG_RELAY_PIDFILE"; then
+        return 0
+    fi
+
+    # Clean up stale sockets
+    gpg_relay_cleanup_stale
+
+    # Create lock file
+    touch "$GPG_RELAY_LOCKFILE"
+
+    # Kill any existing gpg-agent in WSL
+    gpgconf --kill gpg-agent 2>/dev/null || true
+
+    # Clear old PID files
+    rm -f "$GPG_RELAY_PIDFILE" "$SSH_RELAY_PIDFILE"
+
+    # Start GPG agent relay
+    # Create sockets in both locations for compatibility
+    if [[ -n "$XDG_RUNTIME_DIR" ]]; then
+        socat UNIX-LISTEN:"${xdg_socket_dir}/S.gpg-agent,fork" \
+            EXEC:"${NPIPERELAY} -ep -ei -s -a '${WIN_GPG_DIR}\\S.gpg-agent'",nofork &
+        echo $! >> "$GPG_RELAY_PIDFILE"
+    fi
+
+    socat UNIX-LISTEN:"${socket_dir}/S.gpg-agent,fork" \
+        EXEC:"${NPIPERELAY} -ep -ei -s -a '${WIN_GPG_DIR}\\S.gpg-agent'",nofork &
+    echo $! >> "$GPG_RELAY_PIDFILE"
+
+    # Start SSH agent relay if enabled
+    if [[ -n "$SSH_ENABLED" ]]; then
+        if [[ -n "$XDG_RUNTIME_DIR" ]]; then
+            socat UNIX-LISTEN:"${xdg_socket_dir}/S.gpg-agent.ssh,fork" \
+                EXEC:"${NPIPERELAY} -ep -ei -s -a '${WIN_GPG_DIR}\\S.gpg-agent.ssh'",nofork &
+            echo $! >> "$SSH_RELAY_PIDFILE"
+        fi
+
+        socat UNIX-LISTEN:"${socket_dir}/S.gpg-agent.ssh,fork" \
+            EXEC:"${NPIPERELAY} -ep -ei -s -a '${WIN_GPG_DIR}\\S.gpg-agent.ssh'",nofork &
+        echo $! >> "$SSH_RELAY_PIDFILE"
+
+        # Set SSH_AUTH_SOCK for GPG-backed SSH
+        export SSH_AUTH_SOCK="${socket_dir}/S.gpg-agent.ssh"
+    fi
+
+    # Set GPG_TTY for pinentry
+    export GPG_TTY=$(tty)
+}
+
+gpg_relay_stop() {
+    # Stop the GPG agent relay
+    for pidfile in "$GPG_RELAY_PIDFILE" "$SSH_RELAY_PIDFILE"; do
+        if [[ -f "$pidfile" ]]; then
+            while read -r pid; do
+                kill "$pid" 2>/dev/null || true
+            done < "$pidfile"
+            rm -f "$pidfile"
+        fi
+    done
+
+    rm -f "$GPG_RELAY_LOCKFILE"
+}
+
+gpg_relay_status() {
+    # Check relay status
+    if gpg_relay_check_pids "$GPG_RELAY_PIDFILE"; then
+        echo "GPG relay: running"
+        if [[ -n "$SSH_ENABLED" ]] && gpg_relay_check_pids "$SSH_RELAY_PIDFILE"; then
+            echo "SSH relay: running"
+        elif [[ -n "$SSH_ENABLED" ]]; then
+            echo "SSH relay: stopped"
+        fi
+        return 0
+    else
+        echo "GPG relay: stopped"
+        return 1
+    fi
+}
+
+gpg_relay_restart() {
+    gpg_relay_stop
+    sleep 1
+    gpg_relay_start
+}
+
+# Auto-start relay when this script is sourced
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    gpg_relay_start
+fi
+RELAY_SCRIPT_BODY
+
+    chmod +x "$script_path"
+
+    log "GPG relay script installed: $script_path"
+    return 0
+}
+
+gpg-wsl-shell-config() {
+    # Generate shell configuration for WSL GPG relay
+    #
+    # Arguments:
+    #   --enable-ssh    Include SSH agent configuration
+    #
+    # Output:
+    #   Prints shell configuration lines to stdout
+
+    local enable_ssh=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --enable-ssh)
+                enable_ssh=true
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local script_path
+    script_path=$(gpg-wsl-relay-script-path)
+
+    echo "# GPG Relay for WSL (keycutter)"
+    echo "# This sources the GPG relay script which forwards"
+    echo "# GPG agent socket to Windows for YubiKey access"
+    echo "if [[ -f \"$script_path\" ]]; then"
+    echo "    source \"$script_path\""
+    echo "fi"
+    echo ""
+    echo "# GPG TTY for pinentry"
+    echo "export GPG_TTY=\$(tty)"
+
+    if [[ "$enable_ssh" == "true" ]]; then
+        echo ""
+        echo "# SSH via GPG agent (auto-set by gpg-relay when SSH is enabled)"
+        echo "# export SSH_AUTH_SOCK=\"\${GNUPGHOME:-\$HOME/.gnupg}/S.gpg-agent.ssh\""
+    fi
+}
+
+gpg-wsl-setup() {
+    # Set up GPG agent forwarding in WSL
+    #
+    # This function:
+    #   1. Checks prerequisites (socat, Windows GPG)
+    #   2. Downloads and installs npiperelay
+    #   3. Masks systemd GPG agent sockets
+    #   4. Installs the GPG relay script
+    #   5. Shows shell configuration
+    #
+    # Arguments:
+    #   --enable-ssh    Enable SSH agent forwarding
+    #   --yes, -y       Non-interactive mode
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local enable_ssh=false
+    local non_interactive=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --enable-ssh)
+                enable_ssh=true
+                shift
+                ;;
+            --yes|-y)
+                non_interactive=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    log "Setting up GPG relay for WSL..."
+    echo
+
+    # Step 1: Check prerequisites
+    log "Step 1: Checking prerequisites..."
+
+    local install_args=("--install")
+    if [[ "$non_interactive" == "true" ]]; then
+        install_args+=("--yes")
+    fi
+
+    gpg-wsl-check-prerequisites "${install_args[@]}" || {
+        log "Error: Prerequisites check failed"
+        return 1
+    }
+    echo
+
+    # Step 2: Download npiperelay
+    log "Step 2: Installing npiperelay..."
+    local npiperelay_path
+    npiperelay_path=$(gpg-wsl-install-npiperelay) || {
+        log "Error: Failed to install npiperelay"
+        return 1
+    }
+    echo
+
+    # Step 3: Disable systemd sockets
+    log "Step 3: Disabling systemd GPG agent sockets..."
+    gpg-wsl-mask-systemd-sockets
+    echo
+
+    # Step 4: Install relay script
+    log "Step 4: Installing GPG relay script..."
+    local relay_args=(--backup)
+    if [[ "$enable_ssh" == "true" ]]; then
+        relay_args+=(--enable-ssh)
+    fi
+
+    gpg-wsl-relay-install "${relay_args[@]}" || {
+        log "Error: Failed to install relay script"
+        return 1
+    }
+    echo
+
+    # Step 5: Show shell configuration
+    log "Step 5: Shell configuration"
+    echo
+    echo "Add the following to your ~/.bashrc or ~/.zshrc:"
+    echo
+    gpg-wsl-shell-config $(if [[ "$enable_ssh" == "true" ]]; then echo "--enable-ssh"; fi)
+    echo
+
+    # Summary
+    log "WSL GPG setup complete!"
+    echo
+    echo "Next steps:"
+    echo "  1. Add the shell configuration above to your ~/.bashrc or ~/.zshrc"
+    echo "  2. Restart your shell or run: source ~/.bashrc"
+    echo "  3. Make sure Windows GPG is running and has access to your YubiKey"
+    echo "  4. Test with: gpg --card-status"
+    echo
+    echo "Troubleshooting:"
+    echo "  - If gpg --card-status fails, ensure Windows gpg-agent is running"
+    echo "  - Run 'gpg-connect-agent /bye' in Windows to start the agent"
+    echo "  - Check relay status with: gpg_relay_status"
+    echo
+
+    return 0
+}

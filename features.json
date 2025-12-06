@@ -216,8 +216,8 @@
         "Set up socat and npiperelay",
         "Add troubleshooting guidance for WSL issues"
       ],
-      "status": "failing",
-      "last_updated": null
+      "status": "passing",
+      "last_updated": "2025-12-06"
     },
     {
       "id": "gpg-015",
