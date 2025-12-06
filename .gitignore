@@ -1,0 +1,9 @@
+# Local development harness
+HARNESS.md
+harness-init.sh
+.mcp.json
+progress.json
+features.json
+
+# Claude Code local settings
+.claude/

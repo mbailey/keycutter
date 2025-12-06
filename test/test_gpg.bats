@@ -2998,3 +2998,287 @@ Authentication key: [none]"
     [[ "$output" =~ "yubikeys" ]]
     [[ "$output" =~ "List registered YubiKey installations" ]]
 }
+
+# ============================================================================
+# Subkey Renewal Functions Tests
+# ============================================================================
+
+@test "gpg-subkeys-list-info requires --fingerprint" {
+    run gpg-subkeys-list-info
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--fingerprint is required" ]]
+}
+
+@test "gpg-subkeys-list-info requires GNUPGHOME" {
+    unset GNUPGHOME
+
+    run gpg-subkeys-list-info --fingerprint "ABCD1234"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "GNUPGHOME not set" ]]
+}
+
+@test "gpg-subkeys-list-info rejects unknown options" {
+    export GNUPGHOME="$TEST_HOME/gnupg"
+    mkdir -p "$GNUPGHOME"
+
+    run gpg-subkeys-list-info --invalid-flag
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+}
+
+@test "gpg-subkeys-revoke requires --fingerprint" {
+    run gpg-subkeys-revoke --passphrase "testpass"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--fingerprint is required" ]]
+}
+
+@test "gpg-subkeys-revoke requires --passphrase" {
+    run gpg-subkeys-revoke --fingerprint "ABCD1234"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--passphrase is required" ]]
+}
+
+@test "gpg-subkeys-revoke requires GNUPGHOME" {
+    unset GNUPGHOME
+
+    run gpg-subkeys-revoke --fingerprint "ABCD1234" --passphrase "testpass"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "GNUPGHOME not set" ]]
+}
+
+@test "gpg-subkeys-revoke accepts --reason argument" {
+    export GNUPGHOME="$TEST_HOME/gnupg"
+    mkdir -p "$GNUPGHOME"
+
+    # Mock gpg to just return no subkeys
+    create_mock_command "gpg" 0 ""
+
+    run gpg-subkeys-revoke --fingerprint "ABCD1234" --passphrase "testpass" --reason 2
+
+    # Should succeed since no subkeys to revoke
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "No subkeys found to revoke" ]]
+}
+
+@test "gpg-key-renew requires --fingerprint" {
+    run gpg-key-renew --passphrase "testpass"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--fingerprint is required" ]]
+}
+
+@test "gpg-key-renew requires --passphrase" {
+    run gpg-key-renew --fingerprint "ABCD1234"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--passphrase is required" ]]
+}
+
+@test "gpg-key-renew requires GNUPGHOME" {
+    unset GNUPGHOME
+
+    run gpg-key-renew --fingerprint "ABCD1234" --passphrase "testpass"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "GNUPGHOME not set" ]]
+}
+
+@test "gpg-key-renew accepts --key-type argument" {
+    export GNUPGHOME="$TEST_HOME/gnupg"
+    mkdir -p "$GNUPGHOME"
+
+    # This will fail because key doesn't exist, but we're checking argument parsing
+    run gpg-key-renew --fingerprint "ABCD1234" --passphrase "testpass" --key-type rsa4096
+
+    # Should fail on missing key, not on argument parsing
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Master key not found" ]]
+}
+
+@test "gpg-key-renew accepts --expiration argument" {
+    export GNUPGHOME="$TEST_HOME/gnupg"
+    mkdir -p "$GNUPGHOME"
+
+    run gpg-key-renew --fingerprint "ABCD1234" --passphrase "testpass" --expiration 1y
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Master key not found" ]]
+}
+
+@test "gpg-key-renew accepts --revoke flag" {
+    export GNUPGHOME="$TEST_HOME/gnupg"
+    mkdir -p "$GNUPGHOME"
+
+    run gpg-key-renew --fingerprint "ABCD1234" --passphrase "testpass" --revoke
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Master key not found" ]]
+}
+
+@test "gpg-key-export-public requires --fingerprint" {
+    run gpg-key-export-public
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--fingerprint is required" ]]
+}
+
+@test "gpg-key-export-public accepts --output argument" {
+    export GNUPGHOME="$TEST_HOME/gnupg"
+    mkdir -p "$GNUPGHOME"
+
+    # Mock gpg to fail (no key)
+    create_mock_command "gpg" 1 ""
+
+    run gpg-key-export-public --fingerprint "ABCD1234" --output "$TEST_HOME/test.asc"
+
+    # Should fail because key doesn't exist
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Failed to export public key" ]]
+}
+
+@test "gpg-key-send-keyserver requires --fingerprint" {
+    run gpg-key-send-keyserver
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--fingerprint is required" ]]
+}
+
+@test "gpg-key-send-keyserver accepts --keyserver argument" {
+    export GNUPGHOME="$TEST_HOME/gnupg"
+    mkdir -p "$GNUPGHOME"
+
+    # Mock gpg to fail (no key)
+    create_mock_command "gpg" 1 ""
+
+    run gpg-key-send-keyserver --fingerprint "ABCD1234" --keyserver "hkps://keys.example.com"
+
+    # Should fail because key send fails
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Failed to send key" ]]
+}
+
+@test "gpg-key-send-keyserver uses default keyserver from config" {
+    export GNUPGHOME="$TEST_HOME/gnupg"
+    mkdir -p "$GNUPGHOME"
+
+    # Mock gpg to fail (no key)
+    create_mock_command "gpg" 1 ""
+
+    run gpg-key-send-keyserver --fingerprint "ABCD1234"
+
+    # Should mention keyserver in output
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Sending key to keyserver:" ]]
+    [[ "$output" =~ "keys.openpgp.org" ]]  # Default keyserver
+}
+
+# ============================================================================
+# keycutter-gpg-key-renew CLI Tests
+# ============================================================================
+
+@test "keycutter-gpg-key-renew shows help with --help" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key-renew --help
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Usage:" ]]
+    [[ "$output" =~ "--backup" ]]
+    [[ "$output" =~ "--passphrase" ]]
+    [[ "$output" =~ "--expiration" ]]
+    [[ "$output" =~ "--revoke" ]]
+    [[ "$output" =~ "--keyserver" ]]
+}
+
+@test "keycutter-gpg-key-renew rejects unknown options" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key-renew --invalid-flag
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Unknown option" ]]
+}
+
+@test "keycutter-gpg-key-renew requires --backup-pass in non-interactive mode" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Create a mock backup file
+    mkdir -p "$TEST_HOME/gpg-backups"
+    touch "$TEST_HOME/gpg-backups/gpg-backup-2025-01-01-ABCD1234.tar.gz.gpg"
+
+    # Mock config to return backup dir
+    mkdir -p "$TEST_HOME/.config/keycutter"
+    cat > "$TEST_HOME/.config/keycutter/gpg.conf" <<EOF
+GPG_BACKUP_DIR="$TEST_HOME/gpg-backups"
+EOF
+
+    run keycutter-gpg-key-renew --yes --passphrase "testpass"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--backup-pass required" ]]
+}
+
+@test "keycutter-gpg-key-renew requires --passphrase in non-interactive mode" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Create a mock backup file
+    mkdir -p "$TEST_HOME/gpg-backups"
+    touch "$TEST_HOME/gpg-backups/gpg-backup-2025-01-01-ABCD1234.tar.gz.gpg"
+
+    mkdir -p "$TEST_HOME/.config/keycutter"
+    cat > "$TEST_HOME/.config/keycutter/gpg.conf" <<EOF
+GPG_BACKUP_DIR="$TEST_HOME/gpg-backups"
+EOF
+
+    run keycutter-gpg-key-renew --yes --backup-pass "testpass"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "--passphrase required" ]]
+}
+
+@test "keycutter-gpg-key-renew requires --backup when multiple backups exist" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    # Create multiple mock backup files
+    mkdir -p "$TEST_HOME/gpg-backups"
+    touch "$TEST_HOME/gpg-backups/gpg-backup-2025-01-01-AAAA1111.tar.gz.gpg"
+    touch "$TEST_HOME/gpg-backups/gpg-backup-2025-01-02-BBBB2222.tar.gz.gpg"
+
+    mkdir -p "$TEST_HOME/.config/keycutter"
+    cat > "$TEST_HOME/.config/keycutter/gpg.conf" <<EOF
+GPG_BACKUP_DIR="$TEST_HOME/gpg-backups"
+EOF
+
+    run keycutter-gpg-key-renew --yes --backup-pass "pass1" --passphrase "pass2"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" =~ "Multiple backups found" ]]
+    [[ "$output" =~ "Use --backup to specify" ]]
+}
+
+@test "keycutter-gpg-key-renew help shows examples" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key-renew --help
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Examples:" ]]
+    [[ "$output" =~ "Interactive renewal" ]]
+    [[ "$output" =~ "keycutter gpg key renew" ]]
+}
+
+@test "keycutter gpg key help shows renew subcommand" {
+    source "$KEYCUTTER_ROOT/bin/keycutter"
+
+    run keycutter-gpg-key --help
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "renew" ]]
+    [[ "$output" =~ "Renew subkeys with fresh expiration" ]]
+}

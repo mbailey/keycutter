@@ -4524,3 +4524,428 @@ gpg-yubikeys-list-available() {
         fi
     fi
 }
+
+# =============================================================================
+# SUBKEY RENEWAL FUNCTIONS
+# =============================================================================
+# These functions support renewing GPG subkeys when they approach expiration.
+# The workflow creates new subkeys with fresh expiration dates and transfers
+# them to YubiKey(s), replacing the old subkeys.
+# =============================================================================
+
+gpg-subkeys-list-info() {
+    # List subkeys with their expiration information
+    #
+    # Arguments:
+    #   --fingerprint FP    Master key fingerprint (required)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Output:
+    #   Prints subkey information with capabilities and expiration dates
+
+    local fingerprint=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: --fingerprint is required"
+        return 1
+    fi
+
+    if [[ -z "${GNUPGHOME:-}" ]]; then
+        log "Error: GNUPGHOME not set"
+        return 1
+    fi
+
+    # Get subkey info in machine-readable format
+    local key_info
+    key_info=$(gpg --homedir "$GNUPGHOME" --list-keys --with-colons "$fingerprint" 2>/dev/null)
+
+    if [[ -z "$key_info" ]]; then
+        log "Error: Key not found: $fingerprint"
+        return 1
+    fi
+
+    # Parse subkey lines
+    # Format: sub:u:256:22:KEYID:CREATED:EXPIRES::::::e:::+::ed25519:::0:
+    echo "$key_info" | while IFS=: read -r record validity keylen algo keyid created expires _ _ _ _ caps _; do
+        if [[ "$record" == "sub" ]]; then
+            local expiry_date="never"
+            if [[ -n "$expires" ]] && [[ "$expires" != "" ]]; then
+                # Convert Unix timestamp to date
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    expiry_date=$(date -r "$expires" "+%Y-%m-%d" 2>/dev/null || echo "unknown")
+                else
+                    expiry_date=$(date -d "@$expires" "+%Y-%m-%d" 2>/dev/null || echo "unknown")
+                fi
+            fi
+
+            local cap_name=""
+            case "$caps" in
+                *s*) cap_name="Sign" ;;
+                *e*) cap_name="Encrypt" ;;
+                *a*) cap_name="Auth" ;;
+                *) cap_name="Unknown" ;;
+            esac
+
+            echo "  ${cap_name}: ${keyid} (expires: ${expiry_date})"
+        fi
+    done
+
+    return 0
+}
+
+gpg-subkeys-revoke() {
+    # Revoke existing subkeys on a master key
+    #
+    # This function revokes all existing subkeys, preparing for new subkeys
+    # to be created. This is the proper cryptographic way to retire old subkeys.
+    #
+    # Arguments:
+    #   --fingerprint FP    Master key fingerprint (required)
+    #   --passphrase PASS   Key passphrase (required)
+    #   --reason NUM        Revocation reason (default: 1 = "Key is superseded")
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Revocation reasons:
+    #   0 = No reason specified
+    #   1 = Key is superseded
+    #   2 = Key is compromised
+    #   3 = Key is no longer used
+
+    local fingerprint=""
+    local passphrase=""
+    local reason="1"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --passphrase)
+                passphrase="$2"
+                shift 2
+                ;;
+            --reason)
+                reason="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: --fingerprint is required"
+        return 1
+    fi
+
+    if [[ -z "$passphrase" ]]; then
+        log "Error: --passphrase is required"
+        return 1
+    fi
+
+    if [[ -z "${GNUPGHOME:-}" ]]; then
+        log "Error: GNUPGHOME not set"
+        return 1
+    fi
+
+    # Get list of subkeys
+    local subkey_count
+    subkey_count=$(gpg --homedir "$GNUPGHOME" --list-keys --with-colons "$fingerprint" 2>/dev/null | grep -c "^sub:")
+
+    if [[ "$subkey_count" -eq 0 ]]; then
+        log "No subkeys found to revoke"
+        return 0
+    fi
+
+    log "Revoking $subkey_count existing subkeys..."
+
+    # Build the revocation commands
+    # We need to select each subkey and revoke it
+    local revoke_commands=""
+    for i in $(seq 1 "$subkey_count"); do
+        revoke_commands+="key $i
+revkey
+y
+$reason
+
+"
+    done
+    revoke_commands+="save"
+
+    # Execute revocation
+    if ! echo "$revoke_commands" | gpg --homedir "$GNUPGHOME" \
+            --batch \
+            --pinentry-mode loopback \
+            --passphrase "$passphrase" \
+            --command-fd 0 \
+            --status-fd 2 \
+            --edit-key "$fingerprint" 2>&1; then
+        log "Error: Failed to revoke subkeys"
+        return 1
+    fi
+
+    log "Success: All subkeys revoked"
+    return 0
+}
+
+gpg-key-renew() {
+    # Renew GPG subkeys by creating new subkeys with fresh expiration
+    #
+    # This function is the main renewal workflow. It:
+    #   1. Optionally revokes old subkeys
+    #   2. Creates new Sign, Encrypt, Auth subkeys with fresh expiration
+    #   3. Returns success for subsequent YubiKey transfer
+    #
+    # Arguments:
+    #   --fingerprint FP    Master key fingerprint (required)
+    #   --passphrase PASS   Key passphrase (required)
+    #   --key-type TYPE     Key algorithm: ed25519 (default) or rsa4096
+    #   --expiration PERIOD New expiration period: 2y (default), 1y, etc.
+    #   --revoke            Revoke old subkeys before creating new ones
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+    #
+    # Environment:
+    #   GNUPGHOME must be set and contain the master key
+    #
+    # Example:
+    #   gpg-key-renew --fingerprint "$FP" --passphrase "$PASS" --expiration 2y
+
+    local fingerprint=""
+    local passphrase=""
+    local key_type=""
+    local expiration=""
+    local revoke_old=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --passphrase)
+                passphrase="$2"
+                shift 2
+                ;;
+            --key-type)
+                key_type="$2"
+                shift 2
+                ;;
+            --expiration)
+                expiration="$2"
+                shift 2
+                ;;
+            --revoke)
+                revoke_old=true
+                shift
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Load config for defaults
+    gpg-config-load
+
+    # Use provided values or fall back to config
+    key_type="${key_type:-$(gpg-config-get GPG_KEY_TYPE ed25519)}"
+    expiration="${expiration:-$(gpg-config-get GPG_EXPIRATION 2y)}"
+
+    # Validate required parameters
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: --fingerprint is required"
+        return 1
+    fi
+
+    if [[ -z "$passphrase" ]]; then
+        log "Error: --passphrase is required"
+        return 1
+    fi
+
+    if [[ -z "${GNUPGHOME:-}" ]]; then
+        log "Error: GNUPGHOME not set. Keys must be loaded first."
+        return 1
+    fi
+
+    if [[ ! -d "$GNUPGHOME" ]]; then
+        log "Error: GNUPGHOME directory does not exist: $GNUPGHOME"
+        return 1
+    fi
+
+    # Verify master key exists
+    if ! gpg --homedir "$GNUPGHOME" --list-secret-keys "$fingerprint" &>/dev/null; then
+        log "Error: Master key not found: $fingerprint"
+        return 1
+    fi
+
+    log "Renewing subkeys for: ${fingerprint:0:16}..."
+    log "Key type: $key_type, New expiration: $expiration"
+
+    # Show current subkeys
+    echo
+    log "Current subkeys:"
+    gpg-subkeys-list-info --fingerprint "$fingerprint"
+    echo
+
+    # Optionally revoke old subkeys
+    if [[ "$revoke_old" == true ]]; then
+        log "Revoking old subkeys..."
+        if ! gpg-subkeys-revoke --fingerprint "$fingerprint" --passphrase "$passphrase"; then
+            log "Error: Failed to revoke old subkeys"
+            return 1
+        fi
+    fi
+
+    # Create new subkeys
+    log "Creating new subkeys..."
+    if ! gpg-subkeys-create \
+            --fingerprint "$fingerprint" \
+            --passphrase "$passphrase" \
+            --key-type "$key_type" \
+            --expiration "$expiration"; then
+        log "Error: Failed to create new subkeys"
+        return 1
+    fi
+
+    # Show new subkeys
+    echo
+    log "New subkeys:"
+    gpg-subkeys-list-info --fingerprint "$fingerprint"
+    echo
+
+    log "Success: Subkeys renewed"
+    log "Next: Transfer to YubiKey with: keycutter gpg key install --force"
+    return 0
+}
+
+gpg-key-export-public() {
+    # Export public key in ASCII armor format
+    #
+    # Arguments:
+    #   --fingerprint FP    Key fingerprint (required)
+    #   --output FILE       Output file (optional, prints to stdout if not specified)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local fingerprint=""
+    local output=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --output)
+                output="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: --fingerprint is required"
+        return 1
+    fi
+
+    local gpg_home="${GNUPGHOME:-$HOME/.gnupg}"
+
+    if [[ -n "$output" ]]; then
+        if ! gpg --homedir "$gpg_home" --armor --export "$fingerprint" > "$output" 2>/dev/null; then
+            log "Error: Failed to export public key"
+            return 1
+        fi
+        log "Public key exported to: $output"
+    else
+        gpg --homedir "$gpg_home" --armor --export "$fingerprint" 2>/dev/null
+    fi
+
+    return 0
+}
+
+gpg-key-send-keyserver() {
+    # Send public key to a keyserver
+    #
+    # Arguments:
+    #   --fingerprint FP     Key fingerprint (required)
+    #   --keyserver URL      Keyserver URL (optional, uses config default)
+    #
+    # Returns:
+    #   0 on success
+    #   1 on failure
+
+    local fingerprint=""
+    local keyserver=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fingerprint)
+                fingerprint="$2"
+                shift 2
+                ;;
+            --keyserver)
+                keyserver="$2"
+                shift 2
+                ;;
+            *)
+                log "Error: Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$fingerprint" ]]; then
+        log "Error: --fingerprint is required"
+        return 1
+    fi
+
+    # Load config for default keyserver
+    gpg-config-load
+    keyserver="${keyserver:-$(gpg-config-get GPG_KEYSERVER "hkps://keys.openpgp.org")}"
+
+    local gpg_home="${GNUPGHOME:-$HOME/.gnupg}"
+
+    log "Sending key to keyserver: $keyserver"
+
+    if ! gpg --homedir "$gpg_home" --keyserver "$keyserver" --send-keys "$fingerprint" 2>&1; then
+        log "Error: Failed to send key to keyserver"
+        log "You may need to verify your email at the keyserver"
+        return 1
+    fi
+
+    log "Success: Key sent to keyserver"
+    log "Note: Some keyservers require email verification"
+    return 0
+}

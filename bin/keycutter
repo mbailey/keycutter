@@ -1290,6 +1290,8 @@ keycutter-gpg-key() {
     echo "                             With --yes, use config file defaults"
     echo "  install [--backup FILE]    Install subkeys from backup to YubiKey"
     echo "                             Lists available backups if no file specified"
+    echo "  renew [--backup FILE]      Renew subkeys with fresh expiration"
+    echo "                             Creates new subkeys and installs to YubiKey"
     echo "  register [--fingerprint]   Register GPG auth key as SSH key with keycutter"
     echo "                             Exports public key for SSH and saves to keys directory"
     echo
@@ -1309,12 +1311,15 @@ keycutter-gpg-key() {
     install)
       keycutter-gpg-key-install "$@"
       ;;
+    renew)
+      keycutter-gpg-key-renew "$@"
+      ;;
     register)
       keycutter-gpg-key-register "$@"
       ;;
     *)
       log "Error: Unknown gpg key subcommand: $subcmd"
-      echo "Available subcommands: list, create, install, register"
+      echo "Available subcommands: list, create, install, renew, register"
       return 1
       ;;
   esac
@@ -2249,6 +2254,427 @@ _keycutter_gpg_install_all_yubikeys() {
   if [[ $fail_count -gt 0 ]]; then
     return 1
   fi
+  return 0
+}
+
+keycutter-gpg-key-renew() {
+  # Renew GPG subkeys with fresh expiration dates
+  #
+  # Usage: keycutter gpg key renew [options]
+  #
+  # Options:
+  #   --backup FILE         Path to encrypted backup file (prompts if not specified)
+  #   --backup-pass PASS    Passphrase for backup decryption (prompts if not specified)
+  #   --passphrase PASS     Key passphrase for subkey operations (prompts if not specified)
+  #   --expiration PERIOD   New expiration period: 2y (default), 1y, etc.
+  #   --revoke              Revoke old subkeys before creating new ones
+  #   --keyserver URL       Keyserver to update (optional)
+  #   --admin-pin PIN       YubiKey admin PIN (default: 12345678)
+  #   --force               Overwrite existing keys on YubiKey
+  #   --yes, -y             Non-interactive mode (requires all passphrases)
+  #   -h, --help            Show this help message
+  #
+  # This command:
+  #   1. Loads master key from backup into ephemeral GNUPGHOME
+  #   2. Creates new Sign, Encrypt, Auth subkeys with fresh expiration
+  #   3. Transfers new subkeys to YubiKey (replacing old ones)
+  #   4. Optionally updates public key on keyserver
+  #
+  # Use this when your subkeys are approaching expiration to extend your
+  # key's usable lifetime without changing the master key fingerprint.
+
+  local backup_file=""
+  local backup_pass=""
+  local passphrase=""
+  local expiration=""
+  local revoke_old=false
+  local keyserver=""
+  local admin_pin="12345678"
+  local force=false
+  local non_interactive=false
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --backup)
+        backup_file="$2"
+        shift 2
+        ;;
+      --backup-pass)
+        backup_pass="$2"
+        shift 2
+        ;;
+      --passphrase)
+        passphrase="$2"
+        shift 2
+        ;;
+      --expiration)
+        expiration="$2"
+        shift 2
+        ;;
+      --revoke)
+        revoke_old=true
+        shift
+        ;;
+      --keyserver)
+        keyserver="$2"
+        shift 2
+        ;;
+      --admin-pin)
+        admin_pin="$2"
+        shift 2
+        ;;
+      --force)
+        force=true
+        shift
+        ;;
+      --yes|-y)
+        non_interactive=true
+        shift
+        ;;
+      -h|--help)
+        echo "Usage: keycutter gpg key renew [options]"
+        echo
+        echo "Renew GPG subkeys with fresh expiration dates"
+        echo
+        echo "Options:"
+        echo "  --backup FILE         Path to encrypted backup file"
+        echo "  --backup-pass PASS    Passphrase for backup decryption"
+        echo "  --passphrase PASS     Key passphrase for subkey operations"
+        echo "  --expiration PERIOD   New expiration period (default: 2y)"
+        echo "  --revoke              Revoke old subkeys before creating new ones"
+        echo "  --keyserver URL       Keyserver to update after renewal"
+        echo "  --admin-pin PIN       YubiKey admin PIN (default: factory default)"
+        echo "  --force               Overwrite existing keys on YubiKey"
+        echo "  --yes, -y             Non-interactive mode"
+        echo "  -h, --help            Show this help"
+        echo
+        echo "Examples:"
+        echo "  # Interactive renewal"
+        echo "  keycutter gpg key renew"
+        echo
+        echo "  # Non-interactive with 1 year expiration"
+        echo "  keycutter gpg key renew --yes --backup FILE \\"
+        echo "      --backup-pass 'pass1' --passphrase 'pass2' \\"
+        echo "      --expiration 1y"
+        echo
+        echo "  # Revoke old subkeys and update keyserver"
+        echo "  keycutter gpg key renew --revoke --keyserver hkps://keys.openpgp.org"
+        echo
+        echo "This command will:"
+        echo "  1. Load your master key from backup"
+        echo "  2. Create new subkeys with fresh expiration"
+        echo "  3. Transfer new subkeys to your YubiKey"
+        echo "  4. Optionally update your public key on keyservers"
+        echo
+        echo "Note: The master key fingerprint remains unchanged. Recipients"
+        echo "who have verified your key will still trust it."
+        return 0
+        ;;
+      *)
+        log "Error: Unknown option: $1"
+        log "Use --help for usage information"
+        return 1
+        ;;
+    esac
+  done
+
+  # Source GPG library
+  source "${KEYCUTTER_ROOT}/lib/gpg"
+
+  # Load config
+  gpg-config-load
+
+  # Use config default for expiration if not specified
+  expiration="${expiration:-$(gpg-config-get GPG_EXPIRATION 2y)}"
+
+  # Check GPG is available
+  if ! gpg-version-check >/dev/null 2>&1; then
+    log "Error: GPG is not installed or version too old"
+    return 1
+  fi
+
+  echo
+  log "GPG Subkey Renewal"
+  log "=================="
+  echo
+  log "This will create new subkeys with fresh expiration and install them"
+  log "to your YubiKey. Your master key fingerprint will not change."
+  echo
+
+  # If no backup file specified, list available backups
+  if [[ -z "$backup_file" ]]; then
+    log "Available GPG key backups:"
+    echo
+
+    local backup_dir
+    backup_dir=$(gpg-config-get GPG_BACKUP_DIR "")
+    backup_dir="${backup_dir/#\~/$HOME}"
+
+    if [[ -z "$backup_dir" ]] || [[ ! -d "$backup_dir" ]]; then
+      log "Error: No backup location configured or directory not found"
+      log "Create a backup first with: keycutter gpg backup"
+      return 1
+    fi
+
+    # Find backup files
+    local -a backup_files=()
+    local backup_count=0
+
+    for f in "$backup_dir"/gpg-backup-*.tar.gz.gpg; do
+      if [[ -f "$f" ]]; then
+        backup_count=$((backup_count + 1))
+        backup_files+=("$f")
+
+        local backup_name
+        backup_name=$(basename "$f")
+        backup_name="${backup_name%.tar.gz.gpg}"
+        local fingerprint="${backup_name##*-}"
+        local backup_date
+        backup_date=$(echo "$backup_name" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || echo "unknown")
+
+        echo "  [$backup_count] $(basename "$f")"
+        echo "      Fingerprint: ...${fingerprint}"
+        echo "      Created: $backup_date"
+        echo
+      fi
+    done
+
+    if [[ $backup_count -eq 0 ]]; then
+      log "Error: No backup files found in: $backup_dir"
+      return 1
+    fi
+
+    if [[ $backup_count -eq 1 ]]; then
+      backup_file="${backup_files[0]}"
+      log "Using only available backup: $(basename "$backup_file")"
+    else
+      if [[ "$non_interactive" == true ]]; then
+        log "Error: Multiple backups found. Use --backup to specify which backup to use."
+        return 1
+      fi
+
+      local selection
+      read -rp "Select backup [1-$backup_count]: " selection
+
+      if [[ ! "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt $backup_count ]]; then
+        log "Error: Invalid selection"
+        return 1
+      fi
+
+      backup_file="${backup_files[$((selection - 1))]}"
+    fi
+  fi
+
+  # Verify backup file exists
+  if [[ ! -f "$backup_file" ]]; then
+    log "Error: Backup file not found: $backup_file"
+    return 1
+  fi
+
+  # Get backup passphrase
+  if [[ -z "$backup_pass" ]]; then
+    if [[ "$non_interactive" == true ]]; then
+      log "Error: --backup-pass required in non-interactive mode"
+      return 1
+    fi
+
+    echo
+    log "Enter the passphrase to decrypt the backup:"
+    read -rsp "Backup passphrase: " backup_pass
+    echo
+  fi
+
+  # Get key passphrase
+  if [[ -z "$passphrase" ]]; then
+    if [[ "$non_interactive" == true ]]; then
+      log "Error: --passphrase required in non-interactive mode"
+      return 1
+    fi
+
+    echo
+    log "Enter the passphrase for the GPG key:"
+    read -rsp "Key passphrase: " passphrase
+    echo
+  fi
+
+  # Create ephemeral GNUPGHOME for key operations
+  echo
+  log "Creating secure ephemeral environment..."
+
+  local temp_home
+  if ! temp_home=$(gpg-home-temp-create); then
+    log "Error: Failed to create ephemeral GNUPGHOME"
+    return 1
+  fi
+
+  # Set up cleanup trap
+  trap 'gpg-home-temp-cleanup' EXIT
+
+  # Restore the backup
+  echo
+  log "Restoring master key from backup..."
+
+  local fingerprint
+  if ! fingerprint=$(gpg-backup-restore --backup-file "$backup_file" --backup-pass "$backup_pass"); then
+    log "Error: Failed to restore backup"
+    return 1
+  fi
+
+  if [[ -z "$fingerprint" ]]; then
+    log "Error: No key fingerprint returned from restore"
+    return 1
+  fi
+
+  log "Restored key: ${fingerprint:0:16}..."
+
+  # Show current subkeys
+  echo
+  log "Current subkeys (will be renewed):"
+  gpg-subkeys-list-info --fingerprint "$fingerprint"
+  echo
+
+  # Confirm renewal
+  if [[ "$non_interactive" != true ]]; then
+    echo
+    log "New subkeys will have expiration: $expiration"
+    if [[ "$revoke_old" == true ]]; then
+      log "Old subkeys will be revoked (marked as superseded)"
+    fi
+    echo
+    read -rp "Continue with renewal? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy] ]]; then
+      log "Renewal cancelled"
+      return 1
+    fi
+  fi
+
+  # Perform the renewal
+  echo
+  log "Creating new subkeys..."
+
+  local renew_args=(
+    --fingerprint "$fingerprint"
+    --passphrase "$passphrase"
+    --expiration "$expiration"
+  )
+
+  if [[ "$revoke_old" == true ]]; then
+    renew_args+=(--revoke)
+  fi
+
+  if ! gpg-key-renew "${renew_args[@]}"; then
+    log "Error: Failed to renew subkeys"
+    return 1
+  fi
+
+  # Verify we have 3 new subkeys
+  local subkey_count
+  subkey_count=$(gpg --homedir "$GNUPGHOME" --list-secret-keys --with-colons "$fingerprint" 2>/dev/null | grep -c "^ssb:")
+
+  # If we revoked old ones, we should have exactly 3
+  # If not, we should have 6 (3 old + 3 new) but we'll transfer the newest ones
+  if [[ "$revoke_old" == true ]]; then
+    if [[ $subkey_count -lt 3 ]]; then
+      log "Error: Expected at least 3 subkeys, found $subkey_count"
+      return 1
+    fi
+  fi
+
+  log "Subkeys renewed: $subkey_count total subkeys"
+
+  # Detect YubiKey
+  echo
+  log "Detecting YubiKey..."
+
+  if ! gpg-yubikey-detect --quiet &>/dev/null; then
+    log "Warning: No YubiKey detected"
+    echo
+    echo "Subkeys have been renewed but not transferred to YubiKey."
+    echo "Connect your YubiKey and run:"
+    echo "  keycutter gpg key install --force --backup '$backup_file'"
+    return 0
+  fi
+
+  local serial
+  serial=$(gpg-yubikey-detect --quiet 2>/dev/null)
+  log "YubiKey detected: $serial"
+
+  # Transfer new subkeys to YubiKey
+  echo
+  log "Transferring renewed subkeys to YubiKey..."
+  log "This will replace the existing subkeys on your YubiKey"
+  echo
+
+  if [[ "$non_interactive" != true && "$force" != true ]]; then
+    read -rp "Continue with transfer? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy] ]]; then
+      log "Transfer skipped"
+      echo
+      echo "Keys have been renewed but not transferred."
+      echo "To transfer later: keycutter gpg key install --force"
+      return 0
+    fi
+  fi
+
+  local transfer_args=(
+    --fingerprint "$fingerprint"
+    --passphrase "$passphrase"
+    --admin-pin "$admin_pin"
+    --force  # Always force since we're replacing with renewed keys
+  )
+
+  if ! gpg-key-to-yubikey "${transfer_args[@]}"; then
+    log "Error: Failed to transfer subkeys to YubiKey"
+    return 1
+  fi
+
+  # Update registry
+  gpg-yubikey-registry-add --serial "$serial" --fingerprint "$fingerprint" --label "Renewed $(date +%Y-%m-%d)"
+
+  # Optionally send to keyserver
+  if [[ -n "$keyserver" ]]; then
+    echo
+    log "Updating public key on keyserver..."
+    if gpg-key-send-keyserver --fingerprint "$fingerprint" --keyserver "$keyserver"; then
+      log "Public key updated on: $keyserver"
+    else
+      log "Warning: Failed to update keyserver (key still valid locally)"
+    fi
+  fi
+
+  # Export updated public key to standard location
+  local public_key_file="${HOME}/.gnupg/public-key-${fingerprint:(-8)}.asc"
+  if gpg-key-export-public --fingerprint "$fingerprint" --output "$public_key_file" 2>/dev/null; then
+    log "Updated public key exported to: $public_key_file"
+  fi
+
+  # Clean up ephemeral environment
+  echo
+  log "Cleaning up ephemeral environment..."
+
+  # Restart scdaemon to pick up new keys
+  gpg-scdaemon-restart &>/dev/null
+  sleep 1
+
+  # Summary
+  echo
+  log "Renewal complete!"
+  echo
+  echo "  YubiKey Serial: $serial"
+  echo "  Key Fingerprint: ${fingerprint:0:16}..."
+  echo "  New Expiration: $expiration from now"
+  echo
+  log "Your renewed subkeys are now on your YubiKey."
+  echo
+  log "Next steps:"
+  echo "  - Share your updated public key with contacts"
+  if [[ -z "$keyserver" ]]; then
+    echo "  - Update keyservers: gpg --send-keys $fingerprint"
+  fi
+  echo "  - Update GitHub/GitLab GPG keys if needed"
+  echo
+
   return 0
 }
 

@@ -8,6 +8,7 @@ Complete reference for Keycutter's GPG commands.
 keycutter gpg key list [--all]              # List GPG keys on YubiKey
 keycutter gpg key create [options]          # Create master key + subkeys
 keycutter gpg key install [options]         # Install subkeys to YubiKey(s)
+keycutter gpg key renew [options]           # Renew subkeys with fresh expiration
 keycutter gpg setup [options]               # Configure host for GPG
 keycutter gpg backup [options]              # Backup master key
 keycutter gpg yubikeys [options]            # List registered YubiKey installations
@@ -164,6 +165,81 @@ keycutter gpg key install --all \
 - After transfer, operations require the physical YubiKey
 - Use `--force` to overwrite existing keys on the YubiKey
 - Each installation is registered in the YubiKey registry (see `keycutter gpg yubikeys`)
+
+## keycutter gpg key renew
+
+Renew GPG subkeys with fresh expiration dates. This command creates new Sign, Encrypt, and Auth subkeys with a new expiration period, then transfers them to your YubiKey.
+
+### Usage
+
+```bash
+keycutter gpg key renew [options]
+```
+
+### Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--backup FILE` | Path to encrypted backup | Prompted |
+| `--backup-pass PASS` | Passphrase for backup decryption | Prompted |
+| `--passphrase PASS` | Key passphrase for operations | Prompted |
+| `--expiration PERIOD` | New expiration: `1y`, `2y`, etc. | `2y` |
+| `--revoke` | Revoke old subkeys before creating new | Keep old |
+| `--keyserver URL` | Keyserver to update after renewal | None |
+| `--admin-pin PIN` | YubiKey admin PIN | `12345678` |
+| `--force` | Skip confirmation prompts | Prompt |
+| `--yes`, `-y` | Non-interactive mode | Interactive |
+
+### Examples
+
+```bash
+# Interactive renewal
+keycutter gpg key renew
+
+# Non-interactive with 1-year expiration
+keycutter gpg key renew \
+  --backup /path/to/backup.tar.gz.gpg \
+  --backup-pass "backup-passphrase" \
+  --passphrase "key-passphrase" \
+  --expiration 1y \
+  --yes
+
+# Revoke old subkeys and update keyserver
+keycutter gpg key renew \
+  --revoke \
+  --keyserver hkps://keys.openpgp.org
+```
+
+### How Renewal Works
+
+1. **Load master key** - Decrypts and loads your master key from backup into an ephemeral GNUPGHOME
+2. **Create new subkeys** - Generates fresh Sign, Encrypt, and Auth subkeys with the specified expiration
+3. **Transfer to YubiKey** - Replaces old subkeys on your YubiKey with the renewed ones
+4. **Update keyserver** - Optionally sends the updated public key to a keyserver
+5. **Export public key** - Saves the updated public key for distribution
+
+### When to Renew
+
+- Before your current subkeys expire (GPG will warn you)
+- When you want to extend the usable lifetime of your key
+- When you want to change your subkey expiration policy
+- Proactively, as part of regular key maintenance (e.g., annually)
+
+### Important Notes
+
+- The master key fingerprint **remains unchanged** - recipients who verified your key will still trust it
+- If you don't use `--revoke`, old subkeys remain valid but are replaced on the YubiKey
+- With `--revoke`, old subkeys are marked as superseded (cryptographically proper)
+- After renewal, distribute your updated public key to contacts/keyservers
+
+### Post-Renewal Steps
+
+After renewing your subkeys:
+
+1. **Update keyservers**: `gpg --send-keys YOUR_FINGERPRINT`
+2. **Update GitHub/GitLab**: Upload the new public key to your account settings
+3. **Inform contacts**: Share your updated public key with people who encrypt messages to you
+4. **Backup updated key**: Consider updating your backup with `keycutter gpg backup`
 
 ## keycutter gpg setup
 

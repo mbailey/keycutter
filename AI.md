@@ -100,3 +100,7 @@ Key environment variables used throughout:
 - `KEYCUTTER_SSH_KEY_DIR`: Key storage directory (default: `~/.ssh/keycutter/keys/`)
 - `KEYCUTTER_ORIGIN`: Origin hostname for key management
 - `KEYCUTTER_TEST_MODE`: Enable test mode behaviors
+
+## Task-Specific Guidance
+
+If `HARNESS.md` exists in this directory, read it for task-specific development guidance.
