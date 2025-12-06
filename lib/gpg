@@ -4,6 +4,7 @@
 # Configuration:
 # - gpg-config-load(): Load GPG configuration with precedence handling
 # - gpg-config-get(): Get a specific configuration value
+# - gpg-config-dump(): Dump all loaded configuration (for debugging)
 #
 # Version and Environment:
 # - gpg-version-check(): Verify GPG version meets requirements
@@ -11,6 +12,10 @@
 # - gpg-home-temp-cleanup(): Clean up ephemeral GNUPGHOME
 # - gpg-agent-restart(): Restart gpg-agent with proper configuration
 # - gpg-agent-ensure(): Ensure gpg-agent is running
+#
+# Key Listing:
+# - gpg-card-status-display(): Parse and display GPG card status
+# - gpg-master-keys-list(): List master keys from backup locations
 
 KEYCUTTER_ROOT="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]:-${0:A}}")/../")"
 source "${KEYCUTTER_ROOT}/lib/utils"
@@ -335,4 +340,137 @@ gpg-agent-ensure() {
 
     # Agent not running, start it
     gpg-agent-restart "$gpg_home"
+}
+
+# =============================================================================
+# Key Listing Functions
+# =============================================================================
+
+gpg-card-status-display() {
+    # Parse and display GPG card status in a clean format
+    #
+    # Arguments:
+    #   $1 - Card status output from 'gpg --card-status'
+    #
+    # Output:
+    #   Formatted display of card information and keys
+
+    local card_status="$1"
+    local reader serial_number card_holder
+    local sig_key enc_key auth_key
+    local general_key_info
+
+    # Extract card info
+    reader=$(echo "$card_status" | grep "^Reader" | sed 's/Reader[^:]*: *//')
+    serial_number=$(echo "$card_status" | grep "^Serial number" | awk '{print $NF}')
+    card_holder=$(echo "$card_status" | grep "^Name of cardholder" | sed 's/Name of cardholder: *//')
+
+    # Extract key information
+    sig_key=$(echo "$card_status" | grep "^Signature key" | sed 's/Signature key[^:]*: *//')
+    enc_key=$(echo "$card_status" | grep "^Encryption key" | sed 's/Encryption key[^:]*: *//')
+    auth_key=$(echo "$card_status" | grep "^Authentication key" | sed 's/Authentication key[^:]*: *//')
+
+    # Check for general key info (indicates keys are properly linked)
+    general_key_info=$(echo "$card_status" | grep "^General key info")
+
+    # Display card information
+    if [[ -n "$reader" ]]; then
+        echo "  Reader:        $reader"
+    fi
+    if [[ -n "$serial_number" ]]; then
+        echo "  Serial:        $serial_number"
+    fi
+    if [[ -n "$card_holder" && "$card_holder" != " " ]]; then
+        echo "  Cardholder:    $card_holder"
+    fi
+
+    echo
+
+    # Display keys with their status
+    if [[ -n "$sig_key" && "$sig_key" != "[none]" ]]; then
+        echo "  [S] Signature:     ${sig_key:0:16}..."
+    else
+        echo "  [S] Signature:     (not set)"
+    fi
+
+    if [[ -n "$enc_key" && "$enc_key" != "[none]" ]]; then
+        echo "  [E] Encryption:    ${enc_key:0:16}..."
+    else
+        echo "  [E] Encryption:    (not set)"
+    fi
+
+    if [[ -n "$auth_key" && "$auth_key" != "[none]" ]]; then
+        echo "  [A] Authentication: ${auth_key:0:16}..."
+    else
+        echo "  [A] Authentication: (not set)"
+    fi
+
+    # Show key status hint
+    if [[ -z "$general_key_info" ]] && [[ "$sig_key" != "[none]" || "$enc_key" != "[none]" || "$auth_key" != "[none]" ]]; then
+        echo
+        echo "  Note: Keys present but not linked to local keyring."
+        echo "  Run 'gpg --card-status' to fetch public keys."
+    fi
+}
+
+gpg-master-keys-list() {
+    # List available master keys from registered backup locations
+    #
+    # Searches for GPG key backups in registered locations and displays
+    # information about available master keys.
+    #
+    # Returns:
+    #   0 if keys found
+    #   1 if no backup locations configured or no keys found
+
+    # Load config to get backup locations
+    gpg-config-load
+
+    local backup_dir
+    backup_dir=$(gpg-config-get GPG_BACKUP_DIR "")
+
+    if [[ -z "$backup_dir" ]]; then
+        echo "  No backup location configured."
+        echo "  Set GPG_BACKUP_DIR in config or use 'keycutter gpg backup' to create backups."
+        return 1
+    fi
+
+    # Expand path
+    backup_dir="${backup_dir/#\~/$HOME}"
+
+    if [[ ! -d "$backup_dir" ]]; then
+        echo "  Backup directory not found: $backup_dir"
+        return 1
+    fi
+
+    # Search for key files
+    local found_keys=0
+    local key_file keyid uid
+
+    # Look for common backup patterns: *.asc, *.gpg, private-key*.asc
+    for key_file in "$backup_dir"/*.asc "$backup_dir"/*.gpg "$backup_dir"/*/secret-key*.asc "$backup_dir"/*/master*.asc; do
+        if [[ -f "$key_file" ]]; then
+            # Extract key info using gpg --show-keys
+            keyid=$(gpg --show-keys --with-colons "$key_file" 2>/dev/null | awk -F: '/^sec:/ {print $5; exit}')
+            uid=$(gpg --show-keys --with-colons "$key_file" 2>/dev/null | awk -F: '/^uid:/ {print $10; exit}')
+
+            if [[ -n "$keyid" ]]; then
+                found_keys=$((found_keys + 1))
+                echo "  $keyid"
+                if [[ -n "$uid" ]]; then
+                    echo "    └─ $uid"
+                fi
+                echo "    └─ $(basename "$key_file")"
+                echo
+            fi
+        fi
+    done
+
+    if [[ $found_keys -eq 0 ]]; then
+        echo "  No master keys found in: $backup_dir"
+        return 1
+    fi
+
+    echo "  Found $found_keys master key(s)"
+    return 0
 }

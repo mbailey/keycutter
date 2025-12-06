@@ -1256,11 +1256,76 @@ keycutter-gpg-key() {
   esac
 }
 
-# Placeholder functions - will be implemented in subsequent features
+# GPG key management functions
+
 keycutter-gpg-key-list() {
-  log "Error: GPG key list not yet implemented"
-  log "See: https://github.com/mbailey/keycutter/issues/KC-15"
-  return 1
+  # List GPG keys on current YubiKey and optionally master keys from backups
+  #
+  # Usage: keycutter gpg key list [--all]
+  #
+  # Options:
+  #   --all    Also show available master keys from registered backup locations
+  #
+  # Output:
+  #   Lists GPG keys currently on the YubiKey with their key IDs and capabilities
+
+  local show_all=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --all|-a)
+        show_all=true
+        shift
+        ;;
+      -h|--help)
+        echo "Usage: keycutter gpg key list [--all]"
+        echo
+        echo "List GPG keys on current YubiKey."
+        echo
+        echo "Options:"
+        echo "  --all, -a    Also show available master keys from backup locations"
+        return 0
+        ;;
+      *)
+        log "Error: Unknown option: $1"
+        return 1
+        ;;
+    esac
+  done
+
+  # Source GPG library
+  source "${KEYCUTTER_ROOT}/lib/gpg"
+
+  # Check GPG is available
+  if ! gpg-version-check >/dev/null 2>&1; then
+    log "Error: GPG is not installed or version too old"
+    return 1
+  fi
+
+  # Try to get YubiKey card status
+  log "GPG Keys on YubiKey:"
+  echo
+
+  local card_status
+  if ! card_status=$(gpg --card-status 2>&1); then
+    if [[ "$card_status" =~ "No such device" ]] || [[ "$card_status" =~ "card error" ]]; then
+      log "  No YubiKey detected"
+      log "  Insert a YubiKey with OpenPGP application enabled"
+    else
+      log "  Error reading card: $card_status"
+    fi
+  else
+    # Parse and display card info
+    gpg-card-status-display "$card_status"
+  fi
+
+  # Show master keys from backups if --all flag is set
+  if [[ "$show_all" == "true" ]]; then
+    echo
+    log "Master Keys from Backup Locations:"
+    echo
+    gpg-master-keys-list
+  fi
 }
 
 keycutter-gpg-key-create() {
