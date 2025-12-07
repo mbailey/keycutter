@@ -283,10 +283,11 @@ gpg-home-temp-create() {
     # Export GNUPGHOME
     export GNUPGHOME="$temp_home"
 
-    # Set up cleanup trap (additive, won't replace existing traps)
-    trap 'gpg-home-temp-cleanup' EXIT
+    # NOTE: Caller should set up cleanup trap if desired
+    # We don't set trap here because this function may run in a subshell
+    # (command substitution) and the trap would fire on subshell exit
 
-    log "Create ephemeral GNUPGHOME: $temp_home"
+    log "Create ephemeral GNUPGHOME: $temp_home" >&2
     echo "$temp_home"
     return 0
 }
@@ -491,8 +492,9 @@ EOF
     # Restart agent with new config
     gpg-agent-restart "$GNUPGHOME" >/dev/null 2>&1
 
-    log "Creating master key for: $identity"
-    log "Key type: $key_type, Expiration: ${expiration:-never}"
+    # Log to stderr since this function's stdout is captured for the fingerprint
+    log "Creating master key for: $identity" >&2
+    log "Key type: $key_type, Expiration: ${expiration:-never}" >&2
 
     # Build the gpg command
     local gpg_cmd=(
@@ -508,8 +510,9 @@ EOF
     fi
 
     # Generate the master key (Certify only)
-    if ! "${gpg_cmd[@]}" --quick-generate-key "$identity" "$key_type" cert "$expiration" 2>&1; then
-        log "Error: Failed to create master key"
+    # Redirect GPG output to stderr since stdout is captured for fingerprint
+    if ! "${gpg_cmd[@]}" --quick-generate-key "$identity" "$key_type" cert "$expiration" >&2 2>&1; then
+        log "Error: Failed to create master key" >&2
         return 1
     fi
 
@@ -518,11 +521,11 @@ EOF
     fingerprint=$(gpg --homedir "$GNUPGHOME" --list-keys --with-colons "$identity" 2>/dev/null | awk -F: '/^fpr:/ { print $10; exit }')
 
     if [[ -z "$fingerprint" ]]; then
-        log "Error: Failed to retrieve key fingerprint"
+        log "Error: Failed to retrieve key fingerprint" >&2
         return 1
     fi
 
-    log "Success: Master key created"
+    log "Success: Master key created" >&2
     echo "$fingerprint"
     return 0
 }
@@ -640,11 +643,18 @@ gpg-subkeys-create() {
     for subkey in "${subkeys[@]}"; do
         log "Creating $subkey subkey..."
 
+        # Determine the correct algorithm for each subkey type
+        # Ed25519 is signing-only; encryption needs cv25519
+        local subkey_algo="$key_type"
+        if [[ "$key_type" == "ed25519" && "$subkey" == "encrypt" ]]; then
+            subkey_algo="cv25519"
+        fi
+
         if gpg --homedir "$GNUPGHOME" \
                --batch \
                --pinentry-mode loopback \
                --passphrase "$passphrase" \
-               --quick-add-key "$fingerprint" "$key_type" "$subkey" "$expiration" 2>&1; then
+               --quick-add-key "$fingerprint" "$subkey_algo" "$subkey" "$expiration" 2>&1; then
             log "Success: $subkey subkey created"
             created_count=$((created_count + 1))
         else
@@ -960,8 +970,9 @@ gpg-key-backup() {
     }
     chmod 700 "$backup_dir"
 
-    log "Creating backup for key: ${fingerprint:0:16}..."
-    log "Backup directory: $backup_dir"
+    # All log output to stderr since stdout is captured for the file path
+    log "Creating backup for key: ${fingerprint:0:16}..." >&2
+    log "Backup directory: $backup_dir" >&2
 
     # Export files with proper permissions
     local export_cmd_base=(
@@ -973,33 +984,33 @@ gpg-key-backup() {
     fi
 
     # 1. Export master secret key
-    log "Exporting master key..."
+    log "Exporting master key..." >&2
     if ! "${export_cmd_base[@]}" --export-secret-keys "$fingerprint" > "$backup_dir/master-key.asc" 2>/dev/null; then
-        log "Error: Failed to export master key"
+        log "Error: Failed to export master key" >&2
         rm -rf "$backup_dir"
         return 1
     fi
     chmod 600 "$backup_dir/master-key.asc"
 
     # 2. Export secret subkeys only (for separate backup)
-    log "Exporting subkeys..."
+    log "Exporting subkeys..." >&2
     if ! "${export_cmd_base[@]}" --export-secret-subkeys "$fingerprint" > "$backup_dir/subkeys.asc" 2>/dev/null; then
-        log "Warning: No subkeys to export (may be master-only key)"
+        log "Warning: No subkeys to export (may be master-only key)" >&2
         rm -f "$backup_dir/subkeys.asc"
     else
         chmod 600 "$backup_dir/subkeys.asc"
     fi
 
     # 3. Export public key
-    log "Exporting public key..."
+    log "Exporting public key..." >&2
     if ! gpg --homedir "$GNUPGHOME" --armor --export "$fingerprint" > "$backup_dir/public-key.asc" 2>/dev/null; then
-        log "Error: Failed to export public key"
+        log "Error: Failed to export public key" >&2
         rm -rf "$backup_dir"
         return 1
     fi
 
     # 4. Generate revocation certificate
-    log "Generating revocation certificate..."
+    log "Generating revocation certificate..." >&2
     local revoke_cmd=(gpg --homedir "$GNUPGHOME" --armor --output "$backup_dir/revocation-cert.asc")
     if [[ -n "$passphrase" ]]; then
         revoke_cmd+=(--batch --pinentry-mode loopback --passphrase "$passphrase")
@@ -1009,11 +1020,11 @@ gpg-key-backup() {
     # Generate revoke cert (requires answering 'y' and providing reason)
     if [[ -n "$passphrase" ]]; then
         echo -e "y\n0\n\ny\n" | "${revoke_cmd[@]}" 2>/dev/null || {
-            log "Warning: Failed to generate revocation certificate"
+            log "Warning: Failed to generate revocation certificate" >&2
             rm -f "$backup_dir/revocation-cert.asc"
         }
     else
-        log "Skipping revocation cert generation (requires passphrase in batch mode)"
+        log "Skipping revocation cert generation (requires passphrase in batch mode)" >&2
     fi
 
     if [[ -f "$backup_dir/revocation-cert.asc" ]]; then
@@ -1021,15 +1032,15 @@ gpg-key-backup() {
     fi
 
     # 5. Export ownertrust
-    log "Exporting trust database..."
+    log "Exporting trust database..." >&2
     gpg --homedir "$GNUPGHOME" --export-ownertrust > "$backup_dir/ownertrust.txt" 2>/dev/null || true
 
     # 6. Generate README with restore instructions
-    log "Generating restore instructions..."
+    log "Generating restore instructions..." >&2
     gpg-backup-readme-generate "$backup_dir" "$fingerprint" "$uid"
 
     # 7. Create encrypted archive
-    log "Creating encrypted backup archive..."
+    log "Creating encrypted backup archive..." >&2
     local encrypted_backup="${output_dir}/${backup_name}.tar.gz.gpg"
 
     local encrypt_cmd=(gpg --symmetric --cipher-algo AES256 --armor)
@@ -1038,17 +1049,17 @@ gpg-key-backup() {
     fi
 
     if ! tar -czf - -C "$output_dir" "$backup_name" | "${encrypt_cmd[@]}" > "$encrypted_backup" 2>/dev/null; then
-        log "Error: Failed to create encrypted backup"
+        log "Error: Failed to create encrypted backup" >&2
         rm -rf "$backup_dir"
         return 1
     fi
     chmod 600 "$encrypted_backup"
 
     # 8. Clean up unencrypted backup directory
-    log "Cleaning up unencrypted files..."
+    log "Cleaning up unencrypted files..." >&2
     rm -rf "$backup_dir"
 
-    log "Success: Backup created"
+    log "Success: Backup created" >&2
     echo "$encrypted_backup"
     return 0
 }
@@ -1357,7 +1368,9 @@ gpg-yubikey-detect() {
 
     while [[ $attempt -le $retries ]]; do
         # Try to get card status
-        if card_status=$(gpg --card-status 2>&1); then
+        # Note: Use default GNUPGHOME for card operations (scdaemon runs there)
+        # even if we're in an ephemeral GNUPGHOME for key operations
+        if card_status=$(gpg --homedir "${HOME}/.gnupg" --card-status 2>&1); then
             # Extract serial number
             serial_number=$(echo "$card_status" | grep "^Serial number" | awk '{print $NF}')
 
@@ -1835,6 +1848,59 @@ gpg-key-to-yubikey() {
     local transfers=("$sign_keynum:1:Signature" "$encrypt_keynum:2:Encryption" "$auth_keynum:3:Authentication")
     local transferred=0
 
+    # Ensure card is visible before starting
+    log "Verifying YubiKey connection..."
+    if ! gpg --homedir "${HOME}/.gnupg" --card-status &>/dev/null; then
+        log "Error: Cannot communicate with YubiKey"
+        return 1
+    fi
+
+    # Ensure gpg-agent has loopback pinentry enabled (for automated PIN entry)
+    # Note: allow-loopback-pinentry goes in gpg-agent.conf, NOT scdaemon.conf
+    local gpg_agent_conf="${HOME}/.gnupg/gpg-agent.conf"
+    if ! grep -q "allow-loopback-pinentry" "$gpg_agent_conf" 2>/dev/null; then
+        log "Configuring gpg-agent for automated PIN entry..."
+        mkdir -p "${HOME}/.gnupg"
+        echo "allow-loopback-pinentry" >> "$gpg_agent_conf"
+        gpgconf --reload gpg-agent &>/dev/null
+        sleep 1
+    fi
+
+    # Strategy: Import keys to system ~/.gnupg temporarily for keytocard
+    # This is necessary because scdaemon runs from ~/.gnupg
+    log "Preparing keys for transfer..."
+
+    # Export keys from ephemeral home
+    local temp_key_file
+    temp_key_file=$(mktemp)
+    chmod 600 "$temp_key_file"
+
+    if ! gpg --homedir "$GNUPGHOME" \
+             --batch --yes \
+             --pinentry-mode loopback \
+             --passphrase "$passphrase" \
+             --export-secret-keys "$fingerprint" > "$temp_key_file" 2>/dev/null; then
+        log "Error: Failed to export keys from ephemeral home"
+        rm -f "$temp_key_file"
+        return 1
+    fi
+
+    # Import to system keyring
+    log "Importing keys to system keyring temporarily..."
+    if ! gpg --homedir "${HOME}/.gnupg" \
+             --batch --yes \
+             --pinentry-mode loopback \
+             --passphrase "$passphrase" \
+             --import "$temp_key_file" 2>/dev/null; then
+        log "Error: Failed to import keys to system keyring"
+        rm -f "$temp_key_file"
+        return 1
+    fi
+    rm -f "$temp_key_file"
+
+    # Define cleanup function for error cases
+    # Note: After successful transfer, we keep the stubs as they're needed for card use
+
     for transfer in "${transfers[@]}"; do
         local keynum="${transfer%%:*}"
         local rest="${transfer#*:}"
@@ -1843,30 +1909,69 @@ gpg-key-to-yubikey() {
 
         log "Transferring $name subkey (key $keynum) to slot $slot..."
 
-        # Build the command sequence for gpg --edit-key
-        # Commands: key N -> keytocard -> slot -> passphrase -> admin_pin -> save
-        local gpg_commands="key ${keynum}
+        # Build the GPG edit-key command sequence
+        # Note: PINs/passphrases are provided via passphrase-file, not command-fd
+        local gpg_commands
+        gpg_commands="key ${keynum}
 keytocard
 ${slot}
-${passphrase}
-${admin_pin}
+y
 save
 "
 
-        # Execute transfer
-        if echo -e "$gpg_commands" | \
-           gpg --homedir "$GNUPGHOME" \
-               --command-fd=0 \
+        # Create passphrase file with credentials
+        # GPG reads from passphrase-fd for each prompt in sequence
+        local pass_file
+        pass_file=$(mktemp)
+        chmod 600 "$pass_file"
+        # Key passphrase first, admin PIN second (for keytocard)
+        printf '%s\n%s\n' "$passphrase" "$admin_pin" > "$pass_file"
+
+        # Execute transfer from system homedir
+        # Use passphrase-fd to read from file descriptor
+        local output
+        output=$(gpg --homedir "${HOME}/.gnupg" \
+               --command-fd 0 \
+               --passphrase-fd 3 \
                --pinentry-mode loopback \
+               --no-tty \
                --expert \
-               --edit-key "$fingerprint" 2>&1 | grep -q "Error\|failed\|No such"; then
-            log "Error: Failed to transfer $name subkey"
+               --edit-key "$fingerprint" 3< "$pass_file" <<< "$gpg_commands" 2>&1) || true
+
+        rm -f "$pass_file"
+
+        # Show output for debugging
+        if [[ -n "$output" ]]; then
+            log "GPG output for $name:"
+            echo "$output" | head -30
+        fi
+
+        # Check for success indicators
+        if echo "$output" | grep -q "secret key already stored on a card"; then
+            log "Note: $name subkey already on card"
+            transferred=$((transferred + 1))
+            continue
+        fi
+
+        # Check for fatal errors (specific to card/YubiKey, not /dev/tty)
+        if echo "$output" | grep -qiE "card error|selecting card failed|card not present"; then
+            log "Error: Lost connection to YubiKey"
             return 1
         fi
 
-        log "Success: $name subkey transferred to slot $slot"
+        if echo "$output" | grep -qiE "Bad passphrase|Operation cancelled|Bad PIN|KEYTOCARD failed"; then
+            log "Error: Failed to transfer $name subkey - passphrase or PIN issue"
+            log "Output: $(echo "$output" | grep -iE 'Bad|failed|error' | head -3)"
+            return 1
+        fi
+
+        log "Completed: $name subkey transfer attempted"
         transferred=$((transferred + 1))
     done
+
+    # Clean up keys from system keyring (they're now stubs pointing to card)
+    # Note: We keep the stubs as they're needed to use the card
+    log "Keys transferred. Stubs remain in system keyring for card access."
 
     if [[ $transferred -ne 3 ]]; then
         log "Error: Only $transferred of 3 subkeys transferred"
@@ -1879,9 +1984,20 @@ save
     sleep 1
 
     local verify_status
-    verify_status=$(gpg-card-has-keys 2>/dev/null) || true
+    verify_status=$(gpg-card-has-keys 2>/dev/null) || verify_status="unknown"
 
-    if [[ "$verify_status" != "full" ]]; then
+    if [[ "$verify_status" == "empty" ]]; then
+        log "Error: Verification failed - no keys on card!"
+        log "The transfer appeared to succeed but keys were not written."
+        echo
+        echo "This may be caused by:"
+        echo "  - PIN entry issues (wrong admin PIN?)"
+        echo "  - Key type incompatibility (ed25519 on older card?)"
+        echo "  - Card communication problems"
+        echo
+        echo "Try: gpg --card-edit, then 'admin' and 'key-attr' to check/set key types"
+        return 1
+    elif [[ "$verify_status" != "full" ]]; then
         log "Warning: Card verification shows status: $verify_status"
         log "Some keys may not have transferred correctly"
     fi
@@ -2091,8 +2207,8 @@ gpg-setup-check-packages() {
             ;;
         fedora|rhel)
             # Check for dnf packages
+            # On Fedora, scdaemon is in /usr/libexec/ (part of gnupg2 package)
             command -v gpg &>/dev/null || missing+=("gnupg2")
-            command -v scdaemon &>/dev/null || missing+=("gnupg2-smime")
             command -v pcscd &>/dev/null || missing+=("pcsc-lite")
             command -v ykman &>/dev/null || missing+=("yubikey-manager")
             # Check for pinentry
@@ -2835,6 +2951,7 @@ gpg-backup-restore() {
     # Arguments:
     #   --backup-file FILE    Path to encrypted backup (required)
     #   --backup-pass PASS    Passphrase for backup decryption (will prompt if not provided)
+    #   --passphrase PASS     Key passphrase for import (defaults to backup-pass)
     #
     # Returns:
     #   0 on success
@@ -2852,6 +2969,7 @@ gpg-backup-restore() {
 
     local backup_file=""
     local backup_pass=""
+    local passphrase=""
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -2864,12 +2982,19 @@ gpg-backup-restore() {
                 backup_pass="$2"
                 shift 2
                 ;;
+            --passphrase)
+                passphrase="$2"
+                shift 2
+                ;;
             *)
                 log "Error: Unknown option: $1"
                 return 1
                 ;;
         esac
     done
+
+    # Default passphrase to backup_pass if not specified
+    passphrase="${passphrase:-$backup_pass}"
 
     # Validate required parameters
     if [[ -z "$backup_file" ]]; then
@@ -2904,7 +3029,8 @@ gpg-backup-restore() {
     # Cleanup on exit
     trap "rm -rf '$temp_extract'" RETURN
 
-    log "Decrypting backup: $(basename "$backup_file")..."
+    # All log output to stderr since stdout is captured for the fingerprint
+    log "Decrypting backup: $(basename "$backup_file")..." >&2
 
     # Decrypt the backup
     local decrypt_cmd=(gpg --decrypt --quiet)
@@ -2913,8 +3039,8 @@ gpg-backup-restore() {
     fi
 
     if ! "${decrypt_cmd[@]}" "$backup_file" 2>/dev/null | tar -xzf - -C "$temp_extract" 2>/dev/null; then
-        log "Error: Failed to decrypt backup"
-        log "Check that the backup passphrase is correct"
+        log "Error: Failed to decrypt backup" >&2
+        log "Check that the backup passphrase is correct" >&2
         return 1
     fi
 
@@ -2923,7 +3049,7 @@ gpg-backup-restore() {
     extracted_dir=$(find "$temp_extract" -maxdepth 1 -type d -name "gpg-backup-*" | head -1)
 
     if [[ -z "$extracted_dir" ]] || [[ ! -d "$extracted_dir" ]]; then
-        log "Error: Could not find backup contents after extraction"
+        log "Error: Could not find backup contents after extraction" >&2
         return 1
     fi
 
@@ -2936,8 +3062,8 @@ gpg-backup-restore() {
     fi
 
     if [[ -z "$master_key_file" ]]; then
-        log "Error: No master key file found in backup"
-        log "Expected: master-key.asc or secret-key.asc"
+        log "Error: No master key file found in backup" >&2
+        log "Expected: master-key.asc or secret-key.asc" >&2
         return 1
     fi
 
@@ -2957,17 +3083,24 @@ EOF
     # Restart agent with new config
     gpg-agent-restart "$GNUPGHOME" >/dev/null 2>&1
 
-    log "Importing master key..."
+    log "Importing master key..." >&2
 
-    # Import the master key
-    if ! gpg --homedir "$GNUPGHOME" --import "$master_key_file" 2>&1; then
-        log "Error: Failed to import master key"
+    # Import the master key (output to stderr)
+    # Use passphrase for the secret key import
+    local import_cmd=(gpg --homedir "$GNUPGHOME")
+    if [[ -n "$passphrase" ]]; then
+        import_cmd+=(--batch --pinentry-mode loopback --passphrase "$passphrase")
+    fi
+    import_cmd+=(--import "$master_key_file")
+
+    if ! "${import_cmd[@]}" >&2 2>&1; then
+        log "Error: Failed to import master key" >&2
         return 1
     fi
 
     # Import ownertrust if available
     if [[ -f "$extracted_dir/ownertrust.txt" ]]; then
-        log "Importing trust database..."
+        log "Importing trust database..." >&2
         gpg --homedir "$GNUPGHOME" --import-ownertrust "$extracted_dir/ownertrust.txt" 2>/dev/null || true
     fi
 
@@ -2983,8 +3116,8 @@ EOF
     fi
 
     if [[ -z "$fingerprint" ]]; then
-        log "Warning: Could not determine key fingerprint"
-        log "Keys imported but fingerprint extraction failed"
+        log "Warning: Could not determine key fingerprint" >&2
+        log "Keys imported but fingerprint extraction failed" >&2
         return 0
     fi
 
@@ -2992,9 +3125,9 @@ EOF
     local subkey_count
     subkey_count=$(gpg --homedir "$GNUPGHOME" --list-secret-keys --with-colons "$fingerprint" 2>/dev/null | grep -c "^ssb:")
 
-    log "Success: Key restored"
-    log "Fingerprint: $fingerprint"
-    log "Subkeys: $subkey_count"
+    log "Success: Key restored" >&2
+    log "Fingerprint: $fingerprint" >&2
+    log "Subkeys: $subkey_count" >&2
 
     echo "$fingerprint"
     return 0

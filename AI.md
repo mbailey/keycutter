@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AI.md
 
 This file provides guidance to AI Coding Assistants (e.g. claude.ai/code) when working with code in this repository.
 

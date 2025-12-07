@@ -1624,6 +1624,10 @@ keycutter-gpg-key-create() {
     return 1
   }
 
+  # Export GNUPGHOME since gpg-home-temp-create runs in a subshell
+  export GNUPGHOME="$ephemeral_home"
+  _GPG_EPHEMERAL_HOME="$ephemeral_home"
+
   # Set up cleanup trap
   trap 'gpg-home-temp-cleanup' EXIT
 
@@ -1679,11 +1683,52 @@ keycutter-gpg-key-create() {
 
   echo
   log "WARNING: The keys exist only in ephemeral memory!"
-  log "You MUST backup this key before exiting or it will be lost."
+  log "Creating encrypted backup before cleanup..."
+  echo
+
+  # Prompt for backup location
+  local backup_dir=""
+  local default_backup_dir="${HOME}/gpg-backups"
+
+  if [[ "$non_interactive" == "true" ]]; then
+    backup_dir="$default_backup_dir"
+    log "Using default backup location: $backup_dir"
+  else
+    echo "Where should we save the encrypted backup?"
+    echo
+    read -r -p "  Backup directory [$default_backup_dir]: " backup_dir
+    backup_dir="${backup_dir:-$default_backup_dir}"
+  fi
+
+  # Expand tilde in path
+  backup_dir="${backup_dir/#\~/$HOME}"
+
+  # Create backup using same passphrase for key protection and backup encryption
+  echo
+  log "Creating encrypted backup..."
+
+  local backup_file
+  backup_file=$(gpg-key-backup \
+    --fingerprint "$master_fingerprint" \
+    --output-dir "$backup_dir" \
+    --passphrase "$passphrase" \
+    --backup-pass "$passphrase") || {
+    log "Error: Failed to create backup"
+    log "WARNING: Keys will be lost when this command exits!"
+    log "You can try again manually if GNUPGHOME is still valid."
+    return 1
+  }
+
+  echo
+  log "Backup saved to: $backup_file"
+  echo
+  log "IMPORTANT: Store this backup file securely!"
+  echo "  - The backup is encrypted with your passphrase"
+  echo "  - You will need it to restore keys or set up additional YubiKeys"
+  echo "  - Consider copying to an encrypted USB drive or secure cloud storage"
   echo
   log "Next steps:"
-  echo "  1. Run 'keycutter gpg backup' to save encrypted backup"
-  echo "  2. Run 'keycutter gpg key install' to transfer subkeys to YubiKey"
+  echo "  1. Run 'keycutter gpg key install --backup \"$backup_file\"' to transfer subkeys to YubiKey"
   echo
 
   return 0
@@ -1826,6 +1871,39 @@ keycutter-gpg-key-install() {
     return 1
   fi
 
+  # Early check: Detect YubiKey and check for existing keys BEFORE backup work
+  # This saves time by failing fast if YubiKey has keys and --force not specified
+  if [[ "$install_all" != true ]]; then
+    log "Checking YubiKey status..."
+
+    if ! gpg-yubikey-detect --quiet &>/dev/null; then
+      log "Error: No YubiKey detected"
+      echo
+      echo "Please insert your YubiKey and try again."
+      echo "To check YubiKey status: ykman list"
+      return 1
+    fi
+
+    local early_card_status
+    early_card_status=$(gpg-card-has-keys 2>/dev/null) || early_card_status="empty"
+
+    if [[ "$early_card_status" != "empty" && "$force" != "true" ]]; then
+      log "Error: YubiKey already has GPG keys installed"
+      echo
+      echo "Current status: $early_card_status"
+      echo
+      echo "Options:"
+      echo "  1. Use --force to overwrite existing keys"
+      echo "  2. Reset the card first: keycutter gpg card reset"
+      echo "  3. Use a different YubiKey"
+      return 1
+    fi
+
+    if [[ "$early_card_status" != "empty" && "$force" == "true" ]]; then
+      log "Warning: Will overwrite existing keys on YubiKey"
+    fi
+  fi
+
   # If no backup file specified, list available backups
   if [[ -z "$backup_file" ]]; then
     echo
@@ -1937,6 +2015,10 @@ keycutter-gpg-key-install() {
     return 1
   fi
 
+  # Export GNUPGHOME since gpg-home-temp-create runs in a subshell
+  export GNUPGHOME="$temp_home"
+  _GPG_EPHEMERAL_HOME="$temp_home"
+
   # Set up cleanup trap
   trap 'gpg-home-temp-cleanup' EXIT
 
@@ -1945,7 +2027,7 @@ keycutter-gpg-key-install() {
   log "Restoring master key from backup..."
 
   local fingerprint
-  if ! fingerprint=$(gpg-backup-restore --backup-file "$backup_file" --backup-pass "$backup_pass"); then
+  if ! fingerprint=$(gpg-backup-restore --backup-file "$backup_file" --backup-pass "$backup_pass" --passphrase "$passphrase"); then
     log "Error: Failed to restore backup"
     return 1
   fi
@@ -2005,32 +2087,44 @@ _keycutter_gpg_install_single_yubikey() {
   serial=$(gpg-yubikey-detect --quiet 2>/dev/null)
   log "YubiKey detected: $serial"
 
-  # Check if already registered with this key
-  if gpg-yubikey-registry-check --serial "$serial" --fingerprint "$fingerprint" 2>/dev/null; then
-    log "Note: This YubiKey is already registered with this GPG key"
-    if [[ "$force" != "true" ]]; then
-      echo "Use --force to reinstall"
-      return 1
-    fi
-  fi
-
   # Check if YubiKey already has keys
   local card_status
   card_status=$(gpg-card-has-keys 2>/dev/null) || card_status="empty"
 
-  if [[ "$card_status" != "empty" && "$force" != "true" ]]; then
-    log "Error: YubiKey already has GPG keys installed"
-    echo
-    echo "Current status: $card_status"
-    echo
-    echo "Options:"
-    echo "  1. Use --force to overwrite existing keys"
-    echo "  2. Reset the card first: keycutter gpg card reset"
-    echo "  3. Use a different YubiKey"
-    return 1
+  # Check registry for previous installations
+  local is_registered=false
+  if gpg-yubikey-registry-check --serial "$serial" --fingerprint "$fingerprint" 2>/dev/null; then
+    is_registered=true
   fi
 
-  if [[ "$card_status" != "empty" && "$force" == "true" ]]; then
+  # Decision logic:
+  # - Card empty + registered: Card was reset, allow reinstall (update registry)
+  # - Card empty + not registered: Fresh install, proceed
+  # - Card has keys + registered with same key: Reinstall, need --force
+  # - Card has keys + not registered: Different key on card, need --force
+
+  if [[ "$card_status" == "empty" ]]; then
+    if [[ "$is_registered" == true ]]; then
+      log "Note: This YubiKey was previously registered with this key (card was reset)"
+      log "Proceeding with fresh installation..."
+    fi
+  else
+    # Card has keys
+    if [[ "$force" != "true" ]]; then
+      if [[ "$is_registered" == true ]]; then
+        log "Error: YubiKey already has this GPG key installed"
+      else
+        log "Error: YubiKey already has GPG keys installed"
+      fi
+      echo
+      echo "Current status: $card_status"
+      echo
+      echo "Options:"
+      echo "  1. Use --force to overwrite existing keys"
+      echo "  2. Reset the card first: keycutter gpg card reset"
+      echo "  3. Use a different YubiKey"
+      return 1
+    fi
     log "Warning: Overwriting existing keys on YubiKey"
   fi
 
