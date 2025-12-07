@@ -18,7 +18,7 @@ setup_test_environment() {
     export GIT_CONFIG_SYSTEM=/dev/null
     
     # Create test directories
-    mkdir -p "$TEST_HOME/.ssh/keycutter/"{keys,agents,hosts,scripts}
+    mkdir -p "$TEST_HOME/.ssh/keycutter/"{keys,agents,hosts,scripts,sockets}
     mkdir -p "$TEST_HOME/.local/bin"
     mkdir -p "$TEST_HOME/.config/systemd/user"
     mkdir -p "$TEST_HOME/go/bin"
@@ -119,7 +119,7 @@ skip_if_missing() {
 # Mock the keycutter environment
 mock_keycutter_environment() {
     # Create basic keycutter structure
-    mkdir -p "$KEYCUTTER_CONFIG_DIR"/{keys,agents,hosts,scripts}
+    mkdir -p "$KEYCUTTER_CONFIG_DIR"/{keys,agents,hosts,scripts,sockets}
     
     # Create a basic config file
     cat > "$KEYCUTTER_CONFIG" << 'EOF'

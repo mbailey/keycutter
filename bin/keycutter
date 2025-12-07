@@ -191,8 +191,9 @@ keycutter-create() {
 
   local ssh_key_path="${KEYCUTTER_CONFIG_DIR}/keys/${ssh_keytag}" # Path SSH key will be written to
 
-  # Ensure config dirs exists wth correct perms
+  # Ensure config dirs exists with correct perms
   dir-ensure "$KEYCUTTER_CONFIG_DIR" 0700
+  dir-ensure "$KEYCUTTER_CONFIG_DIR/sockets" 0700
   dir-ensure "$(dirname "$ssh_key_path")" 0700
 
   # Create SSH Key for $ssh_keytag
