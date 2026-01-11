@@ -1,0 +1,321 @@
+#!/usr/bin/env bash
+set -o nounset -o pipefail -o errexit
+
+#
+# keycutter-touch-notify - Play a sound when YubiKey needs a touch
+#
+# Detects YubiKey touch requests for FIDO2/SSH and OpenPGP operations.
+# Supports macOS (using log stream) and Linux (using yubikey-touch-detector).
+#
+# Usage:
+#   keycutter-touch-notify           # Run with default settings
+#   keycutter-touch-notify --help    # Show help
+#   DEBUG=true keycutter-touch-notify  # Enable debug output
+#
+# Environment:
+#   KEYCUTTER_TOUCH_SOUND   Path to notification sound file
+#   DEBUG                   Set to 'true' for debug output
+#
+
+# Get absolute path to script, even when called via symlink
+command -v realpath &> /dev/null || {
+    echo "Error: 'realpath' is required but not found. Please install 'coreutils' (e.g. 'brew install coreutils' on macOS)." >&2
+    exit 1
+}
+SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+KEYCUTTER_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Configuration
+SOUND_FILE="${KEYCUTTER_TOUCH_SOUND:-${KEYCUTTER_ROOT}/sounds/yubikey-touch-playful.wav}"
+COOLDOWN_SECONDS=2  # Minimum seconds between notifications
+DEBUG="${DEBUG:-false}"
+
+# Track last notification time to avoid spam
+LAST_NOTIFY=0
+
+# Startup time in epoch seconds - used to filter out historical events
+# log stream can replay old events on startup; we only want new ones
+STARTUP_EPOCH=$(date +%s)
+
+# Last detected process name
+LAST_PROCESS=""
+
+# macOS log stream predicate for FIDO2, OpenPGP, and process identification
+# - FIDO2: kernel IOHIDFamily startQueue event
+# - OpenPGP: usbsmartcardreaderd Time extension received
+# - Process ID: IOHIDFamily Entitlements message contains process name
+PREDICATE='((processImagePath == "/kernel") AND (senderImagePath ENDSWITH "IOHIDFamily") AND (composedMessage CONTAINS "IOHIDLibUserClient:0x") AND (composedMessage ENDSWITH "startQueue")) OR ((processImagePath ENDSWITH "usbsmartcardreaderd") AND (subsystem ENDSWITH "CryptoTokenKit") AND (composedMessage == "Time extension received")) OR ((senderImagePath ENDSWITH "IOHIDFamily") AND (composedMessage CONTAINS "Entitlements"))'
+
+show_help() {
+    cat << 'EOF'
+keycutter-touch-notify - YubiKey touch notification daemon
+
+USAGE:
+    keycutter-touch-notify [OPTIONS]
+
+OPTIONS:
+    -h, --help      Show this help message
+
+DESCRIPTION:
+    Monitors for YubiKey touch requests and plays a sound notification.
+    Supports both FIDO2/SSH operations and OpenPGP/GPG operations.
+
+    macOS: Uses log stream with predicates for low CPU usage
+    Linux: Uses yubikey-touch-detector socket (requires yubikey-touch-detector)
+
+ENVIRONMENT:
+    KEYCUTTER_TOUCH_SOUND   Path to notification sound file
+                            Default: <keycutter>/sounds/yubikey-touch-playful.wav
+    DEBUG                   Set to 'true' for verbose debug output
+
+EXAMPLES:
+    # Run with default settings
+    keycutter-touch-notify
+
+    # Use custom sound file
+    KEYCUTTER_TOUCH_SOUND=/path/to/sound.wav keycutter-touch-notify
+
+    # Enable debug output
+    DEBUG=true keycutter-touch-notify
+
+SEE ALSO:
+    keycutter(1)
+EOF
+    exit 0
+}
+
+logmsg() {
+    echo "[$(date '+%H:%M:%S')] $*" >&2
+}
+
+debug() {
+    if [[ "$DEBUG" == "true" ]]; then
+        echo "[DEBUG $(date '+%H:%M:%S')] $*" >&2
+    fi
+}
+
+# Check if an event timestamp is after our startup time
+# Returns 0 (true) if event is new, 1 (false) if historical
+is_new_event() {
+    local json_line="$1"
+    local timestamp
+
+    # Extract timestamp from JSON: "timestamp":"2026-01-01 21:41:57.458880+1100"
+    timestamp=$(echo "$json_line" | sed -n 's/.*"timestamp":"\([^"]*\)".*/\1/p' | cut -d. -f1)
+
+    if [[ -z "$timestamp" ]]; then
+        debug "Could not extract timestamp from event"
+        return 0  # Process anyway if we can't parse
+    fi
+
+    # Convert to epoch (macOS date command - use /bin/date to avoid GNU date)
+    local event_epoch
+    event_epoch=$(/bin/date -j -f "%Y-%m-%d %H:%M:%S" "$timestamp" +%s 2>/dev/null || echo 0)
+
+    if ((event_epoch >= STARTUP_EPOCH)); then
+        debug "New event: $timestamp (epoch $event_epoch >= $STARTUP_EPOCH)"
+        return 0
+    else
+        debug "Historical event: $timestamp (epoch $event_epoch < $STARTUP_EPOCH)"
+        return 1
+    fi
+}
+
+# Extract process name from IOHIDFamily Entitlements message
+# Example: IOHIDLibUserClient:0x0 [ssh-sk-helper] Entitlements 0 privilegedClient : No
+extract_process_name() {
+    local line="$1"
+    local process_name
+
+    process_name=$(echo "$line" | sed -n 's/.*\[\([^]]*\)\].*/\1/p')
+
+    if [[ -n "$process_name" ]]; then
+        LAST_PROCESS="$process_name"
+        debug "Detected process: $process_name"
+    fi
+}
+
+check_requirements() {
+    case "$(uname -s)" in
+        Darwin)
+            if ! command -v log &>/dev/null; then
+                echo "ERROR: 'log' command not found. This script requires macOS." >&2
+                exit 1
+            fi
+            ;;
+        Linux)
+            if [[ ! -S "/run/user/${UID}/yubikey-touch-detector.socket" ]]; then
+                echo "ERROR: yubikey-touch-detector socket not found." >&2
+                echo "Please install yubikey-touch-detector:" >&2
+                echo "  https://github.com/maximbaz/yubikey-touch-detector" >&2
+                exit 1
+            fi
+            ;;
+        *)
+            echo "ERROR: Unsupported operating system: $(uname -s)" >&2
+            exit 1
+            ;;
+    esac
+
+    # Check if sound file exists (warning only)
+    if [[ ! -f "$SOUND_FILE" ]]; then
+        logmsg "WARNING: Sound file not found: $SOUND_FILE (will use system beep)"
+    fi
+}
+
+play_sound() {
+    local now
+    now=$(date +%s)
+
+    # Enforce cooldown
+    if ((now - LAST_NOTIFY < COOLDOWN_SECONDS)); then
+        logmsg "Cooldown active, skipping notification"
+        return
+    fi
+    LAST_NOTIFY=$now
+
+    local process_info=""
+    if [[ -n "$LAST_PROCESS" ]]; then
+        process_info=" ($LAST_PROCESS)"
+    fi
+
+    logmsg "YubiKey touch needed!${process_info}"
+
+    # Play sound in background so we don't block log processing
+    if [[ -f "$SOUND_FILE" ]]; then
+        case "$(uname -s)" in
+            Darwin)
+                afplay "$SOUND_FILE" &
+                ;;
+            Linux)
+                if command -v paplay &>/dev/null; then
+                    paplay "$SOUND_FILE" &
+                elif command -v aplay &>/dev/null; then
+                    aplay -q "$SOUND_FILE" &
+                else
+                    printf '\a'
+                fi
+                ;;
+        esac
+    else
+        logmsg "Sound file not found: $SOUND_FILE"
+        printf '\a'
+    fi
+
+    # Reset process name after notification
+    LAST_PROCESS=""
+}
+
+cleanup() {
+    logmsg "Shutting down..."
+    exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
+run_macos() {
+    logmsg "macOS: Using log stream with predicate filter"
+    logmsg "Ignoring events before: $(/bin/date -j -f '%s' "$STARTUP_EPOCH" '+%Y-%m-%d %H:%M:%S')"
+
+    while true; do
+        logmsg "Listening for YubiKey events..."
+
+        log stream --level debug --style ndjson --predicate "$PREDICATE" 2>&1 | while IFS= read -r line; do
+            # Skip the initial "Filtering..." message (not JSON)
+            if [[ "$line" == Filtering* ]]; then
+                debug "Filter active: $line"
+                continue
+            fi
+
+            debug "Raw event: $line"
+
+            # Skip historical events (replayed on startup)
+            if ! is_new_event "$line"; then
+                debug "Skipping historical event"
+                continue
+            fi
+
+            # Check for process identification message
+            if echo "$line" | grep -q "Entitlements"; then
+                extract_process_name "$line"
+                continue  # Don't play sound for Entitlements message
+            fi
+
+            # Extract event type for logging
+            if echo "$line" | grep -q "startQueue"; then
+                logmsg "Detected: FIDO2/SSH touch request"
+            elif echo "$line" | grep -q "Time extension"; then
+                logmsg "Detected: OpenPGP/GPG touch request"
+            fi
+
+            play_sound
+        done
+
+        # If we get here, log stream exited unexpectedly
+        logmsg "Log stream exited, restarting in 5 seconds..."
+        sleep 5
+    done
+}
+
+run_linux() {
+    local socket="/run/user/${UID}/yubikey-touch-detector.socket"
+    logmsg "Linux: Using yubikey-touch-detector socket"
+
+    while true; do
+        logmsg "Listening for YubiKey events..."
+
+        # Connect to socket and read events
+        nc -U "$socket" 2>/dev/null | while IFS= read -r line; do
+            debug "Socket event: $line"
+
+            case "$line" in
+                GPG_1|U2F_1)
+                    if [[ "$line" == GPG_1 ]]; then
+                        logmsg "Detected: OpenPGP/GPG touch request"
+                    else
+                        logmsg "Detected: FIDO2/SSH touch request"
+                    fi
+                    play_sound
+                    ;;
+                GPG_0|U2F_0)
+                    debug "Touch completed: $line"
+                    ;;
+                *)
+                    debug "Unknown event: $line"
+                    ;;
+            esac
+        done
+
+        logmsg "Socket connection lost, reconnecting in 5 seconds..."
+        sleep 5
+    done
+}
+
+main() {
+    # Parse arguments
+    for arg in "$@"; do
+        case "$arg" in
+            -h|--help)
+                show_help
+                ;;
+        esac
+    done
+
+    logmsg "Starting keycutter-touch-notify"
+    logmsg "Sound: $SOUND_FILE"
+    logmsg "Cooldown: ${COOLDOWN_SECONDS}s"
+
+    check_requirements
+
+    case "$(uname -s)" in
+        Darwin)
+            run_macos
+            ;;
+        Linux)
+            run_linux
+            ;;
+    esac
+}
+
+main "$@"

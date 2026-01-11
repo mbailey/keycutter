@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+set -o nounset -o pipefail -o errexit
+
+#
+# keycutter-touch-notify-install - Install/manage keycutter-touch-notify service
+#
+# Usage:
+#   keycutter-touch-notify-install install    # Install and start service
+#   keycutter-touch-notify-install uninstall  # Stop and remove service
+#   keycutter-touch-notify-install status     # Show service status
+#   keycutter-touch-notify-install logs       # Show recent logs
+#
+
+# Get absolute path to script, even when called via symlink
+command -v realpath &> /dev/null || {
+    echo "Error: 'realpath' is required but not found." >&2
+    exit 1
+}
+SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+KEYCUTTER_ROOT="$(dirname "$SCRIPT_DIR")"
+
+LAUNCHD_LABEL="com.keycutter.touch-notify"
+LAUNCHD_PLIST_SRC="${KEYCUTTER_ROOT}/launchd/${LAUNCHD_LABEL}.plist"
+LAUNCHD_PLIST_DST="${HOME}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
+LOG_DIR="${HOME}/.local/state/keycutter"
+LOG_FILE="${LOG_DIR}/touch-notify.log"
+
+show_help() {
+    cat << 'EOF'
+keycutter-touch-notify-install - Manage keycutter-touch-notify service
+
+USAGE:
+    keycutter-touch-notify-install <command>
+
+COMMANDS:
+    install     Install and start the launchd service
+    uninstall   Stop and remove the launchd service
+    status      Show service status
+    logs        Show recent log entries (last 50 lines)
+    logs -f     Follow log output
+
+DESCRIPTION:
+    Manages the keycutter-touch-notify background service that plays a sound
+    when your YubiKey needs a touch.
+
+    On macOS, this installs a launchd user agent that runs at login.
+    On Linux, this installs a systemd user service.
+
+EXAMPLES:
+    # Install and start the service
+    keycutter-touch-notify-install install
+
+    # Check if service is running
+    keycutter-touch-notify-install status
+
+    # View logs
+    keycutter-touch-notify-install logs -f
+
+    # Stop and remove the service
+    keycutter-touch-notify-install uninstall
+EOF
+    exit 0
+}
+
+logmsg() {
+    echo "[keycutter-touch-notify] $*"
+}
+
+error() {
+    echo "[keycutter-touch-notify] ERROR: $*" >&2
+    exit 1
+}
+
+install_macos() {
+    logmsg "Installing launchd service..."
+
+    # Check source plist exists
+    if [[ ! -f "$LAUNCHD_PLIST_SRC" ]]; then
+        error "Source plist not found: $LAUNCHD_PLIST_SRC"
+    fi
+
+    # Create log directory
+    mkdir -p "$LOG_DIR"
+
+    # Create LaunchAgents directory if needed
+    mkdir -p "$(dirname "$LAUNCHD_PLIST_DST")"
+
+    # Stop service if already loaded
+    if launchctl list "$LAUNCHD_LABEL" &>/dev/null; then
+        logmsg "Stopping existing service..."
+        launchctl unload "$LAUNCHD_PLIST_DST" 2>/dev/null || true
+    fi
+
+    # Generate plist with actual paths substituted
+    sed -e "s|__KEYCUTTER_BIN__|${SCRIPT_DIR}|g" \
+        -e "s|__HOME__|${HOME}|g" \
+        "$LAUNCHD_PLIST_SRC" > "$LAUNCHD_PLIST_DST"
+
+    # Load the service
+    logmsg "Loading service..."
+    launchctl load "$LAUNCHD_PLIST_DST"
+
+    # Verify it started
+    sleep 1
+    if launchctl list "$LAUNCHD_LABEL" &>/dev/null; then
+        logmsg "Service installed and running"
+        logmsg "Logs: $LOG_FILE"
+    else
+        error "Service failed to start. Check: launchctl list $LAUNCHD_LABEL"
+    fi
+}
+
+uninstall_macos() {
+    logmsg "Uninstalling launchd service..."
+
+    if launchctl list "$LAUNCHD_LABEL" &>/dev/null; then
+        logmsg "Stopping service..."
+        launchctl unload "$LAUNCHD_PLIST_DST" 2>/dev/null || true
+    fi
+
+    if [[ -f "$LAUNCHD_PLIST_DST" ]]; then
+        logmsg "Removing plist..."
+        rm "$LAUNCHD_PLIST_DST"
+    fi
+
+    logmsg "Service uninstalled"
+}
+
+status_macos() {
+    echo "Service: $LAUNCHD_LABEL"
+    echo ""
+
+    if launchctl list "$LAUNCHD_LABEL" &>/dev/null; then
+        echo "Status: Running"
+        launchctl list "$LAUNCHD_LABEL"
+    else
+        echo "Status: Not running"
+        if [[ -f "$LAUNCHD_PLIST_DST" ]]; then
+            echo "Plist: Installed at $LAUNCHD_PLIST_DST"
+        else
+            echo "Plist: Not installed"
+        fi
+    fi
+}
+
+logs_macos() {
+    if [[ ! -f "$LOG_FILE" ]]; then
+        echo "No log file found: $LOG_FILE"
+        echo "Service may not have been started yet."
+        exit 0
+    fi
+
+    if [[ "${1:-}" == "-f" ]]; then
+        tail -f "$LOG_FILE"
+    else
+        tail -50 "$LOG_FILE"
+    fi
+}
+
+install_linux() {
+    error "Linux systemd installation not yet implemented"
+}
+
+uninstall_linux() {
+    error "Linux systemd uninstallation not yet implemented"
+}
+
+status_linux() {
+    error "Linux status check not yet implemented"
+}
+
+logs_linux() {
+    error "Linux logs not yet implemented"
+}
+
+main() {
+    local cmd="${1:-}"
+    local arg="${2:-}"
+
+    case "$cmd" in
+        -h|--help|help)
+            show_help
+            ;;
+        install)
+            case "$(uname -s)" in
+                Darwin) install_macos ;;
+                Linux) install_linux ;;
+                *) error "Unsupported OS: $(uname -s)" ;;
+            esac
+            ;;
+        uninstall)
+            case "$(uname -s)" in
+                Darwin) uninstall_macos ;;
+                Linux) uninstall_linux ;;
+                *) error "Unsupported OS: $(uname -s)" ;;
+            esac
+            ;;
+        status)
+            case "$(uname -s)" in
+                Darwin) status_macos ;;
+                Linux) status_linux ;;
+                *) error "Unsupported OS: $(uname -s)" ;;
+            esac
+            ;;
+        logs)
+            case "$(uname -s)" in
+                Darwin) logs_macos "$arg" ;;
+                Linux) logs_linux "$arg" ;;
+                *) error "Unsupported OS: $(uname -s)" ;;
+            esac
+            ;;
+        "")
+            show_help
+            ;;
+        *)
+            error "Unknown command: $cmd. Use --help for usage."
+            ;;
+    esac
+}
+
+main "$@"
