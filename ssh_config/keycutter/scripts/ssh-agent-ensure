@@ -23,6 +23,12 @@ ssh-add -D 2> /dev/null
 shopt -s nullglob
 for key in "$agent_dir"/*@${KEYCUTTER_ORIGIN:-"$(hostname -s)"}; do
     if [[ -f "$key" && "$key" != *.pub ]]; then
+        # Fix permissions if too open (SSH requires 600 or stricter)
+        # Uses macOS native stat first, falls back to GNU/Linux stat syntax
+        current_perm=$(/usr/bin/stat -f %Lp "$key" 2>/dev/null || stat -c %a "$key" 2>/dev/null)
+        if [[ -n "$current_perm" && "$current_perm" != "600" ]]; then
+            chmod 600 "$key" 2>/dev/null || true
+        fi
         ssh-add "$key" &>/dev/null
     fi
 done
