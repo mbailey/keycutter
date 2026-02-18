@@ -2,34 +2,73 @@
 set -o errexit -o nounset -o pipefail
 
 # ssh-agent-ensure - Ensure correct ssh-agent is started with correct keys.
+#
+# Usage: ssh-agent-ensure <host>
+#        eval "$(ssh-agent-ensure -e <host>)"
+#
+# Options:
+#   -e    Output SSH_AUTH_SOCK export statement (for eval)
+#
+# Environment:
+#   KEYCUTTER_DEBUG=1    Enable debug output to stderr
+
+eval_mode=false
+if [[ "${1:-}" == "-e" ]]; then
+    eval_mode=true
+    shift
+fi
 
 host="${1:-}"
 
+debug() { [[ -z "${KEYCUTTER_DEBUG:-}" ]] || echo "ssh-agent-ensure: $*" >&2; }
+
+debug "host=$host"
+
 export SSH_AUTH_SOCK=$(ssh -G "$host" 2>/dev/null | awk '/^identityagent / {print $2}')
-[[ -n $SSH_AUTH_SOCK ]] || exit 0
+debug "identityagent=$SSH_AUTH_SOCK"
+
+if [[ -z $SSH_AUTH_SOCK ]]; then
+    debug "no IdentityAgent configured, exiting"
+    exit 0
+fi
 
 agent_dir=$(dirname "$SSH_AUTH_SOCK")
+origin=${KEYCUTTER_ORIGIN:-"$(hostname -s)"}
+debug "agent_dir=$agent_dir origin=$origin"
 
 # Ensure the agent directory exists
 mkdir -p "$agent_dir"
 
 if [[ ! -S "$SSH_AUTH_SOCK" ]] || ! ssh-add -l &>/dev/null; then
+    debug "starting new ssh-agent at $SSH_AUTH_SOCK"
     rm -f "$SSH_AUTH_SOCK"
     ssh-agent -a "$SSH_AUTH_SOCK" > /dev/null
+else
+    debug "reusing existing ssh-agent at $SSH_AUTH_SOCK"
 fi
 
 ssh-add -D 2> /dev/null
 
+keys_loaded=0
 shopt -s nullglob
-for key in "$agent_dir"/*@${KEYCUTTER_ORIGIN:-"$(hostname -s)"}; do
+for key in "$agent_dir"/*@${origin}; do
     if [[ -f "$key" && "$key" != *.pub ]]; then
         # Fix permissions if too open (SSH requires 600 or stricter)
         # Uses macOS native stat first, falls back to GNU/Linux stat syntax
         current_perm=$(/usr/bin/stat -f %Lp "$key" 2>/dev/null || stat -c %a "$key" 2>/dev/null)
         if [[ -n "$current_perm" && "$current_perm" != "600" ]]; then
+            debug "fixing permissions on $key ($current_perm -> 600)"
             chmod 600 "$key" 2>/dev/null || true
         fi
+        debug "loading key: $key"
         ssh-add "$key" &>/dev/null
+        ((keys_loaded++))
     fi
 done
 shopt -u nullglob
+
+debug "keys loaded: $keys_loaded"
+
+if [[ "$eval_mode" == true ]]; then
+    echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK; export SSH_AUTH_SOCK;"
+fi
