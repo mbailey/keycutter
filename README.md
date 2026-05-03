@@ -32,6 +32,7 @@ While initially created for use with YubiKeys and GitHub, Keycutter supports oth
 
 - **[FIDO SSH keys (e.g. Yubikey)](./docs/yubikeys/fido2-on-yubikeys.md):** Uncopiable, physical presence verification, pin retry lockout.
 - **[Multi-account SSH access to services](./docs/ssh-keytags.md#key-innovation-multi-account-ssh):** GitHub.com, Sourcehut (sr.ht), GitLab.com, etc.
+- **[Git commit signing](./docs/git-signing.md):** Portable per-identity signing with automatic identity switching.
 - **[Selective SSH Agent Forwarding](./ssh_config/keycutter/agents/README.md):** Enforce security boundaries.
 - **[Public SSH Key privacy](./docs/design/defense-layers-to-protect-against-key-misuse.md):** Only offer relevant keys to remote host.
 - **SSH over SSM (AWS):** Public key removed from remote host after login.
