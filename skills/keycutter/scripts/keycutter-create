@@ -1,0 +1,387 @@
+#!/usr/bin/env bash
+#
+# keycutter-create — mint one touch-gated SSH key, keytag-named.
+#
+# Usage:
+#   keycutter-create <keytag> [--authenticator yubikey|secure-enclave]
+#                    [--resident] [--dest DIR] [--dry-run]
+#
+#   <keytag>     e.g. github.com_alice or github.com_alice@work.
+#                Charset [A-Za-z0-9._@-], no '/', no leading '-', not
+#                empty. If it has no '@device' suffix you'll be offered
+#                <keytag>@$(hostname -s): the device is %L, the host name.
+#   --authenticator yubikey | secure-enclave
+#                Where the key lives. yubikey: a FIDO2 ed25519-sk key on
+#                a plugged-in security key. secure-enclave (aliases:
+#                enclave, mac): a P-256 key minted inside this Mac's
+#                Secure Enclave, Touch ID on every signature; no YubiKey
+#                needed; macOS with /usr/lib/ssh-keychain.dylib + sc_auth.
+#                Default: the origin names the authenticator. On a Mac
+#                that can do it, an origin (KEYCUTTER_ORIGIN, default the
+#                host name) EQUAL to the host name means secure-enclave;
+#                any other origin (e.g. <host>-yk), or not a Mac, means
+#                yubikey. keycutter install applies the same rule.
+#   --resident   YubiKey only: store the key handle on the authenticator
+#                itself (ssh-keygen -O resident), so a roaming YubiKey
+#                can reproduce the key on another machine.
+#   --dest DIR   Config dir (default ~/.ssh/keycutter).
+#   --dry-run    Print the exact commands that would run; run and write
+#                nothing. Safe anywhere: no Touch ID prompt, no key.
+#
+# Run it in YOUR OWN terminal: it asks for a touch or Touch ID, and may
+# ask a question. Without a terminal on stdin it refuses (except
+# --dry-run). An AI agent should show you the command, not run it.
+#
+# Fork (c), see references/ssh-config-explained.md: this script mutates
+# NO ssh config. Key selection happens via the static
+# `IdentityFile keys/%n@%L` token line already in keycutter.conf. Drop a
+# key at the right filename and ssh finds it; no stanza to append.
+# Secure Enclave keys sign through Apple's provider: that is ONE static
+# line, `SecurityKeyProvider /usr/lib/ssh-keychain.dylib` under `Host *`,
+# which keycutter install writes on a Mac whose origin is its host name
+# (whole machine, not per key). This script writes no config.
+#
+# Hardware-gated only: no software-key fallback (a security-review
+# decision). If your OpenSSH build lacks FIDO2 support this refuses
+# rather than silently minting a weaker key; use plain ssh-keygen if you
+# deliberately want a software one.
+#
+# Dependency-free: bash + ssh-keygen + install + chmod (+ sc_auth, awk
+# and ioreg on the Secure Enclave path, all stock macOS).
+
+set -euo pipefail
+
+# Output helpers (same palette as keycutter-install)
+if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then COLOR=1; else COLOR=0; fi
+
+c()    { (( COLOR )) && printf '\e[%sm%s\e[0m' "$1" "$2" || printf '%s' "$2"; }
+dim()  { c 2  "$*"; }
+bold() { c 1  "$*"; }
+ok()   { c 32 "$*"; }
+warn() { c 33 "$*"; }
+bad()  { c 31 "$*"; }
+
+usage() {
+  sed -n '/^# keycutter-create/,/^set -euo pipefail/{ /^set -euo pipefail/q; s/^# \{0,1\}//; p; }' "${BASH_SOURCE[0]}"
+}
+
+die() {
+  printf '%s\n' "$(bad "keycutter-create: $*")" >&2
+  exit 1
+}
+
+# validate_keytag — reject, never mutate. Adapted from upstream
+# ssh-keytag-validate (lib/ssh:76-104), simplified to the charset the
+# blueprint calls for.
+#
+# Second arg "final" adds the post-append-only '@' shape checks (see the
+# two call sites below): at most one '@', and non-empty on both sides of
+# it. Zero '@' stays legal even in the final keytag — it can only arise
+# when the user explicitly DECLINES the device suffix, a supported (if
+# warned) choice: such a key needs a manual Host stanza to be selected.
+validate_keytag() {
+  local keytag="$1"
+  local phase="${2:-}"
+  [[ -n "${keytag}" ]]      || die "keytag must not be empty"
+  [[ "${keytag}" != -* ]]   || die "keytag must not start with '-': ${keytag}"
+  [[ "${keytag}" != */* ]]  || die "keytag must not contain '/': ${keytag}"
+  # Belt-and-suspenders (traversal guard): with '/' already banned, '..' can't
+  # traverse — but reject it anyway so 'x..y' junk never names a key file.
+  [[ "${keytag}" != *..* ]] || die "keytag must not contain '..': ${keytag}"
+  [[ "${keytag}" =~ ^[A-Za-z0-9._@-]+$ ]] \
+    || die "keytag has invalid characters (allowed: A-Za-z0-9._@-): ${keytag}"
+  # '@' shape on the FINAL keytag (review finding B-4): the charset admits
+  # 'a@b@c', but the suffix logic, the `keys/%n@%L` match token, and
+  # OpenSSH 9.9's split-at-last-'@' parsing all assume a single '@'.
+  # Multi-'@' and empty-sided '@' are rejected. Zero '@' is allowed: it
+  # can only arise when the user explicitly declines the device suffix
+  # (with_device_suffix warns about that choice) — rejecting it here would
+  # kill the supported decline path.
+  if [[ "${phase}" == final ]]; then
+    local without_at="${keytag//@/}"
+    local at_count=$(( ${#keytag} - ${#without_at} ))
+    (( at_count <= 1 )) \
+      || die "keytag must contain at most one '@': ${keytag}"
+    if (( at_count == 1 )); then
+      [[ "${keytag}" != @* && "${keytag}" != *@ ]] \
+        || die "keytag must be non-empty on both sides of '@': ${keytag}"
+    fi
+  fi
+}
+
+# with_device_suffix — propose <keytag>@<device> if keytag has no '@'
+# yet, mirroring the upstream CLI's UX. Non-interactive
+# (no /dev/tty): accept the proposal and say so on stderr.
+with_device_suffix() {
+  local keytag="$1"
+  if [[ "${keytag}" == *@* ]]; then
+    printf '%s' "${keytag}"
+    return
+  fi
+
+  # The device is %L, the host name: that is what keys/%n@%L matches. The
+  # origin names the authenticator (see below); it is not the device.
+  local device; device="$(hostname -s)"
+  local proposed="${keytag}@${device}"
+
+  # -r checks the mode bits; without a controlling terminal the open fails.
+  if [[ ! -r /dev/tty ]] || ! { : </dev/tty; } 2>/dev/null; then
+    printf '%s\n' "$(dim "keycutter-create: no TTY — using ${proposed}")" >&2
+    printf '%s' "${proposed}"
+    return
+  fi
+
+  local reply
+  read -r -p "$(bold "Append device to keytag? (${proposed}) [Y/n] ")" reply < /dev/tty || reply=""
+  if [[ "${reply}" =~ ^[Nn] ]]; then
+    printf '%s\n' "$(warn "keycutter-create: keeping '${keytag}' with no @device suffix.")" >&2
+    printf '%s\n' "$(warn "The config's keys/%n@%L token line never auto-selects such a key —")" >&2
+    printf '%s\n' "$(warn "it needs a manual Host stanza (see references/ssh-config-explained.md).")" >&2
+    printf '%s' "${keytag}"
+  else
+    printf '%s' "${proposed}"
+  fi
+}
+
+# --- Secure Enclave (macOS) ------------------------------------------------
+# Ported from upstream keycutter lib/secure-enclave (b22865d). A P-256 key
+# minted IN the Enclave by `sc_auth create-ctk-identity`, served to OpenSSH
+# by Apple's provider dylib. What lands in keys/ is a HANDLE, useless on
+# any other Mac, plus its .pub.
+
+# Overridable so tests can point at a stand-in file.
+SK_PROVIDER_APPLE="${KEYCUTTER_SK_PROVIDER_APPLE:-/usr/lib/ssh-keychain.dylib}"
+
+normalise_authenticator() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    yubikey|yk) echo yubikey ;;
+    secure-enclave|secure_enclave|secureenclave|enclave|se|mac|macos|touchid|touch-id)
+      echo secure-enclave ;;
+    *) die "unknown authenticator '$1' (yubikey | secure-enclave)" ;;
+  esac
+}
+
+# A Mac with Apple's provider and sc_auth: the Enclave path can work here.
+secure_enclave_available() {
+  [[ "$(uname -s 2>/dev/null)" == Darwin ]] || return 1
+  [[ -f "${SK_PROVIDER_APPLE}" ]] || return 1
+  command -v sc_auth >/dev/null 2>&1
+}
+
+yubikey_present() {
+  if command -v ykman >/dev/null 2>&1 && ykman list 2>/dev/null | grep -q .; then
+    return 0
+  fi
+  ioreg -p IOUSB -l 2>/dev/null | grep -qi yubikey
+}
+
+# Lid closed: Touch ID refuses (LocalAuthentication -4). Measured upstream.
+macos_clamshell() {
+  ioreg -r -k AppleClamshellState -d 4 2>/dev/null | grep -q '"AppleClamshellState" = Yes'
+}
+
+# Screen locked: sc_auth still mints, but the identity never registers with
+# the CryptoTokenKit token, so ssh cannot see or use it. Measured upstream.
+macos_screen_locked() {
+  ioreg -n Root -d1 2>/dev/null | grep -q '"IOConsoleLocked" = Yes'
+}
+
+# Fingerprint of the Enclave identity labelled $1, or nothing.
+enclave_fingerprint() {
+  { sc_auth list-ctk-identities -t ssh -e b64 2>/dev/null || true; } \
+    | awk -v l="$1" 'NR>1 && $4==l {print $2}' | tail -1
+}
+
+print_cmd() { local out; out="$(printf '%q ' "$@")"; printf '  %s\n' "${out% }"; }
+
+# The commands the Enclave path runs, printed for --dry-run.
+dry_run_enclave() {
+  local tag="$1" path="$2"
+  printf '%s\n' "$(bold 'keycutter-create: DRY RUN (secure-enclave). Nothing runs; nothing is written.')"
+  if secure_enclave_available; then
+    printf '%s\n' "$(ok "  this Mac can do it: ${SK_PROVIDER_APPLE} and sc_auth are present")"
+  else
+    printf '%s\n' "$(warn "  NOTE: this machine cannot run it (needs macOS with ${SK_PROVIDER_APPLE} and sc_auth)")"
+  fi
+  printf '\n%s\n' "$(bold '1. Mint a P-256 key inside the Secure Enclave (Touch ID now, and on every signature):')"
+  print_cmd sc_auth create-ctk-identity -l "${tag}" -k p-256-ne -t bio -N "${tag}"
+  printf '%s\n' "$(bold '2. Read back its fingerprint (sc_auth exits 0 even on failure; this is the receipt):')"
+  print_cmd sc_auth list-ctk-identities -t ssh -e b64
+  printf '%s\n' "$(bold '3. Download the key HANDLE, in a scratch dir (it downloads every Enclave identity):')"
+  # shellcheck disable=SC2016 # printed for the reader, not run
+  printf '  cd "$(mktemp -d)" && SSH_ASKPASS=/usr/bin/true SSH_ASKPASS_REQUIRE=force ssh-keygen -K -w %q -N %s\n' "${SK_PROVIDER_APPLE}" "''"
+  printf '%s\n' "$(bold '4. Keep the HANDLE whose fingerprint matches step 2 (ssh-keygen -lf), under its keytag name:')"
+  printf '  install -m 0600 HANDLE %q\n' "${path}"
+  # shellcheck disable=SC2016 # printed for the reader, not run
+  printf '  awk -v c=%q '\''{print $1, $2, c}'\'' HANDLE.pub > %q\n' "${tag}" "${path}.pub"
+  print_cmd ssh-keygen -c -C "${tag}" -P '' -f "${path}"
+  printf '\n%s\n' "$(dim "ssh then signs with: SecurityKeyProvider /usr/lib/ssh-keychain.dylib (under Host * in keycutter.conf; keycutter install writes it on this Mac)")"
+}
+
+create_enclave() {
+  local tag="$1" path="$2" f fp tmp pub match=""
+
+  secure_enclave_available \
+    || die "Secure Enclave keys need macOS with ${SK_PROVIDER_APPLE} and sc_auth (try --dry-run to see the commands)"
+  for f in "${path}" "${path}.pub"; do
+    [[ ! -e "$f" ]] || die "$f exists. Refusing to overwrite; choose another keytag or move it aside."
+  done
+  if macos_screen_locked; then
+    die "the screen is locked: an Enclave identity minted now would not register and ssh could not use it. Unlock and re-run."
+  fi
+  if macos_clamshell; then
+    die "Touch ID is unavailable with the lid closed (clamshell). Open the lid or use a Touch ID keyboard."
+  fi
+  if [[ -n "$(enclave_fingerprint "${tag}")" ]]; then
+    die "a Secure Enclave identity labelled '${tag}' already exists. Refusing to mint a twin. Find its hash: sc_auth list-ctk-identities; delete: sc_auth delete-ctk-identity -h <hash>"
+  fi
+
+  printf '%s %s\n' "$(bold 'keycutter-create:')" "minting a P-256 key in the Secure Enclave for ${tag}"
+  printf '%s\n' "$(warn 'Touch ID: now, and on every signature.')"
+  # sc_auth exits 0 even when it fails (measured: the clamshell error), so
+  # the listing afterwards is the receipt, not the exit code.
+  sc_auth create-ctk-identity -l "${tag}" -k p-256-ne -t bio -N "${tag}" || true
+  fp="$(enclave_fingerprint "${tag}")"
+  [[ -n "${fp}" ]] || die "sc_auth did not create identity '${tag}' (see its message above)"
+  printf '%s\n' "$(dim "keycutter-create: Enclave identity ${fp}")"
+
+  # ssh-keygen -K downloads EVERY resident identity the provider knows into
+  # the cwd, so work in a scratch dir and pick ours by fingerprint. A Touch
+  # ID identity makes the provider ask for a PIN it does not have; an
+  # askpass that prints nothing answers with the empty PIN (measured
+  # upstream: without it the download hangs at "Enter PIN").
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/keycutter-se.XXXXXX")"
+  # shellcheck disable=SC2064 # expand now: tmp is local
+  trap "rm -rf '${tmp:?}'" EXIT
+  local left="the Enclave identity ${fp} WAS minted: remove it before retrying (sc_auth list-ctk-identities; sc_auth delete-ctk-identity -h <hash>)"
+  if ! (cd "${tmp}" && SSH_ASKPASS=/usr/bin/true SSH_ASKPASS_REQUIRE=force \
+        ssh-keygen -K -w "${SK_PROVIDER_APPLE}" -N '' </dev/null >/dev/null 2>&1); then
+    die "ssh-keygen -K -w ${SK_PROVIDER_APPLE} failed to download the key handle; ${left}"
+  fi
+  for pub in "${tmp}"/*.pub; do
+    [[ -f "${pub}" ]] || continue
+    if ssh-keygen -lf "${pub}" 2>/dev/null | grep -qF " ${fp} "; then
+      match="${pub%.pub}"
+      break
+    fi
+  done
+  if [[ -z "${match}" ]]; then
+    die "no downloaded handle has fingerprint ${fp}; ${left}"
+  fi
+  install -m 0600 "${match}" "${path}"
+  awk -v c="${tag}" '{print $1, $2, c}' "${match}.pub" > "${path}.pub"
+  chmod 0600 "${path}.pub"
+  # The handle's own comment is "ssh:"; set it to the keytag.
+  ssh-keygen -c -C "${tag}" -P '' -f "${path}" >/dev/null 2>&1 || true
+  rm -rf "${tmp:?}"
+}
+
+# --- Args ------------------------------------------------------------------
+resident=0
+dry_run=0
+authenticator=""
+dest="${HOME}/.ssh/keycutter"
+keytag=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --resident) resident=1 ;;
+    --dry-run)  dry_run=1 ;;
+    --dest)     shift; dest="${1:?--dest needs a value}" ;;
+    --authenticator) shift; authenticator="${1:?--authenticator needs a value (yubikey | secure-enclave)}" ;;
+    --authenticator=*) authenticator="${1#*=}" ;;
+    -h|--help)  usage; exit 0 ;;
+    --)         shift; [[ -z "${keytag}" ]] || die "unexpected extra argument: $1"
+                keytag="${1:-}"; shift; break ;;
+    -*)         die "unknown option: $1 (try --help)" ;;
+    *)          [[ -z "${keytag}" ]] || die "unexpected extra argument: $1"
+                keytag="$1" ;;
+  esac
+  shift
+done
+
+[[ -n "${keytag}" ]] || { usage; die "keytag is required"; }
+
+# The origin names the authenticator (the default when no flag is given):
+# a Mac that can do it, whose origin equals its host name -> the Enclave.
+origin="${KEYCUTTER_ORIGIN:-$(hostname -s)}"
+if [[ -z "${authenticator}${KEYCUTTER_AUTHENTICATOR:-}" ]] \
+   && secure_enclave_available && [[ "${origin}" == "$(hostname -s)" ]]; then
+  authenticator=secure-enclave
+  printf '%s\n' "$(dim "keycutter-create: origin '${origin}' is this Mac's host name -> Secure Enclave (Touch ID). For a YubiKey: --authenticator yubikey")" >&2
+fi
+authenticator="$(normalise_authenticator "${authenticator:-${KEYCUTTER_AUTHENTICATOR:-yubikey}}")"
+if [[ "${authenticator}" == secure-enclave ]] && (( resident )); then
+  die "--resident is YubiKey-only (an Enclave key never leaves this Mac)"
+fi
+
+validate_keytag "${keytag}"
+keytag="$(with_device_suffix "${keytag}")"
+validate_keytag "${keytag}" final
+if [[ "${keytag}" == *@* && "${keytag##*@}" != "$(hostname -s)" ]]; then
+  printf '%s\n' "$(warn "keycutter-create: device '${keytag##*@}' is not this host name ($(hostname -s)): the config's keys/%n@%L line will not pick this key; it needs a Host stanza (references/ssh-config-explained.md)")" >&2
+fi
+
+key_path="${dest}/keys/${keytag}"
+
+resident_flag=()
+(( resident )) && resident_flag=(-O resident)
+
+if (( dry_run )); then
+  if [[ "${authenticator}" == secure-enclave ]]; then
+    dry_run_enclave "${keytag}" "${key_path}"
+  else
+    printf '%s\n' "$(bold 'keycutter-create: DRY RUN (yubikey). Nothing runs; nothing is written.')"
+    print_cmd ssh-keygen -t ed25519-sk -f "${key_path}" -C "${keytag}" ${resident_flag[@]+"${resident_flag[@]}"}
+  fi
+  exit 0
+fi
+
+# A real key needs a human at a terminal: a touch, Touch ID, maybe a
+# question. An agent's tool has no terminal; it should hand this over.
+if [[ ! -t 0 ]] && [[ -z "${KEYCUTTER_ALLOW_NO_TTY:-}" ]]; then
+  die "no terminal: run this in your own terminal (it asks for a touch or Touch ID). Agents: show the user this command; do not run it. Preview: --dry-run"
+fi
+
+# Perms first, then generate. install -d sets the mode on the leaf only, so
+# a missing parent (~/.ssh on a fresh machine) is made 0700 first.
+parent="$(dirname "${dest}")"
+[[ -d "${parent}" ]] || install -d -m 0700 "${parent}"
+install -d -m 0700 "${dest}"
+install -d -m 0700 "${dest}/keys"
+
+[[ ! -e "${key_path}" ]] || die "key already exists: ${key_path}"
+
+if [[ "${authenticator}" == secure-enclave ]]; then
+  create_enclave "${keytag}" "${key_path}"
+else
+  printf '%s %s\n' "$(bold 'keycutter-create:')" "generating ${key_path}"
+  if ! ssh-keygen -t ed25519-sk -f "${key_path}" -C "${keytag}" ${resident_flag[@]+"${resident_flag[@]}"}; then
+    printf '\n%s\n' "$(bad 'keycutter-create: FIDO2 key generation failed.')" >&2
+    if secure_enclave_available && ! yubikey_present; then
+      printf '%s\n' "$(warn 'No YubiKey found. This Mac does not need one: keep the key in its Secure Enclave (Touch ID):')" >&2
+      printf '%s\n' "$(warn "  keycutter create ${keytag} --authenticator secure-enclave")" >&2
+    else
+      printf '%s\n' "$(warn 'Is a YubiKey plugged in? If so, your OpenSSH build likely lacks FIDO2 (-sk) support.')" >&2
+      printf '%s\n' "$(warn 'macOS: brew install openssh, then put it first in PATH.')" >&2
+    fi
+    printf '%s\n' "$(dim  'No software-key fallback — if you deliberately want a')" >&2
+    printf '%s\n' "$(dim  'software key, run plain ssh-keygen yourself.')" >&2
+    exit 1
+  fi
+  chmod 0600 "${key_path}.pub"
+fi
+
+# Print, don't run, the follow-ups.
+alias="${keytag%@*}"
+
+printf '\n%s\n' "$(ok "keycutter-create: created ${key_path}")"
+if [[ "${authenticator}" == secure-enclave ]]; then
+  printf '%s\n' "$(dim "  in this Mac's Secure Enclave; ssh signs it via SecurityKeyProvider /usr/lib/ssh-keychain.dylib (keycutter install)")"
+fi
+printf '\n%s\n' "$(bold 'Follow-ups (not run for you):')"
+printf '  gh ssh-key add --type authentication --title "%s" "%s.pub"\n' "${keytag}" "${key_path}"
+printf '  gh ssh-key add --type signing        --title "%s" "%s.pub"\n' "${keytag}" "${key_path}"
+printf '  ssh -T %s\n' "${alias}"
+printf '%s\n' "$(dim '  Note: orgs enforcing SAML SSO require authorising this key')"
+printf '%s\n' "$(dim '  for the org separately (GitHub: Settings → SSH keys → Configure SSO).')"

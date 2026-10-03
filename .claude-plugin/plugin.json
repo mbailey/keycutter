@@ -1,0 +1,10 @@
+{
+  "name": "keycutter",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-or-later",
+  "description": "Touch-gated SSH keys (YubiKey, or a Mac's Secure Enclave with Touch ID) and a sane multi-account ~/.ssh/keycutter/ config tree — a security-auditable subset for fresh-machine, hardware-backed SSH.",
+  "author": {
+    "name": "Mike Bailey"
+  },
+  "homepage": "https://github.com/mbailey/keycutter/tree/skill"
+}

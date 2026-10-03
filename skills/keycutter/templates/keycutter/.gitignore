@@ -1,0 +1,30 @@
+# Keycutter machine-local directory
+#
+# This .gitignore is at the top level so it's discoverable. We exclude
+# anything that is either secret or specific to one machine, while still
+# allowing config (hosts/, keycutter.conf, controlmaster/) to be
+# committed and shared.
+
+# ---------------------------------------------------------------------
+# SSH keys — never commit. FIDO2 SSH "private" key files are key handles
+# (useless without the YubiKey) but committing them still leaks metadata
+# (which accounts/services/hosts you use) and pairs them with a stolen
+# YubiKey. Default to deny; we whitelist README.md so the keys/ directory
+# is documented in the repo.
+# ---------------------------------------------------------------------
+/keys/*
+!/keys/README.md
+
+# ---------------------------------------------------------------------
+# ControlMaster sockets — runtime state, machine-local, must not be
+# committed (and would be useless on another machine). The .gitkeep in
+# controlmaster/sockets/ is what gets shipped; the runtime sockets that
+# land alongside it are ignored.
+# ---------------------------------------------------------------------
+/controlmaster/sockets/*
+!/controlmaster/sockets/.gitkeep
+
+# ---------------------------------------------------------------------
+# Misc local state
+# ---------------------------------------------------------------------
+.DS_Store

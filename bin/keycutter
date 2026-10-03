@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+#
+# keycutter — busybox-style front-end for this skill's verb scripts.
+#
+#   keycutter install ...   ->  skills/keycutter/scripts/keycutter-install ...
+#   keycutter create  ...   ->  skills/keycutter/scripts/keycutter-create ...
+#
+# One verb per file, discovered from the sibling `keycutter-*` scripts;
+# there is no internal subcommand switch — the verb table IS the scripts
+# directory. Flags, behaviour, and exit code of the verb script are
+# preserved (pure surface job — no logic lives here). Bare invocation
+# (and -h/--help) prints the verb list mined from script headers, exit 0.
+# An unknown verb is an error: message on stderr + usage, exit 2.
+#
+# PROVENANCE — frozen, adapted fork of the busybox-style skill-dispatch
+# pattern this repo shares with a sibling plugin (its bin/session uses
+# the same idiom).
+# Adaptations for this repo: verbs resolve relative to THIS repo
+# (bin/ -> repo root) instead of a shared-toolbox symlink hop, so no
+# cross-repo dependency remains; the not-a-user-command guard is dropped
+# (this file IS the command). Otherwise preserved verbatim so the pattern
+# stays legible.
+#
+# Script-dir pattern: ROOT is resolved from realpath so the command
+# resolves its verbs from a fresh clone regardless of cwd.
+
+set -o pipefail   # entrypoint convention: pipefail only
+
+skill="keycutter"
+self="$(realpath "${BASH_SOURCE[0]:-$0}")"
+ROOT="$(cd "$(dirname "$self")/.." && pwd)"   # bin/ -> repo root
+
+scripts_dir="$ROOT/skills/$skill/scripts"
+
+if [[ ! -d "$scripts_dir" ]]; then
+  echo "$skill: no scripts directory at skills/$skill/scripts (broken checkout?)" >&2
+  exit 2
+fi
+
+# First meaningful header line of a script, as a one-line description.
+# Handles '# Description: ...', plain '# ...' comments, and Python docstrings.
+describe() {
+  awk 'NR==1 {next}                                  # shebang
+       NR>6  {exit}
+       { line=$0
+         sub(/^#!.*/, "", line)
+         sub(/^#[[:space:]]*Description:[[:space:]]*/, "", line)
+         sub(/^#[[:space:]]*/, "", line)
+         sub(/^"""[[:space:]]*/, "", line)
+         sub(/"""[[:space:]]*$/, "", line)
+         gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+         if (length(line)) { print line; exit }
+       }' "$1"
+}
+
+usage() {
+  printf 'Usage: %s <verb> [args...]\n\nVerbs:\n' "$skill"
+  local f name found=0
+  for f in "$scripts_dir/$skill"-*; do
+    [[ -f "$f" && -x "$f" ]] || continue
+    name="$(basename -- "$f")"
+    printf '  %-14s %s\n' "${name#"$skill"-}" "$(describe "$f")"
+    found=1
+  done
+  [[ "$found" -eq 1 ]] || printf '  (none found in skills/%s/scripts/)\n' "$skill"
+  # shellcheck disable=SC2016 # literal backticks in a single-quoted string, not command substitution
+  printf '\nRun `%s <verb> --help` for that verb'\''s options.\n' "$skill"
+}
+
+verb="${1:-}"; shift || true
+
+case "$verb" in
+  ""|-h|--help)
+    usage; exit 0 ;;
+  */*|*..*)
+    printf '%s: invalid verb %q\n' "$skill" "$verb" >&2; exit 2 ;;
+esac
+
+target="$scripts_dir/$skill-$verb"
+
+if [[ -f "$target" && -x "$target" ]]; then
+  exec "$target" "$@"
+fi
+
+printf '%s: unknown verb %q\n\n' "$skill" "$verb" >&2
+usage >&2
+exit 2

@@ -1,0 +1,22 @@
+{
+  "name": "keycutter",
+  "metadata": {
+    "description": "Self-hosting marketplace for the keycutter skill: clone the `skill` branch of github.com/mbailey/keycutter, then `claude plugin marketplace add ./keycutter-skill`.",
+    "version": "0.1.0"
+  },
+  "owner": {
+    "name": "Mike Bailey"
+  },
+  "plugins": [
+    {
+      "name": "keycutter",
+      "description": "Touch-gated SSH keys (YubiKey, or a Mac's Secure Enclave with Touch ID) and a sane multi-account ~/.ssh/keycutter/ config tree — a security-auditable subset for fresh-machine, hardware-backed SSH.",
+      "author": {
+        "name": "Mike Bailey"
+      },
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/mbailey/keycutter/tree/skill"
+    }
+  ]
+}

@@ -1,0 +1,458 @@
+#!/usr/bin/env bash
+#
+# keycutter-install — install/update the keycutter SSH config tree.
+#
+# Two-phase model:
+#
+#   1. PLAN.    Walk <skill>/templates/keycutter/. For each file under
+#               --dest (default ~/.ssh/keycutter/) classify as:
+#                 = same      identical to template, no action
+#                 + create    missing at dest, will be created
+#                 ? differ    exists with different content, will prompt
+#               Also: if --dest has no .git/, add a synthetic
+#                 + git-init  the install will offer `git init`.
+#               Print the plan.
+#
+#   2. CONFIRM + EXECUTE.
+#               Ask "proceed with this plan? [Y/n/a]".
+#                 y / <enter>  proceed, prompting per ? differ
+#                 a / all      proceed, auto-accept every ? differ
+#                 n            exit 0 without writing anything
+#               Then: create all + create files, walk ? differ files
+#               showing a unified diff and asking y/N/a per file (a
+#               flips to accept-all for the rest of the run), and if
+#               the plan included + git-init, run `git init -q`.
+#
+# Usage:
+#   keycutter-install [--dry-run] [--force] [--dest DIR]
+#
+#   --dry-run   Print the plan and exit. No writes.
+#   --force     Print the plan, skip both confirms, write everything.
+#   --dest DIR  Install into DIR instead of ~/.ssh/keycutter/.
+#
+# Non-interactive (no TTY): auto-falls back to --dry-run and asks you to
+# run it yourself in a terminal.
+#
+# Secure Enclave (macOS): the origin names the authenticator. On a Mac
+# with /usr/lib/ssh-keychain.dylib whose origin (KEYCUTTER_ORIGIN,
+# default the host name) EQUALS its host name, the installed
+# keycutter.conf has its `# SecurityKeyProvider /usr/lib/ssh-keychain.dylib`
+# line uncommented: every -sk key on this machine signs through the
+# Secure Enclave (a YubiKey no longer does). Any other origin, or not a
+# Mac: the template is copied as is. Decided now; re-run install after
+# changing the origin.
+#
+# Design note: this script is intentionally a standalone porcelain
+# command, readable end-to-end on its own. The `keycutter` command
+# (bin/keycutter) is a thin dispatcher that execs it; each verb
+# (keycutter-create, ...) is its own file in scripts/ for the same
+# reason.
+#
+# Intentionally dependency-free: bash + cp + cmp + diff + read + git.
+# Anything that touches ~/.ssh/ MUST be verifiable by reading this
+# script — no hidden behaviour.
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------
+# Output helpers
+# ---------------------------------------------------------------------
+# Colour is on when stdout is a TTY and NO_COLOR is unset; off otherwise
+# (piping to a file stays clean). The c() helper wraps a string in an
+# ANSI code if colour is on, or returns it untouched if not.
+if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then COLOR=1; else COLOR=0; fi
+
+c()    { (( COLOR )) && printf '\e[%sm%s\e[0m' "$1" "$2" || printf '%s' "$2"; }
+dim()  { c 2  "$*"; }
+bold() { c 1  "$*"; }
+ok()   { c 32 "$*"; }   # green — create
+warn() { c 33 "$*"; }   # yellow — differ
+bad()  { c 31 "$*"; }   # red — force-overwrite / errors
+
+usage() {
+  sed -n '/^# keycutter-install/,/^set -euo pipefail/{ /^set -euo pipefail/q; s/^# \{0,1\}//; p; }' "${BASH_SOURCE[0]}"
+}
+
+die() {
+  printf '%s\n' "$(bad "keycutter-install: $*")" >&2
+  exit 1
+}
+
+# ---------------------------------------------------------------------
+# confirm_yna — interactive prompt that reads from /dev/tty.
+# Returns 0=yes, 1=no, 2=all.
+#
+# Reads from /dev/tty explicitly because the main flow can drive reads
+# from process substitutions and array iteration. When /dev/tty isn't
+# readable, returns 1 — caller treats that as "no".
+# ---------------------------------------------------------------------
+confirm_yna() {
+  local prompt="$1" default="${2:-n}" reply
+  if [[ ! -r /dev/tty ]] || ! { : </dev/tty; } 2>/dev/null; then return 1; fi
+  read -r -p "${prompt} " reply < /dev/tty || return 1
+  reply="${reply:-${default}}"
+  case "${reply}" in
+    [aA]*) return 2 ;;
+    [yY]*) return 0 ;;
+    *)     return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------
+# offer_command_symlink — OFFER (never auto) to put `keycutter` on PATH.
+#
+# Installs a symlink ~/.local/bin/keycutter -> <repo>/bin/keycutter, but
+# only after an explicit interactive "yes". The offer is:
+#
+#   - printed, not hidden: you always see the prompt and the exact link
+#     it would create;
+#   - off by default: the prompt defaults to N, and confirm_yna returns
+#     "no" whenever /dev/tty is not readable — so any non-interactive
+#     run (CI, `make test`, `make verify`) creates nothing;
+#   - skipped entirely under --force (the automation path): --force must
+#     never mint the link on its own;
+#   - idempotent: if the link already points here it says so and stops;
+#   - non-destructive: if the path is already occupied by anything else
+#     (e.g. your existing `keycutter`) it is left completely untouched.
+# ---------------------------------------------------------------------
+offer_command_symlink() {
+  local cmd="${KEYCUTTER_CMD}"
+  local link="${HOME}/.local/bin/keycutter"
+
+  (( force )) && return 0          # automation path: never offer/create
+  [[ -x "${cmd}" ]] || return 0    # no command to link
+
+  printf '\n%s\n' "$(bold 'Put the keycutter command on your PATH?')"
+  printf '  %s\n' "$(dim "would symlink ${link} -> ${cmd}")"
+
+  # Already linked here → idempotent no-op.
+  if [[ -L "${link}" ]] && [[ "$(readlink "${link}")" == "${cmd}" ]]; then
+    printf '  %s\n' "$(ok 'already linked; nothing to do')"
+    return 0
+  fi
+  # Path occupied by something else → never clobber.
+  if [[ -e "${link}" || -L "${link}" ]]; then
+    printf '  %s\n' "$(warn "${link} already exists — leaving it untouched")"
+    return 0
+  fi
+
+  set +e
+  confirm_yna "  $(bold "create ${link}? [y/N]")" n
+  local ans=$?
+  set -e
+  if (( ans == 0 )); then
+    mkdir -p "$(dirname "${link}")"
+    ln -s "${cmd}" "${link}"
+    printf '  %s\n' "$(ok "linked ${link}")"
+    case ":${PATH}:" in
+      *":$(dirname "${link}"):"*) : ;;
+      *) printf '  %s\n' "$(warn "note: $(dirname "${link}") is not on your PATH yet")" ;;
+    esac
+  else
+    printf '  %s\n' "$(dim 'skipped; run bin/keycutter by its path, or link it yourself later')"
+  fi
+}
+
+# show_diff — coloured diff via git when available, plain diff otherwise.
+show_diff() {
+  local a="$1" b="$2"
+  if command -v git >/dev/null 2>&1; then
+    git --no-pager diff --no-index --color=always -- "$a" "$b" || true
+  else
+    diff -u "$a" "$b" || true
+  fi
+}
+
+# ---------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${SKILL_DIR}/../.." && pwd)"
+TEMPLATES_SRC="${SKILL_DIR}/templates/keycutter"
+KEYCUTTER_CMD="${ROOT_DIR}/bin/keycutter"
+
+# ---------------------------------------------------------------------
+# Args
+# ---------------------------------------------------------------------
+dry_run=0
+force=0
+dest="${HOME}/.ssh/keycutter"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) dry_run=1 ;;
+    --force)   force=1 ;;
+    --dest)    shift; dest="${1:?--dest needs a value}" ;;
+    -h|--help) usage; exit 0 ;;
+    *)         die "unknown option: $1 (try --help)" ;;
+  esac
+  shift
+done
+
+[[ -d "${TEMPLATES_SRC}" ]] || die "templates source missing: ${TEMPLATES_SRC}"
+
+# ---------------------------------------------------------------------
+# No TTY → fall back to dry-run (unless --force given). Print a banner.
+# ---------------------------------------------------------------------
+if (( ! force )) && (( ! dry_run )) && [[ ! -r /dev/tty || ! -t 0 ]]; then
+  printf '%s no terminal; running --dry-run\n' "$(warn 'keycutter-install:')"
+  printf '                   (to install, ask the user to run this in their own terminal)\n'
+  dry_run=1
+fi
+
+# ---------------------------------------------------------------------
+# Secure Enclave render: the origin names the authenticator.
+# A Mac with Apple's provider whose origin equals its host name gets
+# keycutter.conf with the SecurityKeyProvider line uncommented. The
+# rendered copy lives in a scratch dir and stands in for the template
+# in the plan, so the diff you see is the file you get.
+# ---------------------------------------------------------------------
+SK_PROVIDER_LINE='SecurityKeyProvider /usr/lib/ssh-keychain.dylib'
+host_short="$(hostname -s)"
+origin="${KEYCUTTER_ORIGIN:-${host_short}}"
+enclave_machine=0
+if [[ "$(uname -s 2>/dev/null)" == Darwin ]] \
+   && [[ -f "${KEYCUTTER_SK_PROVIDER_APPLE:-/usr/lib/ssh-keychain.dylib}" ]] \
+   && [[ "${origin}" == "${host_short}" ]]; then
+  enclave_machine=1
+fi
+render_dir=""
+if (( enclave_machine )); then
+  render_dir="$(mktemp -d "${TMPDIR:-/tmp}/keycutter-install.XXXXXX")"
+  # shellcheck disable=SC2064 # expand now
+  trap "rm -rf '${render_dir:?}'" EXIT
+  sed "s|^  # ${SK_PROVIDER_LINE}\$|  ${SK_PROVIDER_LINE}|" \
+    "${TEMPLATES_SRC}/keycutter.conf" > "${render_dir}/keycutter.conf"
+  chmod 0644 "${render_dir}/keycutter.conf"
+  grep -q "^  ${SK_PROVIDER_LINE}\$" "${render_dir}/keycutter.conf" \
+    || die "could not render the Secure Enclave line into keycutter.conf"
+fi
+
+# ---------------------------------------------------------------------
+# Build plan
+#
+# Walk the template tree and classify each file. The plan is held in
+# four parallel arrays — rel, status, src, tgt — kept in scan order
+# so the printed plan reads in the same order as the templates lay on
+# disk.
+# ---------------------------------------------------------------------
+plan_rel=()
+plan_status=()
+plan_src=()
+plan_tgt=()
+need_git_init=0
+
+while IFS= read -r -d '' src; do
+  # Quote the pattern in ${var#pattern}: bash globs the pattern side,
+  # so `[`, `*`, or `?` in TEMPLATES_SRC would otherwise misbehave.
+  rel="${src#"${TEMPLATES_SRC}/"}"
+  tgt="${dest}/${rel}"
+  [[ -n "${render_dir}" && "${rel}" == keycutter.conf ]] && src="${render_dir}/keycutter.conf"
+
+  if [[ ! -e "${tgt}" ]]; then
+    status=create
+  elif cmp -s "${src}" "${tgt}"; then
+    status=same
+  else
+    status=differ
+  fi
+
+  plan_rel+=("${rel}")
+  plan_status+=("${status}")
+  plan_src+=("${src}")
+  plan_tgt+=("${tgt}")
+done < <(find -P "${TEMPLATES_SRC}" -type f \! -type l -print0)
+
+if [[ ! -e "${dest}/.git" ]]; then
+  need_git_init=1
+fi
+
+# ---------------------------------------------------------------------
+# Count plan items by status for the summary and nothing-to-do check.
+# ---------------------------------------------------------------------
+n_same=0 ; n_create=0 ; n_differ=0
+for status in "${plan_status[@]}"; do
+  case "${status}" in
+    same)   n_same=$((n_same + 1)) ;;
+    create) n_create=$((n_create + 1)) ;;
+    differ) n_differ=$((n_differ + 1)) ;;
+  esac
+done
+
+# ---------------------------------------------------------------------
+# Nothing-to-do shortcut. If every file matches and we don't need to
+# init a repo, print one line and exit.
+# ---------------------------------------------------------------------
+if (( n_create == 0 && n_differ == 0 && need_git_init == 0 )); then
+  printf '%s in sync (%d files identical)\n' \
+    "$(bold 'keycutter-install:')" "${n_same}"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------
+# Print the plan.
+# ---------------------------------------------------------------------
+label_for() {
+  case "$1" in
+    same)   dim   '= same    ' ;;
+    create) ok    '+ create  ' ;;
+    differ) warn  '? differ  ' ;;
+  esac
+}
+
+printf '%s\n' "$(bold keycutter-install)"
+printf '  source: %s\n' "$(dim "${TEMPLATES_SRC}")"
+printf '  dest:   %s\n' "$(dim "${dest}")"
+(( dry_run )) && printf '  mode:   %s\n' "$(warn 'DRY-RUN (no changes)')"
+(( force ))   && printf '  mode:   %s\n' "$(bad  'FORCE (skip all confirms)')"
+if (( enclave_machine )); then
+  printf '  keys:   %s\n' "$(ok "Secure Enclave: origin '${origin}' = this Mac's host name, so keycutter.conf gets '${SK_PROVIDER_LINE}' under Host * (YubiKeys will not sign on this Mac)")"
+else
+  printf '  keys:   %s\n' "$(dim "security key (YubiKey): origin '${origin}', host '${host_short}', $(uname -s); no Secure Enclave line")"
+fi
+printf '\n%s\n' "$(bold 'plan:')"
+
+for i in "${!plan_rel[@]}"; do
+  printf '  %s %s\n' "$(label_for "${plan_status[i]}")" "${plan_rel[i]}"
+done
+if (( need_git_init )); then
+  printf '  %s %s\n' \
+    "$(ok '+ git-init')" \
+    "$(dim "(no repo found at ${dest})")"
+fi
+
+printf '\n%s %s create, %s update, %s leave as is\n' \
+  "$(bold 'summary:')" \
+  "$(ok    "${n_create}")" \
+  "$(warn  "${n_differ}")" \
+  "$(dim   "${n_same}")"
+(( need_git_init )) && printf '         %s\n' "$(ok '+ git-init')"
+
+# ---------------------------------------------------------------------
+# Dry-run stops here.
+# ---------------------------------------------------------------------
+if (( dry_run )); then
+  printf '\n%s\n' "$(dim '(dry-run; no changes made)')"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------
+# Plan confirm.
+#
+# mode controls what happens during the diff phase below:
+#   prompt      ask y/N/a per differ (the default)
+#   accept_all  auto-accept every differ (set by 'a' here or below,
+#               or by --force)
+# ---------------------------------------------------------------------
+mode=prompt
+if (( force )); then
+  mode=accept_all
+else
+  printf '\n'
+  set +e
+  confirm_yna "$(bold 'proceed with this plan? [Y/n/a]')" y
+  ans=$?
+  set -e
+  case "${ans}" in
+    0) mode=prompt ;;
+    2) mode=accept_all ;;
+    *) printf '%s\n' "$(dim 'aborted; no changes made.')"; exit 0 ;;
+  esac
+fi
+
+# ---------------------------------------------------------------------
+# Execute phase.
+# ---------------------------------------------------------------------
+n_created=0 ; n_overwritten=0 ; n_kept=0
+
+# The tree holds ssh config and key handles: owner-only, whatever the umask.
+# install -d sets the mode on the leaf only: a missing parent (~/.ssh on a
+# fresh machine) would get the umask, so make it 0700 first.
+parent="$(dirname "${dest}")"
+[[ -d "${parent}" ]] || install -d -m 0700 "${parent}"
+install -d -m 0700 "${dest}"
+chmod 0700 "${dest}"
+
+# Before overwriting an installed file, keep a copy beside it. The name
+# ends in neither .conf nor a dotfile, so no Include glob ever reads it.
+stamp="$(date +%Y%m%d-%H%M%S)"
+backup() {
+  cp -p "$1" "$1.keycutter-bak.${stamp}"
+  printf '  %s\n' "$(dim "backup: $1.keycutter-bak.${stamp}")"
+}
+
+# Step 1: create every missing file. No prompts — they were in the plan.
+printf '\n'
+for i in "${!plan_rel[@]}"; do
+  [[ "${plan_status[i]}" == "create" ]] || continue
+  mkdir -p "$(dirname "${plan_tgt[i]}")"
+  cp -p "${plan_src[i]}" "${plan_tgt[i]}"
+  printf '  %s %s\n' "$(ok '+ created ')" "${plan_rel[i]}"
+  n_created=$((n_created + 1))
+done
+
+# Step 2: walk differs. Show diff and prompt unless mode == accept_all.
+for i in "${!plan_rel[@]}"; do
+  [[ "${plan_status[i]}" == "differ" ]] || continue
+  rel="${plan_rel[i]}"
+  src="${plan_src[i]}"
+  tgt="${plan_tgt[i]}"
+
+  printf '\n  %s %s\n' "$(warn '? differ  ')" "${rel}"
+
+  if [[ "${mode}" == "accept_all" ]]; then
+    backup "${tgt}"
+    cp -p "${src}" "${tgt}"
+    printf '  %s\n' "$(ok "wrote ${tgt}")"
+    n_overwritten=$((n_overwritten + 1))
+    continue
+  fi
+
+  printf '  %s\n' "$(dim 'unified diff (installed vs template):')"
+  show_diff "${tgt}" "${src}"
+
+  set +e
+  confirm_yna "  $(bold "overwrite ${tgt}? [y/N/a]")" n
+  ans=$?
+  set -e
+  case "${ans}" in
+    0)  backup "${tgt}"
+        cp -p "${src}" "${tgt}"
+        printf '  %s\n' "$(ok "wrote ${tgt}")"
+        n_overwritten=$((n_overwritten + 1)) ;;
+    2)  backup "${tgt}"
+        cp -p "${src}" "${tgt}"
+        printf '  %s\n' "$(ok "wrote ${tgt} (accept-all from here)")"
+        n_overwritten=$((n_overwritten + 1))
+        mode=accept_all ;;
+    *)  printf '  %s\n' "$(dim "kept existing ${tgt}")"
+        n_kept=$((n_kept + 1)) ;;
+  esac
+done
+
+# Step 3: git init, if it was in the plan.
+if (( need_git_init )); then
+  printf '\n  %s %s\n' "$(ok '+ git-init')" "$(dim "${dest}")"
+  if command -v git >/dev/null 2>&1; then
+    git -C "${dest}" init -q
+    printf '  %s\n' "$(ok "initialised empty repo at ${dest}/.git")"
+  else
+    printf '  %s\n' "$(bad 'git not on PATH — skipping git init')"
+  fi
+fi
+
+# ---------------------------------------------------------------------
+# Final summary.
+# ---------------------------------------------------------------------
+printf '\n%s %s created, %s updated, %s kept\n' \
+  "$(bold 'done:')" \
+  "$(ok    "${n_created}")" \
+  "$(warn  "${n_overwritten}")" \
+  "$(dim   "${n_kept}")"
+
+# ---------------------------------------------------------------------
+# Config tree is in place. Now offer (never force) to put the command
+# itself on PATH.
+# ---------------------------------------------------------------------
+offer_command_symlink
