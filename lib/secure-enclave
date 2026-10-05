@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# Keycutter: the Mac's Secure Enclave as the authenticator (KC-118, 2026-10-06)
+#
+# A P-256 key minted IN the Enclave by `sc_auth create-ctk-identity`, served to
+# OpenSSH by Apple's /usr/lib/ssh-keychain.dylib as a SecurityKeyProvider. What
+# lands in keys/ is a HANDLE (useless on any other Mac) plus a sibling marker
+# <key>.secure-enclave that keycutter.conf and ssh-agent-ensure read to pick
+# the provider. Measured end to end: docs/secure-enclave/poc.md.
+#
+# Which authenticator a new -sk key goes to:
+#   1. $KEYCUTTER_AUTHENTICATOR           (yubikey | secure-enclave; mac = alias)
+#   2. KEYCUTTER_AUTHENTICATOR= in the settings file   (sticky, written once)
+#   3. a Mac with no YubiKey plugged in   -> secure-enclave, said in one line
+#      a Mac with a YubiKey               -> ask once, then sticky
+#      anything else                      -> yubikey (today's behaviour, nothing written)
+
+: ${KEYCUTTER_CONFIG:="${HOME}/.ssh/keycutter/keycutter.conf"}
+: ${KEYCUTTER_CONFIG_DIR:="$(dirname "${KEYCUTTER_CONFIG}")"}
+# Apple's provider. Overridable so tests can point at a stand-in file.
+: ${KEYCUTTER_SK_PROVIDER_APPLE:="/usr/lib/ssh-keychain.dylib"}
+
+# --- settings file ---------------------------------------------------------
+# ${KEYCUTTER_CONFIG_DIR}/settings: KEY=value lines, read with grep, NEVER
+# sourced. Named `settings`, not `*.conf` (keycutter.conf Includes
+# keycutter/hosts/*.conf and ssh would try to parse it) and not a dotfile.
+
+settings-file() { echo "${KEYCUTTER_SETTINGS:-${KEYCUTTER_CONFIG_DIR}/settings}"; }
+
+settings-get() {
+  local key="$1" file line
+  file="$(settings-file)"
+  [[ -f $file ]] || return 1
+  line="$(grep -E "^${key}=" "$file" | tail -1)" || return 1
+  line="${line#*=}"; line="${line%\"}"; line="${line#\"}"
+  [[ -n $line ]] || return 1
+  printf '%s\n' "$line"
+}
+
+settings-set() {
+  local key="$1" value="$2" file tmp
+  file="$(settings-file)"
+  dir-ensure "$(dirname "$file")" 0700
+  if [[ ! -f $file ]]; then
+    printf '# keycutter settings: KEY=value, one per line. Read, never sourced.\n' > "$file"
+  fi
+  tmp="$(mktemp "${file}.XXXXXX")"
+  grep -vE "^${key}=" "$file" > "$tmp" || true
+  printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  mv "$tmp" "$file"
+  chmod 0600 "$file"
+}
+
+# --- detection -------------------------------------------------------------
+
+authenticator-normalise() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    yubikey | yk) echo yubikey ;;
+    secure-enclave | secure_enclave | secureenclave | enclave | mac | macos) echo secure-enclave ;;
+    *) log "Error: unknown authenticator '$1' (yubikey | secure-enclave)" >&2; return 1 ;;  # >&2: callers capture stdout
+  esac
+}
+
+# A Mac with Apple's provider and sc_auth: the Enclave path can work here.
+secure-enclave-available() {
+  [[ "$(uname -s 2>/dev/null)" == Darwin ]] || return 1
+  [[ -f $KEYCUTTER_SK_PROVIDER_APPLE ]] || return 1
+  command -v sc_auth >/dev/null 2>&1
+}
+
+# Lid closed: Touch ID refuses (LocalAuthentication -4). Measured 2026-10-06.
+macos-clamshell() {
+  ioreg -r -k AppleClamshellState -d 4 2>/dev/null | grep -q '"AppleClamshellState" = Yes'
+}
+
+# Screen locked: sc_auth still mints the key, but the identity never registers
+# with the CryptoTokenKit token, so ssh cannot see or use it (measured
+# 2026-10-06 04:45-04:56: four identities minted behind a locked screen were
+# invisible to ssh-keygen -K and sk_sign; the one minted unlocked worked).
+macos-screen-locked() {
+  ioreg -n Root -d1 2>/dev/null | grep -q '"IOConsoleLocked" = Yes'
+}
+
+yubikey-present() {
+  if command -v ykman >/dev/null 2>&1 && ykman list 2>/dev/null | grep -q .; then
+    return 0
+  fi
+  ioreg -p IOUSB -l 2>/dev/null | grep -qi yubikey
+}
+
+# Sets KEYCUTTER_AUTHENTICATOR (yubikey | secure-enclave). Writes the sticky
+# settings file only when a Mac had to choose for itself or ask.
+authenticator-resolve() {
+  local chosen
+  if [[ -n ${KEYCUTTER_AUTHENTICATOR:-} ]]; then
+    chosen="$(authenticator-normalise "$KEYCUTTER_AUTHENTICATOR")" || return 1
+    KEYCUTTER_AUTHENTICATOR="$chosen"
+    return 0
+  fi
+  if chosen="$(settings-get KEYCUTTER_AUTHENTICATOR)"; then
+    chosen="$(authenticator-normalise "$chosen")" || return 1
+    KEYCUTTER_AUTHENTICATOR="$chosen"
+    return 0
+  fi
+  if ! secure-enclave-available; then
+    KEYCUTTER_AUTHENTICATOR=yubikey # not a Mac: unchanged, nothing written
+    return 0
+  fi
+  if yubikey-present; then
+    prompt "A YubiKey is plugged in. Put new keys on the [y]ubikey or in this Mac's [s]ecure enclave (Touch ID)? (y/s) "
+    read -n 1 -r
+    echo
+    case "$REPLY" in
+      s | S) chosen=secure-enclave ;;
+      *) chosen=yubikey ;;
+    esac
+  else
+    chosen=secure-enclave
+    log "No YubiKey found: new keys go in this Mac's Secure Enclave (Touch ID)."
+  fi
+  settings-set KEYCUTTER_AUTHENTICATOR "$chosen"
+  log "Saved KEYCUTTER_AUTHENTICATOR=$chosen to $(settings-file) (edit it, or set the env var, to change)"
+  KEYCUTTER_AUTHENTICATOR="$chosen"
+}
+
+# --- create ----------------------------------------------------------------
+# secure-enclave-create KEYTAG KEY_PATH [bio|none]
+#   bio  = Touch ID at mint and on every signature (default)
+#   none = no presence check (keycutter create --no-touch)
+
+secure-enclave-create() {
+  local ssh_keytag="$1" ssh_key_path="$2" prot="${3:-bio}"
+  local dylib="$KEYCUTTER_SK_PROVIDER_APPLE" f fp tmp pub match=""
+
+  if ! secure-enclave-available; then
+    log "Error: Secure Enclave keys need macOS with $dylib and sc_auth"
+    return 1
+  fi
+  for f in "$ssh_key_path" "${ssh_key_path}.pub" "${ssh_key_path}.secure-enclave"; do
+    if [[ -e $f ]]; then
+      log "Error: $f exists. Refusing to overwrite; choose another keytag or move it aside."
+      return 1
+    fi
+  done
+  if macos-screen-locked; then
+    log "Error: the screen is locked. An Enclave identity minted now would not register with"
+    log "       the token, and ssh could not use it. Unlock the Mac and run this again."
+    return 1
+  fi
+  if [[ $prot == bio ]] && macos-clamshell; then
+    log "Error: Touch ID is unavailable while the lid is closed (clamshell mode)."
+    log "       Open the lid or use a Touch ID keyboard; or pass --no-touch for a key with no presence check."
+    return 1
+  fi
+  if sc_auth list-ctk-identities -t ssh -e b64 2>/dev/null | awk 'NR>1 {print $4}' | grep -qxF "$ssh_keytag"; then
+    log "Error: a Secure Enclave identity labelled '$ssh_keytag' already exists (sc_auth list-ctk-identities)."
+    log "       Refusing to mint a twin. Delete it with: sc_auth delete-ctk-identity -h <hash>"
+    return 1
+  fi
+
+  log "Minting a P-256 key inside the Secure Enclave (sc_auth create-ctk-identity, protection: $prot)"
+  [[ $prot == bio ]] && log "Touch ID: now, and on every signature."
+  # sc_auth exits 0 even when it fails (measured: the clamshell error), so the
+  # listing afterwards is the receipt, not the exit code.
+  sc_auth create-ctk-identity -l "$ssh_keytag" -k p-256-ne -t "$prot" -N "$ssh_keytag" || true
+  fp="$(sc_auth list-ctk-identities -t ssh -e b64 2>/dev/null | awk -v l="$ssh_keytag" 'NR>1 && $4==l {print $2}' | tail -1)"
+  if [[ -z $fp ]]; then
+    log "Error: sc_auth did not create identity '$ssh_keytag' (see its message above)."
+    return 1
+  fi
+  log "Enclave identity $fp"
+
+  # ssh-keygen -K downloads EVERY resident identity the provider knows, into
+  # the current directory, so work in a temp dir and pick ours by fingerprint
+  # (Apple FB21992630: several identities can land in one file).
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/keycutter-se.XXXXXX")"
+  if ! (cd "$tmp" && ssh-keygen -K -w "$dylib" -N '' </dev/null >/dev/null 2>&1); then
+    log "Error: ssh-keygen -K -w $dylib failed to download the key handle"
+    rm -rf "${tmp:?}"
+    return 1
+  fi
+  for pub in "$tmp"/*.pub; do
+    [[ -f $pub ]] || continue
+    if ssh-keygen -lf "$pub" 2>/dev/null | grep -qF " $fp "; then
+      match="${pub%.pub}"
+      break
+    fi
+  done
+  if [[ -z $match ]]; then
+    log "Error: no downloaded handle has fingerprint $fp. Files: $(ls "$tmp" | tr '\n' ' ')"
+    rm -rf "${tmp:?}"
+    return 1
+  fi
+  install -m 0600 "$match" "$ssh_key_path"
+  awk -v c="$ssh_keytag" '{print $1, $2, c}' "${match}.pub" > "${ssh_key_path}.pub"
+  chmod 0600 "${ssh_key_path}.pub"
+  # The private handle's own comment is "ssh:"; keycutter.conf's RemoteCommand
+  # names remote .pub files from `ssh-add -L` comments, so set it to the keytag.
+  ssh-keygen -c -C "$ssh_keytag" -P '' -f "$ssh_key_path" >/dev/null 2>&1 || true
+  # Marker: keycutter.conf and ssh-agent-ensure use Apple's provider for this key.
+  : > "${ssh_key_path}.secure-enclave"
+  chmod 0600 "${ssh_key_path}.secure-enclave"
+  rm -rf "${tmp:?}"
+
+  log "Secure Enclave key handle written: $ssh_key_path (+ .pub, + .secure-enclave marker)"
+  log "ssh signs it through SecurityKeyProvider $dylib (keycutter.conf matches the marker)."
+  return 0
+}

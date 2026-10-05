@@ -60,7 +60,7 @@ usage() {
   echo "       $(basename "$0") <command> [arguments]"
   echo
   echo "Commands:"
-  echo "       create <ssh-keytag> [--resident] [--type <value>] Create a new SSH key"
+  echo "       create <ssh-keytag> [--resident] [--type <value>] [--authenticator <value>] [--no-touch] Create a new SSH key"
   echo "       check-requirements                                Check if all required software is installed"
   echo "       authorized-keys <hostname>                        Show public keys that would be offered to host"
   echo "       push-keys <hostname>                             Push public keys to remote host"
@@ -113,6 +113,11 @@ usage() {
   echo "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
   echo "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk, rsa, ecdsa, ed25519)"
   echo "                       Default is ed25519-sk"
+  echo "  --authenticator Optional. Where an -sk key lives: yubikey or secure-enclave (macOS, alias: mac)."
+  echo "                       Default: \$KEYCUTTER_AUTHENTICATOR, else the sticky choice in"
+  echo "                       \$KEYCUTTER_CONFIG_DIR/settings, else: a Mac with no YubiKey plugged in"
+  echo "                       uses the Secure Enclave; a Mac with one asks once; elsewhere yubikey."
+  echo "  --no-touch Optional. Secure Enclave only: no Touch ID check (default asks Touch ID per signature)"
   echo
   echo "For config command:"
   echo "  hostname   Required. The SSH hostname to analyze (e.g. github.com, server.example.com)"
@@ -134,6 +139,8 @@ keycutter-create() {
   local ssh_key_resident=""
   local ssh_key_type="$KEYCUTTER_SSH_KEY_TYPE_SK"
   local ssh_keytag=""
+  local ssh_key_touch="bio"     # Secure Enclave: bio (Touch ID) | none (--no-touch)
+  local authenticator=""        # --authenticator overrides env and the sticky setting
 
   local KEYCUTTER_CONFIG_DIR="$(dirname "${KEYCUTTER_CONFIG}")"
 
@@ -146,6 +153,14 @@ keycutter-create() {
     --type)
       ssh_key_type="$2"
       shift 2
+      ;;
+    --authenticator)
+      authenticator="$2"
+      shift 2
+      ;;
+    --no-touch)
+      ssh_key_touch="none"
+      shift
       ;;
     -h | --help)
       usage
@@ -196,11 +211,26 @@ keycutter-create() {
   dir-ensure "$KEYCUTTER_CONFIG_DIR/sockets" 0700
   dir-ensure "$(dirname "$ssh_key_path")" 0700
 
+  # Which authenticator holds an -sk key: a YubiKey (today's path) or, on a
+  # Mac, the Secure Enclave (KC-118). Env > sticky settings > platform default.
+  # Software keys (rsa, ecdsa, ed25519) never ask. See lib/secure-enclave.
+  if [[ $ssh_key_type =~ -sk$ ]]; then
+    [[ -n $authenticator ]] && KEYCUTTER_AUTHENTICATOR="$authenticator"
+    authenticator-resolve || return 1
+    if [[ $KEYCUTTER_AUTHENTICATOR == secure-enclave ]]; then
+      ssh_key_type="ecdsa-sk" # the Enclave holds P-256 only; ed25519-sk cannot live there
+    fi
+  fi
+
   # Create SSH Key for $ssh_keytag
   log "Generating SSH key: $ssh_key_path"
   case "$ssh_key_type" in
   ecdsa-sk | ed25519-sk)
-    ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${ssh_key_resident:+-O resident}
+    if [[ ${KEYCUTTER_AUTHENTICATOR:-} == secure-enclave ]]; then
+      secure-enclave-create "$ssh_keytag" "$ssh_key_path" "$ssh_key_touch"
+    else
+      ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag" ${ssh_key_resident:+-O resident}
+    fi
     ;;
   rsa)
     ssh-keygen -t "$ssh_key_type" -b 4096 -f "$ssh_key_path" -C "$ssh_keytag"

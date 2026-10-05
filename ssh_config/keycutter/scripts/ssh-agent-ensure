@@ -61,7 +61,12 @@ for key in "$agent_dir"/*@${origin}; do
             chmod 600 "$key" 2>/dev/null || true
         fi
         debug "loading key: $key"
-        ssh-add "$key" &>/dev/null
+        if [[ -e "$key.secure-enclave" || -e "$(readlink -f "$key").secure-enclave" ]]; then
+            # Secure Enclave handle (macOS): sign through Apple's provider.
+            ssh-add -S /usr/lib/ssh-keychain.dylib "$key" &>/dev/null
+        else
+            ssh-add "$key" &>/dev/null
+        fi
         ((keys_loaded++))
     fi
 done
