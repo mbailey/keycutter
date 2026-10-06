@@ -172,8 +172,15 @@ secure-enclave-create() {
   # ssh-keygen -K downloads EVERY resident identity the provider knows, into
   # the current directory, so work in a temp dir and pick ours by fingerprint
   # (Apple FB21992630: several identities can land in one file).
+  # A Touch ID (bio) identity makes the provider ask for a PIN on the first
+  # try, and ssh-keygen reads that PIN from /dev/tty, so `</dev/null` does
+  # not stop it: an interactive run stops at "Enter PIN for authenticator:".
+  # The provider has no PIN (an empty one works), so a forced askpass that
+  # prints nothing answers for us. Measured 10:46 Wed 2026-10-07 under a
+  # pty: without it the download hung until killed; with it, done at once.
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/keycutter-se.XXXXXX")"
-  if ! (cd "$tmp" && ssh-keygen -K -w "$dylib" -N '' </dev/null >/dev/null 2>&1); then
+  if ! (cd "$tmp" && SSH_ASKPASS=/usr/bin/true SSH_ASKPASS_REQUIRE=force \
+        ssh-keygen -K -w "$dylib" -N '' </dev/null >/dev/null 2>&1); then
     log "Error: ssh-keygen -K -w $dylib failed to download the key handle"
     rm -rf "${tmp:?}"
     return 1

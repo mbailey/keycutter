@@ -65,6 +65,7 @@ mock_ssh_keygen_se() {
 echo "MOCK_CALL: ssh-keygen $@" >> "$BATS_TMPDIR/mock_calls.log"
 case " $* " in
   *" -K "*)   # download EVERY resident identity into the cwd, like the real one
+    echo "MOCK_ENV: SSH_ASKPASS=${SSH_ASKPASS-} SSH_ASKPASS_REQUIRE=${SSH_ASKPASS_REQUIRE-}" >> "$BATS_TMPDIR/mock_calls.log"
     while read -r l; do
       [[ -n $l ]] || continue
       printf 'FAKE-HANDLE %s\n' "$l" > "id_ecdsa_sk_rk_$l"
@@ -114,6 +115,12 @@ kc() { bash -c "printf '${1:-}' | $KEYCUTTER_ROOT/bin/keycutter ${*:2} 2>&1"; }
     assert_file_exists "$KEYCUTTER_SSH_KEY_DIR/example.com_alice@testhost.secure-enclave"
     grep -q ' example.com_alice@testhost$' "$KEYCUTTER_SSH_KEY_DIR/example.com_alice@testhost.pub"
     ! grep -q 'MOCK_CALL: ssh-keygen -t' "$BATS_TMPDIR/mock_calls.log"
+}
+
+@test "handle download answers the provider's PIN prompt without a tty" {
+    run kc '' create example.com_alice@testhost
+    [ "$status" -eq 0 ]
+    grep -qxF "MOCK_ENV: SSH_ASKPASS=/usr/bin/true SSH_ASKPASS_REQUIRE=force" "$BATS_TMPDIR/mock_calls.log"
 }
 
 @test "settings file is 0600 and never sourced-looking" {
