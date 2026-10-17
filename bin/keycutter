@@ -23,7 +23,7 @@ KEYCUTTER_ORIGIN_EXPLICIT=${KEYCUTTER_ORIGIN:+true}
 
 : ${KEYCUTTER_SSH_KEY_TYPE_SK:="ed25519-sk"} # was ecdsa-sk
 : ${KEYCUTTER_SSH_KEY_TYPE_NON_SK:="ed25519"}
-: ${KEYCUTTER_SSH_KEY_TYPES:="ecdsa-sk ed25519-sk rsa ecdsa ed25519"}
+: ${KEYCUTTER_SSH_KEY_TYPES:="ecdsa-sk ed25519-sk rsa ecdsa ed25519 touchid"}
 
 # Prerequisites:
 #
@@ -111,8 +111,9 @@ usage() {
   echo "For create command:"
   echo "  ssh-keytag Required. Identifier for key (e.g. github.com_alex@laptop-personal)"
   echo "  --resident Optional. Create resident FIDO SSH key (default is non-resident)"
-  echo "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk, rsa, ecdsa, ed25519)"
+  echo "  --type     Optional. Which cryptographic key to use (ecdsa-sk, ed25519-sk, rsa, ecdsa, ed25519, touchid)"
   echo "                       Default is ed25519-sk"
+  echo "                       touchid: macOS 26+ Secure Enclave key, Touch ID required on each use"
   echo
   echo "For config command:"
   echo "  hostname   Required. The SSH hostname to analyze (e.g. github.com, server.example.com)"
@@ -169,6 +170,14 @@ keycutter-create() {
     exit 1
   fi
 
+  if [[ $ssh_key_type == "touchid" ]]; then
+    if [[ -n $ssh_key_resident ]]; then
+      log "Error: --resident does not apply to touchid keys (they never leave this Mac)"
+      exit 1
+    fi
+    touchid-requirements-check || exit 1
+  fi
+
   # Check if the ssh_keytag ends with @$KEYCUTTER_ORIGIN
   if [[ ! "$ssh_keytag" =~ @${KEYCUTTER_ORIGIN}$ ]]; then
     local ssh_keytag_proposed="${ssh_keytag/@*/}@${KEYCUTTER_ORIGIN}"
@@ -208,6 +217,9 @@ keycutter-create() {
   ecdsa | ed25519)
     ssh-keygen -t "$ssh_key_type" -f "$ssh_key_path" -C "$ssh_keytag"
     ;;
+  touchid)
+    touchid-key-create "$ssh_key_path" "$ssh_keytag"
+    ;;
   *)
     log "Error: Unsupported key type: $ssh_key_type"
     return 1
@@ -234,6 +246,9 @@ keycutter-create() {
     if ! [[ $REPLY =~ ^[Nn]$ ]]; then
       log "Creating symlink: ln -sf $ssh_key_path ${ssh_key_path/github.com/ssh.github.com}"
       ln -sf "$ssh_key_path" "${ssh_key_path/github.com/ssh.github.com}"
+      if touchid-is-key "$ssh_keytag"; then
+        touchid-marker-add "${ssh_keytag/github.com/ssh.github.com}" "$(cat "$(touchid-marker-dir)/${ssh_keytag}")"
+      fi
     fi
   elif [[ $service =~ (git\.)?sr\.ht ]]; then
     # Optionally add SSH key to Sourcehut

@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# keycutter/lib/touchid - SSH keys held in the macOS Secure Enclave, unlocked with Touch ID
+#
+# macOS 26+ ships /usr/lib/ssh-keychain.dylib, a FIDO SecurityKeyProvider that
+# exposes CryptoTokenKit identities to OpenSSH as ecdsa-sk resident keys.
+#
+# The provider cannot enroll keys (sk_enroll is not implemented), so creation is:
+#
+#   1. sc_auth create-ctk-identity  - make a non-exportable P-256 key that needs biometrics
+#   2. ssh-keygen -K                - download the key handle (no private key material)
+#
+# ssh, ssh-add and ssh-keygen then need SecurityKeyProvider / -S / SSH_SK_PROVIDER
+# pointed at the dylib. Keycutter records Touch ID keys with a marker file in
+# keys/.touchid/<ssh-keytag> (containing the identity's SHA-1 public key hash) so the
+# SSH config and ssh-agent-ensure know which keys need the provider.
+
+: ${KEYCUTTER_TOUCHID_PROVIDER:="/usr/lib/ssh-keychain.dylib"}
+
+touchid-marker-dir() {
+  echo "${KEYCUTTER_SSH_KEY_DIR}/.touchid"
+}
+
+touchid-requirements-check() {
+  if [[ "$OSTYPE" != "darwin"* ]]; then
+    log "Error: Touch ID keys are only supported on macOS"
+    return 1
+  fi
+  if [[ ! -f "$KEYCUTTER_TOUCHID_PROVIDER" ]]; then
+    log "Error: $KEYCUTTER_TOUCHID_PROVIDER not found (requires macOS 26 or later)"
+    return 1
+  fi
+  if ! command -v sc_auth &>/dev/null; then
+    log "Error: sc_auth not found"
+    return 1
+  fi
+}
+
+# Print the SHA-1 hex public key hash of the CTK identity with the given label.
+touchid-identity-hash() {
+  local label="$1"
+  sc_auth list-ctk-identities -t sha1 -e hex 2>/dev/null |
+    awk -v label="$label" '
+      {
+        found = 0; hash = ""
+        for (i = 1; i <= NF; i++) {
+          if ($i == label) found = 1
+          if (hash == "" && $i ~ /^[0-9A-Fa-f]{40}$/) hash = $i
+        }
+        if (found && hash != "") { print hash; exit }
+      }'
+}
+
+touchid-key-create() {
+  local ssh_key_path="$1"
+  local ssh_keytag="$2"
+  local label="$ssh_keytag"
+
+  touchid-requirements-check || return 1
+
+  if [[ -e "$ssh_key_path" ]]; then
+    log "Error: Key already exists: $ssh_key_path"
+    return 1
+  fi
+  if [[ -n "$(touchid-identity-hash "$label")" ]]; then
+    log "Error: A Secure Enclave identity labelled '$label' already exists."
+    log "List them with: sc_auth list-ctk-identities"
+    return 1
+  fi
+
+  log "Creating Secure Enclave key (non-exportable P-256, Touch ID required): $label"
+  sc_auth create-ctk-identity -l "$label" -k p-256-ne -t bio || return 1
+
+  local hash
+  hash="$(touchid-identity-hash "$label")"
+  if [[ -z "$hash" ]]; then
+    log "Error: Created identity '$label' but could not find its public key hash."
+    log "Check with: sc_auth list-ctk-identities"
+    return 1
+  fi
+
+  # Download only this identity's key handle (KEYCHAIN_CERTIFICATES filters the provider).
+  local tmp_dir
+  tmp_dir="$(mktemp -d)" || return 1
+  log "Downloading key handle for identity $hash (press Enter if asked for a PIN)"
+  if ! (cd "$tmp_dir" && KEYCHAIN_CERTIFICATES="$hash" \
+    ssh-keygen -K -w "$KEYCUTTER_TOUCHID_PROVIDER" -N ""); then
+    log "Error: ssh-keygen could not load the Secure Enclave key."
+    _touchid-cleanup-hint "$hash"
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  local handles=()
+  local f
+  for f in "$tmp_dir"/id_*; do
+    [[ -f "$f" && "$f" != *.pub ]] && handles+=("$f")
+  done
+  if [[ ${#handles[@]} -ne 1 ]]; then
+    log "Error: Expected 1 key handle from ssh-keygen -K, got ${#handles[@]}."
+    _touchid-cleanup-hint "$hash"
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  mv "${handles[0]}" "$ssh_key_path"
+  awk -v c="$ssh_keytag" '{print $1, $2, c}' "${handles[0]}.pub" >"${ssh_key_path}.pub"
+  rm -rf "$tmp_dir"
+  chmod 0600 "$ssh_key_path" "${ssh_key_path}.pub"
+
+  # Set the key handle's comment so ssh-add -L shows the keytag (used by RemoteCommand).
+  ssh-keygen -c -C "$ssh_keytag" -P "" -f "$ssh_key_path" &>/dev/null ||
+    log "Warning: Could not set comment on $ssh_key_path"
+
+  touchid-marker-add "$ssh_keytag" "$hash"
+}
+
+# Record that a keytag (or a symlink to one) is a Touch ID key.
+touchid-marker-add() {
+  local ssh_keytag="$1"
+  local hash="$2"
+  local marker_dir
+  marker_dir="$(touchid-marker-dir)"
+  dir-ensure "$marker_dir" 0700
+  echo "$hash" >"${marker_dir}/${ssh_keytag}"
+  chmod 0600 "${marker_dir}/${ssh_keytag}"
+}
+
+touchid-is-key() {
+  local ssh_keytag="$1"
+  [[ -f "$(touchid-marker-dir)/${ssh_keytag}" ]]
+}
+
+_touchid-cleanup-hint() {
+  local hash="$1"
+  log "The Secure Enclave identity was created. To remove it:"
+  log "  sc_auth delete-ctk-identity -h $hash"
+}
