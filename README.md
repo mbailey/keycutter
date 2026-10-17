@@ -31,6 +31,7 @@ While initially created for use with YubiKeys and GitHub, Keycutter supports oth
 ## Features
 
 - **[FIDO SSH keys (e.g. Yubikey)](./docs/yubikeys/fido2-on-yubikeys.md):** Uncopiable, physical presence verification, pin retry lockout.
+- **[Secure Enclave SSH keys (macOS, Touch ID)](./docs/secure-enclave/poc.md):** On a Mac with no YubiKey plugged in, `keycutter create` now puts new `-sk` keys in the Secure Enclave (P-256, bound to that Mac, Touch ID on every signature). `--authenticator yubikey` keeps the YubiKey.
 - **[Multi-account SSH access to services](./docs/ssh-keytags.md#key-innovation-multi-account-ssh):** GitHub.com, Sourcehut (sr.ht), GitLab.com, etc.
 - **[Selective SSH Agent Forwarding](./ssh_config/keycutter/agents/README.md):** Enforce security boundaries.
 - **[Public SSH Key privacy](./docs/design/defense-layers-to-protect-against-key-misuse.md):** Only offer relevant keys to remote host.
@@ -118,7 +119,7 @@ This command will:
 
 Here's an example of what you might see when running the update command:
 
-```
+```text
 🔄 Updating Keycutter from git...
 Confirm user presence for key ECDSA-SK SHA256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 User presence confirmed

@@ -10,8 +10,8 @@
 # Which authenticator a new -sk key goes to:
 #   1. $KEYCUTTER_AUTHENTICATOR           (yubikey | secure-enclave; mac = alias)
 #   2. KEYCUTTER_AUTHENTICATOR= in the settings file   (sticky, written once)
-#   3. a Mac with no YubiKey plugged in   -> secure-enclave, said in one line
-#      a Mac with a YubiKey               -> ask once, then sticky
+#   3. a Mac with no YubiKey plugged in   -> secure-enclave, said in one line, NOT persisted
+#      a Mac with a YubiKey               -> ask once, then sticky (an explicit answer)
 #      anything else                      -> yubikey (today's behaviour, nothing written)
 
 : ${KEYCUTTER_CONFIG:="${HOME}/.ssh/keycutter/keycutter.conf"}
@@ -113,12 +113,17 @@ authenticator-resolve() {
       s | S) chosen=secure-enclave ;;
       *) chosen=yubikey ;;
     esac
+    # Only an EXPLICIT answer is persisted.
+    settings-set KEYCUTTER_AUTHENTICATOR "$chosen"
+    log "Saved KEYCUTTER_AUTHENTICATOR=$chosen to $(settings-file) (edit it, or set the env var, to change)"
   else
+    # The platform default is NOT persisted: "no YubiKey plugged in now" is not
+    # "has no YubiKey", and a sticky write here would send every later key to
+    # the Enclave until the user found the settings file.
     chosen=secure-enclave
-    log "No YubiKey found: new keys go in this Mac's Secure Enclave (Touch ID)."
+    log "No YubiKey found: this key goes in the Mac's Secure Enclave (Touch ID)."
+    log "For a YubiKey key, plug one in or pass --authenticator yubikey."
   fi
-  settings-set KEYCUTTER_AUTHENTICATOR "$chosen"
-  log "Saved KEYCUTTER_AUTHENTICATOR=$chosen to $(settings-file) (edit it, or set the env var, to change)"
   KEYCUTTER_AUTHENTICATOR="$chosen"
 }
 

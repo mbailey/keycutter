@@ -103,12 +103,12 @@ SH
 
 kc() { bash -c "printf '${1:-}' | $KEYCUTTER_ROOT/bin/keycutter ${*:2} 2>&1"; }
 
-@test "mac, no yubikey: defaults to the secure enclave, says so, and sticks" {
+@test "mac, no yubikey: defaults to the secure enclave, says so, and does NOT stick" {
     run kc '' create example.com_alice@testhost
     [ "$status" -eq 0 ]
     [[ "$output" =~ "No YubiKey found" ]]
-    [[ "$output" =~ "Saved KEYCUTTER_AUTHENTICATOR=secure-enclave" ]]
-    grep -q '^KEYCUTTER_AUTHENTICATOR=secure-enclave$' "$KEYCUTTER_SETTINGS"
+    [[ "$output" =~ "--authenticator yubikey" ]]
+    [ ! -e "$KEYCUTTER_SETTINGS" ]   # the auto-choice is never persisted (review F3)
     assert_mock_called "sc_auth create-ctk-identity -l example.com_alice@testhost -k p-256-ne -t bio"
     assert_file_exists "$KEYCUTTER_SSH_KEY_DIR/example.com_alice@testhost"
     assert_file_exists "$KEYCUTTER_SSH_KEY_DIR/example.com_alice@testhost.pub"
@@ -124,8 +124,10 @@ kc() { bash -c "printf '${1:-}' | $KEYCUTTER_ROOT/bin/keycutter ${*:2} 2>&1"; }
 }
 
 @test "settings file is 0600 and never sourced-looking" {
-    run kc '' create example.com_alice@testhost
+    echo "YubiKey 5C Nano" > "$SE_USB"   # only an explicit answer writes the file
+    run kc 's' create example.com_alice@testhost
     [ "$status" -eq 0 ]
+    [[ "$output" =~ "Saved KEYCUTTER_AUTHENTICATOR=secure-enclave" ]]
     perm="$(/usr/bin/stat -f %Lp "$KEYCUTTER_SETTINGS" 2>/dev/null || stat -c %a "$KEYCUTTER_SETTINGS")"
     [ "$perm" = "600" ]
     head -1 "$KEYCUTTER_SETTINGS" | grep -q '^# keycutter settings'
