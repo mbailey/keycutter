@@ -265,3 +265,45 @@ kc() { bash -c "printf '${1:-}' | $KEYCUTTER_ROOT/bin/keycutter ${*:2} 2>&1"; }
     grep -q 'secure-enclave ]]' "$KEYCUTTER_ROOT/ssh_config/keycutter/keycutter.conf"
     grep -q 'SecurityKeyProvider /usr/lib/ssh-keychain.dylib' "$KEYCUTTER_ROOT/ssh_config/keycutter/keycutter.conf"
 }
+
+# --- GitHub keys: the ssh.github.com:443 alias ------------------------------
+# `create` offers to symlink github.com_X to ssh.github.com_X (GitHub over port
+# 443). keycutter.conf picks Apple's provider by `<keytag>.secure-enclave`, and
+# the alias is its own keytag, so the marker has to follow the symlink or ssh
+# signs the Enclave handle with the default (YubiKey) provider and fails.
+# Review finding 2, 2026-10-18. stdin: 'n' (no GitHub upload), 'y' (symlink).
+
+@test "github key: the ssh.github.com symlink gets its own secure-enclave marker" {
+    run kc 'n\ny' create github.com_alice@testhost
+    [ "$status" -eq 0 ]
+    [ -L "$KEYCUTTER_SSH_KEY_DIR/ssh.github.com_alice@testhost" ]
+    assert_file_exists "$KEYCUTTER_SSH_KEY_DIR/github.com_alice@testhost.secure-enclave"
+    assert_file_exists "$KEYCUTTER_SSH_KEY_DIR/ssh.github.com_alice@testhost.secure-enclave"
+}
+
+@test "github key: a yubikey key's symlink gets no marker" {
+    KEYCUTTER_AUTHENTICATOR=yubikey run kc 'n\ny' create github.com_alice@testhost
+    [ "$status" -eq 0 ]
+    [ -L "$KEYCUTTER_SSH_KEY_DIR/ssh.github.com_alice@testhost" ]
+    [ ! -e "$KEYCUTTER_SSH_KEY_DIR/ssh.github.com_alice@testhost.secure-enclave" ]
+}
+
+@test "keycutter.conf: ssh -G gives ssh.github.com_X the Apple provider too (real ssh, real Match)" {
+    command -v ssh >/dev/null || skip "no ssh"
+    run kc 'n\ny' create github.com_alice@testhost
+    [ "$status" -eq 0 ]
+    # HOME is the test home, so the real Match exec blocks see the test keys/.
+    local conf="$KEYCUTTER_ROOT/ssh_config/keycutter/keycutter.conf"
+    run env HOME="$TEST_HOME" KEYCUTTER_ORIGIN=testhost ssh -G -F "$conf" github.com_alice
+    [[ "$output" =~ securitykeyprovider\ /usr/lib/ssh-keychain.dylib ]]
+    run env HOME="$TEST_HOME" KEYCUTTER_ORIGIN=testhost ssh -G -F "$conf" ssh.github.com_alice
+    [[ "$output" =~ securitykeyprovider\ /usr/lib/ssh-keychain.dylib ]]
+}
+
+@test "keycutter keys does not list the .secure-enclave marker as a key" {
+    run kc '' create example.com_alice@testhost
+    [ "$status" -eq 0 ]
+    run kc '' keys
+    [[ "$output" =~ "example.com_alice@testhost" ]]
+    [[ ! "$output" =~ "secure-enclave" ]]
+}
