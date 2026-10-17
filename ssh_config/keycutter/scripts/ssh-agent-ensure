@@ -61,7 +61,12 @@ for key in "$agent_dir"/*@${origin}; do
             chmod 600 "$key" 2>/dev/null || true
         fi
         debug "loading key: $key"
-        ssh-add "$key" &>/dev/null
+        # Touch ID keys need Apple's Secure Enclave provider (see lib/touchid)
+        if [[ -f "$HOME/.ssh/keycutter/keys/.touchid/$(basename "$key")" ]]; then
+            ssh-add -S /usr/lib/ssh-keychain.dylib "$key" &>/dev/null
+        else
+            ssh-add "$key" &>/dev/null
+        fi
         ((keys_loaded++))
     fi
 done

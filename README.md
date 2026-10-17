@@ -31,6 +31,7 @@ While initially created for use with YubiKeys and GitHub, Keycutter supports oth
 ## Features
 
 - **[FIDO SSH keys (e.g. Yubikey)](./docs/yubikeys/fido2-on-yubikeys.md):** Uncopiable, physical presence verification, pin retry lockout.
+- **[Touch ID SSH keys (macOS 26+)](./docs/platforms/macos-touchid.md):** Secure Enclave keys bound to one Mac, Touch ID on every use (`--type touchid`).
 - **[Multi-account SSH access to services](./docs/ssh-keytags.md#key-innovation-multi-account-ssh):** GitHub.com, Sourcehut (sr.ht), GitLab.com, etc.
 - **[Selective SSH Agent Forwarding](./ssh_config/keycutter/agents/README.md):** Enforce security boundaries.
 - **[Public SSH Key privacy](./docs/design/defense-layers-to-protect-against-key-misuse.md):** Only offer relevant keys to remote host.
