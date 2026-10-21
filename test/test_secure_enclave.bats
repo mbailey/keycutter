@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # keycutter create with the Mac's Secure Enclave as the authenticator (KC-118).
-# Everything is mocked: sc_auth, ssh-keygen, uname, ioreg, ykman. The one real
-# run is docs/secure-enclave/poc.md.
+# Everything is mocked: sc_auth, ssh-keygen, uname, ioreg, ykman. How to use
+# it: docs/secure-enclave.md.
 
 load test_helper
 

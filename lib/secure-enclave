@@ -5,7 +5,7 @@
 # OpenSSH by Apple's /usr/lib/ssh-keychain.dylib as a SecurityKeyProvider. What
 # lands in keys/ is a HANDLE (useless on any other Mac) plus a sibling marker
 # <key>.secure-enclave that keycutter.conf and ssh-agent-ensure read to pick
-# the provider. Measured end to end: docs/secure-enclave/poc.md.
+# the provider. How to use it: docs/secure-enclave.md.
 #
 # Which authenticator a new -sk key goes to:
 #   1. $KEYCUTTER_AUTHENTICATOR           (yubikey | secure-enclave; mac = alias)
