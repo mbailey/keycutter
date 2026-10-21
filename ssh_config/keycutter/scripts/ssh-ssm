@@ -15,6 +15,7 @@ clean_ssh_keys () { rm -f "${SSH_TMP_KEY}"{,.pub}; }
 
 [[ $# -lt 2 ]] && die "usage: ${0##*/} <instance-id> <ssh user> [<keyfile>]"
 [[ ! $instance =~ ^i-([0-9a-f]{8,})$ ]] && die "error: invalid instance-id"
+[[ ! $ssh_user =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && die "error: invalid ssh user"
 
 ec2-instance-start() {
   local instances="${1:-}"
@@ -46,15 +47,27 @@ copy-public-key-to-instance() {
   trap clean_ssh_keys EXIT
   SSH_PUB_KEY="$(< "${SSH_TMP_KEY}.pub")"
 
+  local b64_key remote_script b64_script
+
+  # Base64 the key and the remote script so neither a hostile key comment nor the
+  # username can inject shell syntax into the root-context AWS-RunShellScript.
+  b64_key=$(printf '%s' "${SSH_PUB_KEY}" | base64 | tr -d '\n')
+
   # Put public SSH key on remote server for 15 seconds (user must already exist)
-  ssm_cmd=$(cat <<EOF
-    "u=\$(getent passwd ${ssh_user}) && x=\$(echo \$u |cut -d: -f6) || exit 1
-    [ ! -d \${x}/.ssh ] && install -d -m700 -o${ssh_user} \${x}/.ssh
-    grep '${SSH_PUB_KEY}' \${x}/.ssh/authorized_keys && exit 0
-    printf '${SSH_PUB_KEY}\n'|tee -a \${x}/.ssh/authorized_keys || exit 1
-    (sleep 15 && sed -i '\|${SSH_PUB_KEY}|d' \${x}/.ssh/authorized_keys &) >/dev/null 2>&1"
+  remote_script=$(cat <<EOF
+set -eu
+authkey=\$(printf %s '${b64_key}' | base64 -d)
+pw=\$(getent passwd '${ssh_user}') || exit 1
+home=\$(printf %s "\$pw" | cut -d: -f6)
+[ -d "\$home/.ssh" ] || install -d -m700 -o '${ssh_user}' "\$home/.ssh"
+grep -qF "\$authkey" "\$home/.ssh/authorized_keys" 2>/dev/null && exit 0
+printf '%s\n' "\$authkey" | tee -a "\$home/.ssh/authorized_keys" >/dev/null || exit 1
+(sleep 15; new=\$(grep -vF "\$authkey" "\$home/.ssh/authorized_keys" 2>/dev/null) || true; printf '%s\n' "\$new" > "\$home/.ssh/authorized_keys") >/dev/null 2>&1 &
 EOF
-  )
+)
+
+  b64_script=$(printf '%s' "${remote_script}" | base64 | tr -d '\n')
+  ssm_cmd="\"echo ${b64_script} | base64 -d | sh\""
 
   # execute the command using aws ssm send-command
   command_id=$(aws ssm send-command \

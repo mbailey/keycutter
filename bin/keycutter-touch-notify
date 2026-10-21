@@ -28,7 +28,16 @@ KEYCUTTER_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Configuration
 SOUND_FILE="${KEYCUTTER_TOUCH_SOUND:-${KEYCUTTER_ROOT}/sounds/yubikey-touch-playful.wav}"
-COOLDOWN_SECONDS=2  # Minimum seconds between notifications
+COOLDOWN_SECONDS=2  # legacy; see QUIET_GAP_SECONDS below
+# ONE BOOP PER TOUCH REQUEST. While the card waits for a finger it emits a
+# keep-alive ("Time extension received") several times a SECOND, and each one
+# looks like a fresh request here. A fixed cooldown therefore boops once per
+# cooldown for as long as the operator takes to touch — measured 2026-09-01:
+# one request, 17 events in 5 s, 3 sounds. Instead we LATCH: events closer
+# together than the quiet gap are the SAME request and never re-notify, and
+# each one refreshes the latch. A new sound needs real silence first.
+QUIET_GAP_SECONDS=${KEYCUTTER_QUIET_GAP:-3}
+LAST_EVENT=0
 DEBUG="${DEBUG:-false}"
 
 # Track last notification time to avoid spam
@@ -168,11 +177,13 @@ play_sound() {
     local now
     now=$(date +%s)
 
-    # Enforce cooldown
-    if ((now - LAST_NOTIFY < COOLDOWN_SECONDS)); then
-        logmsg "Cooldown active, skipping notification"
+    # Latch: a keep-alive burst is ONE request, however long it runs.
+    if ((LAST_EVENT > 0 && now - LAST_EVENT < QUIET_GAP_SECONDS)); then
+        LAST_EVENT=$now          # same request still waiting — keep it latched
+        debug "Same touch request (keep-alive), not re-notifying"
         return
     fi
+    LAST_EVENT=$now
     LAST_NOTIFY=$now
 
     local process_info=""
