@@ -2,138 +2,103 @@
 alias: Keycutter
 ---
 
-# Keycutter: Strengthen your SSH key privacy and security
+# Keycutter: hardware-backed SSH keys, one per account
 
-Keycutter simplifies using multiple private SSH keys on multiple devices.
+Keycutter keeps your SSH keys in hardware, a YubiKey or a Mac's Secure
+Enclave, with one key per service and account. The private key cannot be
+copied off the device, and every use needs a touch, so nothing on your laptop
+can act as you without your finger.
 
-Ever wondered how to contribute to an open-source project on GitHub from an employer managed (i.e. untrusted) laptop, without compromising the security of your personal GitHub account?
+It began with a question: how do you contribute to open source on GitHub from
+a laptop your employer manages, without handing that laptop your personal
+GitHub identity? The answer holds against more than a managed laptop. Malware,
+an intruder, a malicious admin, and now AI coding agents can all run as you,
+with your shell, your `~/.ssh` and your `git push`. A key on disk is theirs to
+use. A key in hardware signs only when you touch it.
 
-Keycutter came out of an attempt to solve this problem but evolved into a tool to improve security by simplifying management and use of FIDO SSH Keys. It consists of:
+What it stops is silent use. A touch you give is still a touch, and a key
+minted with `--no-touch` makes no such check.
 
-- **`keycutter`:** A CLI tool for creating FIDO SSH keys and managing SSH config
-- **[SSH Keytags](docs/ssh-keytags.md):** A naming convention that removes need for custom SSH configuration
-- **[SSH configuration](docs/config/README.md):** Modular config structure that doesn't require manual editing
-
-While initially created for use with YubiKeys and GitHub, Keycutter supports other FIDO devices and services.
-
-## Contents
-
-- [Features](#features)
-- [Project Goals](#project-goals)
-- [Example: SSH access to multiple GitHub accounts](#example-ssh-access-to-multiple-github-accounts)
-- [Quickstart](#quickstart)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Tutorial](docs/tutorial.md)
-- [Updating Keycutter](#updating-keycutter)
-- [See also](#see-also)
-
-## Features
-
-- **[FIDO SSH keys (e.g. Yubikey)](./docs/yubikeys/fido2-on-yubikeys.md):** Uncopiable, physical presence verification, pin retry lockout.
-- **[Secure Enclave SSH keys (macOS, Touch ID)](./docs/secure-enclave.md):** On a Mac with no YubiKey plugged in, `keycutter create` now puts new `-sk` keys in the Secure Enclave (P-256, bound to that Mac, Touch ID on every signature). `--authenticator yubikey` keeps the YubiKey.
-- **[Multi-account SSH access to services](./docs/ssh-keytags.md#key-innovation-multi-account-ssh):** GitHub.com, Sourcehut (sr.ht), GitLab.com, etc.
-- **[Selective SSH Agent Forwarding](./ssh_config/keycutter/agents/README.md):** Enforce security boundaries.
-- **[Public SSH Key privacy](./docs/design/defense-layers-to-protect-against-key-misuse.md):** Only offer relevant keys to remote host.
-- **SSH over SSM (AWS):** Public key removed from remote host after login.
-- **OS Support**: Linux, MacOS, Windows ([WSL](docs/install.md#wsl-windows-subsystem-for-linux)), [VSCode](docs/vscode/README.md) Remote-SSH Extension
-
-## Project Goals
-
-- **Safe:** Don't screw up users SSH keys or config. Confirm and backup changes.
-- **Simple:** Keep the code and config it generates simple to audit.
-- **Solid:** Support all the things people use SSH for (e.g. scp, rsync, etc).
-
-## Example: SSH access to multiple GitHub accounts
-
-**Connect to multiple Github accounts via SSH without custom config:**
-
-```bash
-git clone git@github.com_alex:mbailey/keycutter.git     # Github user @alex
-git clone git@github.com_alexwork:mbailey/keycutter.git # Github user @alexwork
-```
-
-No Host entries needed - keycutter automatically routes to the correct host and uses the appropriate key.
+In daily use by its author and others since March 2024. Built for YubiKeys;
+since October 2026 a Mac with Touch ID can use its Secure Enclave instead,
+with nothing to plug in.
 
 ## Quickstart
 
 ```shell
-# Install Keycutter
+# Install
 $ curl https://raw.githubusercontent.com/mbailey/keycutter/master/install.sh | bash
-<snip>
-# Create a FIDO SSH Key
+
+# Create a key for one GitHub account (YubiKey, or the Secure Enclave on a Mac)
 $ keycutter create github.com_alex
-<snip>
-# Use it
+
+# Use it (touch the key when asked)
 $ ssh -T github.com_alex
 Confirm user presence for key ECDSA-SK SHA256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 User presence confirmed
 Hi alex! You've successfully authenticated, but GitHub does not provide shell access.
 ```
 
-## Installation
+## What you get
 
-```shell
-curl https://raw.githubusercontent.com/mbailey/keycutter/master/install.sh | bash
+- **Hardware keys:** a [YubiKey][] (or any FIDO2 device), or the
+  [Secure Enclave][] on a Mac. Uncopiable, a touch per use, and on the
+  YubiKey a PIN with retry lockout.
+- **[Keytags][]:** keys named `<service>_<user>@<device>`, so
+  `ssh github.com_alex` and `ssh github.com_alexwork` each pick the right key
+  with no `Host` blocks to write. The naming is the configuration.
+- **[Agent profiles][]:** choose which keys each remote host may use. A work
+  server never sees a personal key.
+- **[Key privacy][]:** only the key meant for a host is offered to it.
+- **Commit signing:** `keycutter git-signing enable` signs commits with the
+  same key, one touch per commit.
+- **SSH over SSM (AWS):** the public key is removed from the host after login.
+- **Linux, macOS and Windows ([WSL][]),** including [VS Code Remote-SSH][].
+
+## Example: two GitHub accounts, no custom config
+
+```bash
+git clone git@github.com_alex:mbailey/keycutter.git      # GitHub user @alex
+git clone git@github.com_alexwork:mbailey/keycutter.git  # GitHub user @alexwork
 ```
 
-The installer will check prerequisites and guide you through the setup. For detailed installation instructions, platform-specific configuration, and troubleshooting, see the [Installation Guide](./docs/install.md).
+Keycutter routes `github.com_<user>` to `github.com` and offers the matching
+key. No `Host` entries, one key per account.
 
-## Configuration
+## Project goals
 
-Keycutter organizes all SSH configuration under `~/.ssh/keycutter/` with a modular structure designed for easy management and security:
+- **Safe:** never damage a user's SSH keys or config. Confirm and back up changes.
+- **Simple:** keep the code, and the config it writes, easy to audit.
+- **Solid:** work for everything SSH is used for (scp, rsync, agent forwarding).
 
-- **Agents**: Control SSH agent forwarding to specific hosts
-- **Hosts**: Define host-specific settings and identity files
-- **Keys**: Store SSH keys using the keytag naming convention
-- **Scripts**: Helper scripts for SSH operations
+## Going further
 
-See the [Configuration Guide](docs/config/README.md) for complete details.
+- **[Tutorial][]:** common workflows, step by step.
+- **[Installation][]:** prerequisites, platforms, troubleshooting.
+- **[Configuration][]:** the `~/.ssh/keycutter/` tree: agents, hosts, keys, scripts.
+- **[Secure Enclave][]:** Mac keys: how they are made, what lives where, the caveats.
+- **[Tips and tricks][]:** undocumented features.
+- **[Development][]:** how to develop and test keycutter locally.
 
-## Usage
+`keycutter --help` lists every command. `keycutter update` pulls the latest
+version and offers to refresh the files under `~/.ssh/keycutter`.
 
-For a comprehensive guide on using Keycutter, see the [Tutorial](docs/tutorial.md).
+## Prior art
 
-To see all available commands, run:
+- **[ssh-over-ssm][]:** the original source of `keycutter/scripts/ssh-ssm`.
+- **[ssh-ident][]:** different agents and keys for different projects, with ssh.
 
-```shell
-keycutter --help
-```
-
-## Updating Keycutter
-
-It's recommended to update keycutter periodically to ensure you have the
-latest features and bug fixes.
-
-To update an existing installation of Keycutter, use the following command:
-
-```shell
-keycutter update
-```
-
-This command will:
-
-1. Pull the latest changes from the Keycutter git repository.
-1. Check and update any requirements.
-1. Confirm whether you want to update files in `~/.ssh/keycutter`
-
-Here's an example of what you might see when running the update command:
-
-```text
-🔄 Updating Keycutter from git...
-Confirm user presence for key ECDSA-SK SHA256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-User presence confirmed
-Keycutter is already up to date.
-All requirements are met.
-Keycutter SSH update complete.
-```
-
-## See also
-
-- **[Configuration Guide](docs/config/README.md):** Overview of keycutter's configuration structure
-- **[Development Guide](docs/development.md):** How to develop and test Keycutter locally
-- **[Tips and tricks](docs/tips-and-tricks.md):** Undocumented features and cool tricks.
-
-- **Prior art (and inspiration):**
-  - **[ssh-over-ssm (github.com)](https://github.com/elpy1/ssh-over-ssm):** Original source of `keycutter/scripts/ssh-ssm`.
-  - **[ssh-ident (github.com)](https://github.com/ccontavalli/ssh-ident):** Different agents and different keys for different projects, with ssh.
+[Agent profiles]: ssh_config/keycutter/agents/README.md
+[Configuration]: docs/config/README.md
+[Development]: docs/development.md
+[Installation]: docs/install.md
+[Key privacy]: docs/design/defense-layers-to-protect-against-key-misuse.md
+[Keytags]: docs/ssh-keytags.md
+[Secure Enclave]: docs/secure-enclave.md
+[Tips and tricks]: docs/tips-and-tricks.md
+[Tutorial]: docs/tutorial.md
+[VS Code Remote-SSH]: docs/vscode/README.md
+[WSL]: docs/install.md#wsl-windows-subsystem-for-linux
+[YubiKey]: docs/yubikeys/README.md
+[ssh-ident]: https://github.com/ccontavalli/ssh-ident
+[ssh-over-ssm]: https://github.com/elpy1/ssh-over-ssm
