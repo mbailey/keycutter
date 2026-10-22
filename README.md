@@ -27,13 +27,13 @@ with nothing to plug in.
 
 ```shell
 # Install
-curl https://raw.githubusercontent.com/mbailey/keycutter/master/install.sh | bash
+$ curl https://raw.githubusercontent.com/mbailey/keycutter/master/install.sh | bash
 
 # Create a key for one GitHub account (YubiKey, or the Secure Enclave on a Mac)
-keycutter create github.com_alex
+$ keycutter create github.com_alex
 
 # Use it (touch the key when asked)
-ssh -T github.com_alex
+$ ssh -T github.com_alex
 Confirm user presence for key ECDSA-SK SHA256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 User presence confirmed
 Hi alex! You've successfully authenticated, but GitHub does not provide shell access.
@@ -46,7 +46,7 @@ Hi alex! You've successfully authenticated, but GitHub does not provide shell ac
   YubiKey a PIN with retry lockout.
 - **[Keytags][]:** keys named `<service>_<user>@<device>`, so
   `ssh github.com_alex` and `ssh github.com_alexwork` each pick the right key
-  with no `Host` blocks to write.
+  with no `Host` blocks to write. The naming is the configuration.
 - **[Agent profiles][]:** choose which keys each remote host may use. A work
   server never sees a personal key.
 - **[Key privacy][]:** only the key meant for a host is offered to it.
